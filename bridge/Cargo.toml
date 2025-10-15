@@ -1,0 +1,49 @@
+[package]
+name = "rocket-bridge"
+version = "0.1.0"
+edition = "2021"
+description = "🚀 Rocket Framework - High-speed bridge server for web/desktop development"
+authors = ["Renzora"]
+
+[[bin]]
+name = "rocket-bridge"
+path = "src/main.rs"
+
+[dependencies]
+tokio = { version = "1", features = ["rt-multi-thread", "net", "fs", "sync", "time", "macros", "io-util"] }
+hyper = { version = "1.0", features = ["server", "http1", "http2"] }
+hyper-util = { version = "0.1", features = ["tokio"] }
+http-body-util = "0.1"
+bytes = "1.0"
+futures-util = "0.3"
+tokio-tungstenite = "0.24"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+simd-json = "0.13"
+base64 = "0.21"
+sha1 = "0.10"
+notify = "6.1"
+chrono = { version = "0.4", features = ["serde"] }
+lazy_static = "1.4"
+log = "0.4"
+env_logger = "0.10"
+percent-encoding = "2.3"
+sysinfo = "0.30"
+nvml-wrapper = { version = "0.10", optional = true }
+regex = "1.0"
+dashmap = "6.0"
+# Error handling
+thiserror = "1.0"
+anyhow = "1.0"
+
+[features]
+default = []
+nvidia = ["nvml-wrapper"]
+
+[profile.release]
+lto = "thin"
+codegen-units = 4
+panic = "abort"
+strip = true
+opt-level = 3
+overflow-checks = false

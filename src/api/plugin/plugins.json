@@ -1,0 +1,39 @@
+{
+  "plugins": [
+    {
+      "enabled": true,
+      "id": "core-bridge-plugin",
+      "main": "BridgePluginClass.jsx",
+      "path": "/src/plugins/core/bridge",
+      "priority": -2
+    },
+    {
+      "enabled": true,
+      "id": "web-browser-plugin",
+      "main": "index.jsx",
+      "path": "/src/plugins/core/web-browser",
+      "priority": 1
+    },
+    {
+      "enabled": true,
+      "id": "code-plugin",
+      "main": "index.jsx",
+      "path": "/src/plugins/core/code",
+      "priority": 1
+    },
+    {
+      "enabled": true,
+      "id": "test-plugin",
+      "main": "index.jsx",
+      "path": "/src/plugins/test-plugin",
+      "priority": 1
+    },
+        {
+      "enabled": true,
+      "id": "menu",
+      "main": "index.jsx",
+      "path": "/src/plugins/core/menu",
+      "priority": 1
+    }
+  ]
+}

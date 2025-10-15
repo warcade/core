@@ -1,0 +1,1151 @@
+import { createSignal, createContext, useContext, onMount, onCleanup, createRoot } from 'solid-js';
+import pluginStore, { PLUGIN_STATES as STORE_PLUGIN_STATES } from '@/plugins/core/plugins/PluginStore.jsx';
+
+const PLUGIN_STATES = STORE_PLUGIN_STATES;
+
+const PluginAPIContext = createContext();
+
+const [topMenuItems, setTopMenuItems] = createSignal(new Map());
+const [propertyTabs, setPropertyTabs] = createSignal(new Map());
+const [viewportTypes, setViewportTypes] = createSignal(new Map());
+const [footerButtons, setFooterButtons] = createSignal(new Map());
+const [registeredPlugins, setRegisteredPlugins] = createSignal(new Map());
+const [propertiesPanelVisible, setPropertiesPanelVisible] = createSignal(true);
+const [horizontalMenuButtonsEnabled, setHorizontalMenuButtonsEnabled] = createSignal(true);
+const [footerVisible, setFooterVisible] = createSignal(true);
+const [viewportTabsVisible, setViewportTabsVisible] = createSignal(true);
+const [layoutComponents, setLayoutComponents] = createSignal(new Map());
+const [plugins, setPlugins] = createSignal(new Map());
+const [pluginStates, setPluginStates] = createSignal(new Map());
+const [pluginErrors, setPluginErrors] = createSignal(new Map());
+
+class PluginLoader {
+  constructor(PluginAPI) {
+    this.PluginAPI = PluginAPI;
+    this.updateInterval = null;
+    this.pluginDirectories = [
+      '/src/plugins/core',
+      '/plugins'
+    ];
+  }
+
+  isCorePlugin(pluginPath) {
+    return pluginPath.includes('/src/plugins/core/');
+  }
+
+  async discoverPlugins() {
+    // Auto-discovering plugins
+    const discovered = new Map();
+
+    const autoDiscoveredPlugins = await this.scanForPlugins();
+    
+    autoDiscoveredPlugins.forEach(plugin => {
+      discovered.set(plugin.id, plugin);
+      this.setPluginState(plugin.id, PLUGIN_STATES.DISCOVERED);
+    });
+
+    // Auto-discovery completed
+    return discovered;
+  }
+
+  async scanForPlugins() {
+    const plugins = [];
+    
+    // Get plugin configs from store instead of importing JSON
+    const pluginConfigs = pluginStore.getPluginConfigs();
+    
+    for (const [id, pluginConfig] of pluginConfigs) {
+      try {
+        if (pluginConfig.id.includes('test') && process.env.NODE_ENV === 'production') {
+          continue;
+        }
+
+        const pathParts = pluginConfig.path.split('/').filter(p => p && p !== 'src' && p !== 'plugins' && p !== 'ui');
+        const pluginName = pluginConfig.name || (pathParts
+          .map(part => part.split(/[-_]/)
+            .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+            .join(' '))
+          .join(' ') + ' Plugin');
+
+        const isCore = this.isCorePlugin(pluginConfig.path);
+        
+        const plugin = {
+          id: pluginConfig.id,
+          path: pluginConfig.path,
+          enabled: isCore ? true : pluginConfig.enabled, // Core plugins are always enabled
+          isCore: isCore,
+          manifest: {
+            name: pluginName,
+            version: pluginConfig.version || '1.0.0',
+            description: pluginConfig.description || `Plugin: ${pluginName}`,
+            author: pluginConfig.author || 'Renzora Engine Team',
+            main: pluginConfig.main,
+            dependencies: [],
+            permissions: this.inferPermissions(pluginConfig.path),
+            apiVersion: '1.0.0',
+            priority: pluginConfig.priority || 1,
+            isCore: isCore
+          }
+        };
+
+        plugins.push(plugin);
+      } catch (error) {
+      }
+    }
+
+    plugins.sort((a, b) => a.manifest.priority - b.manifest.priority);
+    return plugins;
+  }
+
+  async loadPluginDynamic(id, path, mainFile) {
+    
+    try {
+      // Use require.context to create a webpack context that includes all plugin files
+      const pluginContext = require.context('@/plugins', true, /\.(jsx|js)$/);
+      
+      // Convert the full path to a relative path for webpack context
+      // Remove /src/plugins from the beginning and create relative path
+      const relativePath = path.replace('/src/plugins', '');
+      const mainPath = `.${relativePath}/${mainFile}`;
+      
+      
+      if (pluginContext.keys().includes(mainPath)) {
+        const pluginModule = pluginContext(mainPath);
+        return pluginModule;
+      }
+      
+      // Try fallback with index.jsx
+      const fallbackPath = `.${relativePath}/index.jsx`;
+      
+      if (pluginContext.keys().includes(fallbackPath)) {
+        const pluginModule = pluginContext(fallbackPath);
+        return pluginModule;
+      }
+      
+      // Log available paths for debugging
+      
+      throw new Error(`Plugin file not found: ${mainPath}`);
+      
+    } catch (error) {
+      throw error;
+    }
+  }
+
+  inferPermissions(pluginPath) {
+    const permissions = [];
+    
+    if (pluginPath.includes('/core/')) {
+      permissions.push('core-engine', 'ui-core');
+    }
+    if (pluginPath.includes('/editor')) {
+      permissions.push('ui-core', 'file-access', 'viewport-management');
+    }
+    if (pluginPath.includes('/splash')) {
+      permissions.push('ui-core', 'viewport-management');
+    }
+    if (pluginPath.includes('/menu')) {
+      permissions.push('ui-core');
+    }
+    if (pluginPath.includes('/bridge')) {
+      permissions.push('file-access', 'network-access');
+    }
+    if (pluginPath.includes('/render')) {
+      permissions.push('rendering', 'gpu-access');
+    }
+    
+    return permissions.length > 0 ? permissions : ['ui-core'];
+  }
+
+  async loadPlugin(pluginInfo) {
+    const { id, path, manifest } = pluginInfo;
+    
+    try {
+      this.setPluginState(id, PLUGIN_STATES.LOADING);
+      // Loading plugin: id
+
+      let pluginModule;
+      
+      try {
+        // Use a mapping approach that works with bundlers
+        pluginModule = await this.loadPluginDynamic(id, path, manifest.main);
+      } catch (importError) {
+        throw new Error(`Could not load plugin from ${path}`);
+      }
+
+      if (!pluginModule.default && !pluginModule.Plugin) {
+        throw new Error(`Plugin ${id} must export a default plugin function`);
+      }
+
+      const PluginFactory = pluginModule.default || pluginModule.Plugin;
+      let pluginInstance;
+      
+      // Handle class-based plugins
+      if (PluginFactory.prototype && PluginFactory.prototype.constructor) {
+        pluginInstance = new PluginFactory(this.PluginAPI);
+        // Add required methods for class-based plugins
+        if (!pluginInstance.getId) {
+          pluginInstance.getId = () => pluginInstance.id;
+        }
+        if (!pluginInstance.getName) {
+          pluginInstance.getName = () => pluginInstance.name;
+        }
+        if (!pluginInstance.getVersion) {
+          pluginInstance.getVersion = () => pluginInstance.version;
+        }
+        if (!pluginInstance.onInit) {
+          pluginInstance.onInit = () => pluginInstance.initialize();
+        }
+      } else {
+        // Handle function-based plugins
+        pluginInstance = PluginFactory(this.PluginAPI);
+      }
+      const requiredMethods = ['getId', 'getName', 'getVersion'];
+      requiredMethods.forEach(method => {
+        if (typeof pluginInstance[method] !== 'function') {
+        }
+      });
+
+      setPlugins(prev => new Map(prev.set(id, {
+        ...pluginInfo,
+        instance: pluginInstance,
+        module: pluginModule,
+        loadedAt: Date.now()
+      })));
+
+      // Sync with store
+      pluginStore.setPluginInstance(id, pluginInstance, pluginModule);
+
+      this.setPluginState(id, PLUGIN_STATES.LOADED);
+      // Plugin loaded successfully
+      
+      return pluginInstance;
+    } catch (error) {
+      this.setPluginError(id, error);
+      this.setPluginState(id, PLUGIN_STATES.ERROR);
+      throw error;
+    }
+  }
+
+  async initializePlugin(pluginId) {
+    const plugin = plugins().get(pluginId);
+    if (!plugin || !plugin.instance) {
+      throw new Error(`Plugin ${pluginId} not loaded`);
+    }
+
+    try {
+      this.setPluginState(pluginId, PLUGIN_STATES.INITIALIZING);
+      // Initializing plugin
+
+      // Set the plugin context for registration tracking
+      this.PluginAPI.setCurrentPluginContext(pluginId);
+
+      if (typeof plugin.instance.onInit === 'function') {
+        await plugin.instance.onInit();
+      }
+
+      this.PluginAPI.registerPlugin(pluginId, {
+        name: plugin.manifest.name,
+        version: plugin.manifest.version,
+        description: plugin.manifest.description,
+        author: plugin.manifest.author,
+        instance: plugin.instance
+      });
+
+      // Clear the plugin context
+      this.PluginAPI.clearCurrentPluginContext();
+
+      this.setPluginState(pluginId, PLUGIN_STATES.INITIALIZED);
+      // Plugin initialized successfully
+    } catch (error) {
+      this.setPluginError(pluginId, error);
+      this.setPluginState(pluginId, PLUGIN_STATES.ERROR);
+      
+      // Clear the plugin context on error
+      this.PluginAPI.clearCurrentPluginContext();
+      throw error;
+    }
+  }
+
+  async startPlugin(pluginId) {
+    const plugin = plugins().get(pluginId);
+    if (!plugin || !plugin.instance) {
+      throw new Error(`Plugin ${pluginId} not loaded`);
+    }
+
+    try {
+      this.setPluginState(pluginId, PLUGIN_STATES.STARTING);
+      // Starting plugin
+
+      if (typeof plugin.instance.onStart === 'function') {
+        // Set the plugin context for registration tracking during onStart
+        this.PluginAPI.setCurrentPluginContext(pluginId);
+        
+        // Wrap onStart in createRoot to properly handle SolidJS effects
+        await new Promise((resolve, reject) => {
+          createRoot(async (dispose) => {
+            try {
+              await plugin.instance.onStart(this.PluginAPI);
+              // Store dispose function on plugin instance for cleanup
+              plugin.instance._dispose = dispose;
+              resolve();
+            } catch (error) {
+              dispose();
+              reject(error);
+            }
+          });
+        });
+        
+        // Clear the plugin context after onStart
+        this.PluginAPI.clearCurrentPluginContext();
+      }
+
+      this.setPluginState(pluginId, PLUGIN_STATES.RUNNING);
+      // Plugin started successfully
+    } catch (error) {
+      this.setPluginError(pluginId, error);
+      this.setPluginState(pluginId, PLUGIN_STATES.ERROR);
+      
+      // Clear the plugin context on error
+      this.PluginAPI.clearCurrentPluginContext();
+      throw error;
+    }
+  }
+
+  async loadAllPlugins() {
+    // Loading all plugins
+    
+    const discovered = await this.discoverPlugins();
+    const loadPromises = [];
+
+    for (const [id, pluginInfo] of discovered) {
+      // Skip loading disabled plugins but still add them to store
+      if (!pluginInfo.enabled) {
+        this.setPluginState(id, PLUGIN_STATES.DISABLED);
+        
+        // Add disabled plugin to registry so it appears in the list
+        setPlugins(prev => new Map(prev.set(id, {
+          ...pluginInfo,
+          instance: null,
+          module: null,
+          loadedAt: null
+        })));
+        
+        // Update store state
+        pluginStore.setPluginState(id, PLUGIN_STATES.DISABLED);
+        continue;
+      }
+      
+      loadPromises.push(
+        this.loadPlugin(pluginInfo).catch(error => {
+          pluginStore.setPluginError(id, error);
+          pluginStore.setPluginState(id, PLUGIN_STATES.ERROR);
+          return null;
+        })
+      );
+    }
+
+    await Promise.all(loadPromises);
+
+    const initPromises = [];
+    for (const [id] of plugins()) {
+      const pluginInfo = discovered.get(id);
+      if (this.getPluginState(id) === PLUGIN_STATES.LOADED && pluginInfo?.enabled) {
+        initPromises.push(
+          this.initializePlugin(id).catch(error => {
+            pluginStore.setPluginError(id, error);
+            pluginStore.setPluginState(id, PLUGIN_STATES.ERROR);
+            return null;
+          })
+        );
+      }
+    }
+
+    await Promise.all(initPromises);
+
+    const startPromises = [];
+    for (const [id] of plugins()) {
+      const pluginInfo = discovered.get(id);
+      if (this.getPluginState(id) === PLUGIN_STATES.INITIALIZED && pluginInfo?.enabled) {
+        startPromises.push(
+          this.startPlugin(id).catch(error => {
+            pluginStore.setPluginError(id, error);
+            pluginStore.setPluginState(id, PLUGIN_STATES.ERROR);
+            return null;
+          })
+        );
+      }
+    }
+
+    await Promise.all(startPromises);
+
+    // Plugin loading completed
+  }
+
+  async reloadPluginRegistry() {
+    // Refresh plugins configuration from registry via store
+    try {
+      const success = await pluginStore.reloadConfigsFromFile();
+      if (success) {
+      }
+      return success;
+    } catch (error) {
+      return false;
+    }
+  }
+
+  async loadSinglePlugin(pluginId, pluginPath, mainFile) {
+    try {
+      
+      // Create plugin info from parameters
+      const pluginInfo = {
+        id: pluginId,
+        path: pluginPath,
+        manifest: {
+          name: pluginId.split('-').map(word => 
+            word.charAt(0).toUpperCase() + word.slice(1)
+          ).join(' ') + ' Plugin',
+          version: '1.0.0',
+          description: `Dynamically loaded plugin: ${pluginId}`,
+          author: 'Plugin Developer',
+          main: mainFile,
+          dependencies: [],
+          permissions: this.inferPermissions(pluginPath),
+          apiVersion: '1.0.0',
+          priority: 1
+        }
+      };
+
+      // Load the plugin
+      const pluginInstance = await this.loadPlugin(pluginInfo);
+      
+      // Initialize the plugin
+      await this.initializePlugin(pluginId);
+      
+      // Start the plugin
+      await this.startPlugin(pluginId);
+      
+      return pluginInstance;
+    } catch (error) {
+      throw error;
+    }
+  }
+
+  async loadPluginWithDynamicImport(pluginId, pluginPath, mainFile) {
+    try {
+      
+      // Convert the full path to import path
+      // Remove /src from the beginning to create import path
+      const relativePath = pluginPath.replace('/src', '');
+      // Remove file extension from mainFile for import path
+      const mainFileWithoutExt = mainFile.replace(/\.[^/.]+$/, "");
+      const importPath = `@${relativePath}/${mainFileWithoutExt}`;
+      
+      
+      // Use dynamic import to load the plugin
+      const pluginModule = await import(/* webpackIgnore: true */ importPath);
+      
+      if (!pluginModule.default && !pluginModule.Plugin) {
+        throw new Error(`Plugin ${pluginId} must export a default plugin function`);
+      }
+
+      const PluginFactory = pluginModule.default || pluginModule.Plugin;
+      let pluginInstance;
+      
+      // Handle class-based plugins
+      if (PluginFactory.prototype && PluginFactory.prototype.constructor) {
+        pluginInstance = new PluginFactory(this.PluginAPI);
+      } else {
+        // Handle function-based plugins
+        pluginInstance = PluginFactory(this.PluginAPI);
+      }
+
+      // Create plugin info
+      const pluginInfo = {
+        id: pluginId,
+        path: pluginPath,
+        manifest: {
+          name: pluginId.split('-').map(word => 
+            word.charAt(0).toUpperCase() + word.slice(1)
+          ).join(' ') + ' Plugin',
+          version: '1.0.0',
+          description: `Dynamically loaded plugin: ${pluginId}`,
+          author: 'Plugin Developer',
+          main: mainFile,
+          dependencies: [],
+          permissions: this.inferPermissions(pluginPath),
+          apiVersion: '1.0.0',
+          priority: 1
+        }
+      };
+
+      // Store plugin in registry
+      setPlugins(prev => new Map(prev.set(pluginId, {
+        ...pluginInfo,
+        instance: pluginInstance,
+        module: pluginModule,
+        loadedAt: Date.now()
+      })));
+
+      this.setPluginState(pluginId, PLUGIN_STATES.LOADED);
+      
+      // Initialize the plugin
+      if (typeof pluginInstance.onInit === 'function') {
+        this.setPluginState(pluginId, PLUGIN_STATES.INITIALIZING);
+        await pluginInstance.onInit();
+        
+        this.PluginAPI.registerPlugin(pluginId, {
+          name: pluginInfo.manifest.name,
+          version: pluginInfo.manifest.version,
+          description: pluginInfo.manifest.description,
+          author: pluginInfo.manifest.author,
+          instance: pluginInstance
+        });
+        
+        this.setPluginState(pluginId, PLUGIN_STATES.INITIALIZED);
+      }
+      
+      // Start the plugin
+      if (typeof pluginInstance.onStart === 'function') {
+        this.setPluginState(pluginId, PLUGIN_STATES.STARTING);
+        
+        await new Promise((resolve, reject) => {
+          createRoot(async (dispose) => {
+            try {
+              await pluginInstance.onStart();
+              pluginInstance._dispose = dispose;
+              resolve();
+            } catch (error) {
+              dispose();
+              reject(error);
+            }
+          });
+        });
+        
+        this.setPluginState(pluginId, PLUGIN_STATES.RUNNING);
+      }
+
+      return pluginInstance;
+    } catch (error) {
+      this.setPluginError(pluginId, error);
+      this.setPluginState(pluginId, PLUGIN_STATES.ERROR);
+      throw error;
+    }
+  }
+
+  startUpdateLoop() {
+    if (this.updateInterval) return;
+
+    // Starting plugin update loop
+    this.updateInterval = setInterval(() => {
+      this.updatePlugins();
+    }, 1000 / 60);
+  }
+
+  stopUpdateLoop() {
+    if (this.updateInterval) {
+      clearInterval(this.updateInterval);
+      this.updateInterval = null;
+      // Plugin update loop stopped
+    }
+  }
+
+  updatePlugins() {
+    const runningPlugins = this.getRunningPlugins();
+    
+    runningPlugins.forEach(plugin => {
+      try {
+        if (typeof plugin.instance.onUpdate === 'function') {
+          plugin.instance.onUpdate();
+        }
+      } catch (error) {
+        this.setPluginError(plugin.id, error);
+      }
+    });
+  }
+
+  getRunningPlugins() {
+    return Array.from(plugins().values()).filter(plugin => 
+      this.getPluginState(plugin.id) === PLUGIN_STATES.RUNNING
+    );
+  }
+
+  getPluginState(pluginId) {
+    return pluginStates().get(pluginId) || PLUGIN_STATES.DISCOVERED;
+  }
+
+  setPluginState(pluginId, state) {
+    setPluginStates(prev => new Map(prev.set(pluginId, state)));
+    
+    // Sync with store
+    pluginStore.setPluginState(pluginId, state);
+    
+    this.PluginAPI.emit('plugin-state-changed', {
+      pluginId,
+      state,
+      timestamp: Date.now()
+    });
+  }
+
+  setPluginError(pluginId, error) {
+    setPluginErrors(prev => new Map(prev.set(pluginId, {
+      error: error.message,
+      stack: error.stack,
+      timestamp: Date.now()
+    })));
+  }
+
+  getPluginInfo(pluginId) {
+    return plugins().get(pluginId);
+  }
+
+  getAllPlugins() {
+    return Array.from(plugins().values());
+  }
+
+  getStats() {
+    const allPlugins = this.getAllPlugins();
+    const states = {};
+    
+    Object.values(PLUGIN_STATES).forEach(state => {
+      states[state] = allPlugins.filter(p => this.getPluginState(p.id) === state).length;
+    });
+
+    return {
+      total: allPlugins.length,
+      states,
+      errors: pluginErrors().size
+    };
+  }
+}
+
+export class PluginAPI {
+  constructor() {
+    this.id = 'plugin-api';
+    this.version = '1.0.0';
+    this.pluginLoader = new PluginLoader(this);
+    this.initialized = false;
+    this.currentRegistringPlugin = null; // Track which plugin is currently registering
+    
+    // Set up plugin store event listeners for reactive UI updates
+    this.setupPluginStoreListeners();
+  }
+  
+  // Helper method to get the current plugin ID for registration
+  getCurrentPluginId() {
+    return this.currentRegistringPlugin;
+  }
+  
+  // Set the current plugin context for registration
+  setCurrentPluginContext(pluginId) {
+    this.currentRegistringPlugin = pluginId;
+  }
+  
+  // Clear the current plugin context
+  clearCurrentPluginContext() {
+    this.currentRegistringPlugin = null;
+  }
+  
+  setupPluginStoreListeners() {
+    // Listen for plugin state changes and clean up UI elements
+    pluginStore.on('plugin-disabled', (data) => {
+      this.cleanupPluginUIElements(data.pluginId);
+    });
+    
+    pluginStore.on('plugin-enabling', (data) => {
+    });
+  }
+  
+  // Clean up all UI elements registered by a plugin
+  cleanupPluginUIElements(pluginId) {
+    
+    try {
+      // Remove top menu items
+      setTopMenuItems(prev => {
+        const newMap = new Map(prev);
+        for (const [key, item] of newMap) {
+          if (item.plugin === pluginId) {
+            newMap.delete(key);
+          }
+        }
+        return newMap;
+      });
+      
+      // Remove property tabs
+      setPropertyTabs(prev => {
+        const newMap = new Map(prev);
+        for (const [key, tab] of newMap) {
+          if (tab.plugin === pluginId) {
+            newMap.delete(key);
+          }
+        }
+        return newMap;
+      });
+      
+      // Remove viewport types
+      setViewportTypes(prev => {
+        const newMap = new Map(prev);
+        for (const [key, viewport] of newMap) {
+          if (viewport.plugin === pluginId) {
+            newMap.delete(key);
+          }
+        }
+        return newMap;
+      });
+      
+      // Remove footer buttons
+      setFooterButtons(prev => {
+        const newMap = new Map(prev);
+        for (const [key, button] of newMap) {
+          if (button.plugin === pluginId) {
+            newMap.delete(key);
+          }
+        }
+        return newMap;
+      });
+      
+      // Remove layout components
+      setLayoutComponents(prev => {
+        const newMap = new Map(prev);
+        for (const [key, component] of newMap) {
+          if (component.plugin === pluginId) {
+            newMap.delete(key);
+          }
+        }
+        return newMap;
+      });
+      
+      // Remove from registered plugins
+      setRegisteredPlugins(prev => {
+        const newMap = new Map(prev);
+        newMap.delete(pluginId);
+        return newMap;
+      });
+      
+    } catch (error) {
+    }
+  }
+
+  async initialize() {
+    if (this.initialized) return;
+    
+    // Initializing Plugin API
+    
+    try {
+      await this.pluginLoader.loadAllPlugins();
+      this.pluginLoader.startUpdateLoop();
+      this.initialized = true;
+      
+      this.emit('api-initialized', {
+        pluginStats: this.pluginLoader.getStats()
+      });
+      
+    } catch (error) {
+      throw error;
+    }
+  }
+
+  async dispose() {
+    if (!this.initialized) return;
+    
+    // Disposing Plugin API
+    this.pluginLoader.stopUpdateLoop();
+    
+    const plugins = this.pluginLoader.getAllPlugins();
+    for (const plugin of plugins) {
+      if (plugin.instance) {
+        // Clean up SolidJS reactive context if it exists
+        if (plugin.instance._dispose) {
+          try {
+            plugin.instance._dispose();
+          } catch (error) {
+          }
+        }
+        
+        if (typeof plugin.instance.onDispose === 'function') {
+          try {
+            await plugin.instance.onDispose();
+          } catch (error) {
+          }
+        }
+      }
+    }
+    
+    this.initialized = false;
+    // Plugin API disposed
+  }
+
+  registerTopMenuItem(id, config) {
+    const menuItem = {
+      id,
+      label: config.label,
+      onClick: config.onClick,
+      icon: config.icon,
+      submenu: config.submenu,
+      order: config.order || 100,
+      plugin: config.plugin || this.getCurrentPluginId() || 'unknown'
+    };
+
+    setTopMenuItems(prev => new Map(prev.set(id, menuItem)));
+    return true;
+  }
+
+  registerPropertyTab(id, config) {
+    const tab = {
+      id,
+      title: config.title,
+      component: config.component,
+      icon: config.icon,
+      order: config.order || 100,
+      condition: config.condition || (() => true),
+      plugin: config.plugin || this.getCurrentPluginId() || 'unknown'
+    };
+
+    setPropertyTabs(prev => new Map(prev.set(id, tab)));
+    return true;
+  }
+
+  registerViewportType(id, config) {
+    const viewportType = {
+      id,
+      label: config.label,
+      component: config.component,
+      icon: config.icon,
+      description: config.description || `${config.label} viewport`,
+      plugin: config.plugin || this.getCurrentPluginId() || 'unknown'
+    };
+
+    setViewportTypes(prev => new Map(prev.set(id, viewportType)));
+    return true;
+  }
+
+  registerFooterButton(id, config) {
+    const button = {
+      id,
+      component: config.component,
+      order: config.order || 100,
+      priority: config.priority || 100,
+      section: config.section || 'status',
+      plugin: config.plugin || this.getCurrentPluginId() || 'unknown'
+    };
+
+    setFooterButtons(prev => new Map(prev.set(id, button)));
+    return true;
+  }
+
+
+  registerLayoutComponent(region, component) {
+    const layoutComponent = {
+      component,
+      plugin: this.getCurrentPluginId() || 'unknown'
+    };
+    setLayoutComponents(prev => new Map(prev.set(region, layoutComponent)));
+    return true;
+  }
+
+  unregisterLayoutComponent(region) {
+    setLayoutComponents(prev => {
+      const newMap = new Map(prev);
+      newMap.delete(region);
+      return newMap;
+    });
+    // Layout component unregistered
+    return true;
+  }
+
+  getLayoutComponent(region) {
+    const layoutComponent = layoutComponents().get(region);
+    // Handle both old and new structure for backwards compatibility
+    if (layoutComponent?.component) {
+      return layoutComponent.component;
+    }
+    return layoutComponent;
+  }
+
+  getLayoutComponents() {
+    return layoutComponents();
+  }
+
+  registerPlugin(id, plugin) {
+    const pluginConfig = {
+      id,
+      name: plugin.name,
+      version: plugin.version,
+      description: plugin.description,
+      author: plugin.author,
+      api: plugin.api || {},
+      registeredAt: Date.now()
+    };
+
+    setRegisteredPlugins(prev => new Map(prev.set(id, pluginConfig)));
+    // Plugin registered
+    return true;
+  }
+
+  menu(id, config) { return this.registerTopMenuItem(id, config); }
+  tab(id, config) { return this.registerPropertyTab(id, config); }
+  viewport(id, config) { return this.registerViewportType(id, config); }
+  footer(id, config) { return this.registerFooterButton(id, config); }
+  open(typeId, options) { return this.createViewportTab(typeId, options); }
+
+  createViewportTab(typeId, options = {}) {
+    // Creating viewport tab for typeId
+    const viewportType = viewportTypes().get(typeId);
+    if (!viewportType) {
+      return false;
+    }
+
+    try {
+      import('@/panels/viewport/store').then(({ viewportActions }) => {
+        const newTabId = `${typeId}_${Date.now()}`;
+        const newTab = {
+          id: newTabId,
+          name: options.label || viewportType.label,
+          label: options.label || viewportType.label,
+          type: typeId,
+          icon: viewportType.icon,
+          component: viewportType.component,
+          ...options
+        };
+
+        // Creating viewport tab with new ID
+        viewportActions.addViewportTab(newTab);
+        
+        if (options.setActive !== false) {
+          viewportActions.setActiveViewportTab(newTabId);
+        }
+      }).catch(err => {
+      });
+      
+      return true;
+    } catch (error) {
+      return false;
+    }
+  }
+
+  createSceneViewport(options = {}) {
+    try {
+      import('@/panels/viewport/store').then(({ viewportActions }) => {
+        const newTabId = `viewport-${Date.now()}`;
+        const newTab = {
+          id: newTabId,
+          type: '3d-viewport',
+          name: options.name || 'Scene 1',
+          isPinned: options.isPinned || false,
+          hasUnsavedChanges: options.hasUnsavedChanges || false
+        };
+
+        // Creating 3D scene viewport with new ID
+        viewportActions.addViewportTab(newTab);
+        
+        if (options.setActive !== false) {
+          viewportActions.setActiveViewportTab(newTabId);
+        }
+      }).catch(err => {
+      });
+      
+      return true;
+    } catch (error) {
+      return false;
+    }
+  }
+
+  setPropertiesPanelVisible(visible) {
+    setPropertiesPanelVisible(visible);
+    // Properties panel visibility changed
+  }
+  
+  showProps(visible = true) { return this.setPropertiesPanelVisible(visible); }
+  hideProps() { return this.setPropertiesPanelVisible(false); }
+
+
+  setHorizontalMenuButtonsEnabled(enabled) {
+    setHorizontalMenuButtonsEnabled(enabled);
+    // Horizontal menu buttons toggled
+  }
+  
+  showMenu(enabled = true) { return this.setHorizontalMenuButtonsEnabled(enabled); }
+  hideMenu() { return this.setHorizontalMenuButtonsEnabled(false); }
+
+  setFooterVisible(visible) {
+    setFooterVisible(visible);
+    // Footer visibility changed
+  }
+  
+  showFooter(visible = true) { return this.setFooterVisible(visible); }
+  hideFooter() { return this.setFooterVisible(false); }
+
+  setViewportTabsVisible(visible) {
+    setViewportTabsVisible(visible);
+    // Viewport tabs visibility changed
+  }
+  
+  showTabs(visible = true) { return this.setViewportTabsVisible(visible); }
+  hideTabs() { return this.setViewportTabsVisible(false); }
+
+
+
+  getTopMenuItems() {
+    return Array.from(topMenuItems().values()).sort((a, b) => a.order - b.order);
+  }
+
+  getPropertyTabs() {
+    return Array.from(propertyTabs().values()).sort((a, b) => a.order - b.order);
+  }
+
+
+  getViewportTypes() {
+    return Array.from(viewportTypes().values());
+  }
+
+
+  getFooterButtons() {
+    return Array.from(footerButtons().values()).sort((a, b) => a.order - b.order);
+  }
+
+
+  getPlugins() {
+    return Array.from(registeredPlugins().values());
+  }
+
+  getPlugin(id) {
+    return registeredPlugins().get(id);
+  }
+
+  getPropertiesPanelVisible() {
+    return propertiesPanelVisible();
+  }
+
+
+  getHorizontalMenuButtonsEnabled() {
+    return horizontalMenuButtonsEnabled();
+  }
+
+
+  getPluginLoader() {
+    return this.pluginLoader;
+  }
+
+  getPluginStats() {
+    return this.pluginLoader.getStats();
+  }
+
+  async loadPluginDynamically(pluginId, pluginPath, mainFile) {
+    try {
+      return await this.pluginLoader.loadPluginWithDynamicImport(pluginId, pluginPath, mainFile);
+    } catch (error) {
+      throw error;
+    }
+  }
+
+  async reloadPlugins() {
+    try {
+      await this.pluginLoader.reloadPluginRegistry();
+      
+      // Discover and load any new plugins
+      const discovered = await this.pluginLoader.discoverPlugins();
+      const currentPlugins = new Set(Array.from(plugins().keys()));
+      
+      // Load only new plugins
+      for (const [id, pluginInfo] of discovered) {
+        if (!currentPlugins.has(id)) {
+          try {
+            await this.pluginLoader.loadPlugin(pluginInfo);
+            await this.pluginLoader.initializePlugin(id);
+            await this.pluginLoader.startPlugin(id);
+          } catch (error) {
+          }
+        }
+      }
+      
+      return true;
+    } catch (error) {
+      return false;
+    }
+  }
+
+  emit(eventType, data) {
+    const event = new CustomEvent(`plugin:${eventType}`, { detail: data });
+    document.dispatchEvent(event);
+    // Event emitted: eventType
+  }
+
+  on(eventType, callback) {
+    const handler = (event) => callback(event.detail);
+    document.addEventListener(`plugin:${eventType}`, handler);
+    return () => document.removeEventListener(`plugin:${eventType}`, handler);
+  }
+
+  getInfo() {
+    return {
+      id: this.id,
+      version: this.version,
+      registeredTopMenuItems: topMenuItems().size,
+      registeredPropertyTabs: propertyTabs().size,
+      registeredPlugins: registeredPlugins().size
+    };
+  }
+}
+
+export const pluginAPI = new PluginAPI();
+
+export function PluginAPIProvider(props) {
+  return (
+    <PluginAPIContext.Provider value={pluginAPI}>
+      {props.children}
+    </PluginAPIContext.Provider>
+  );
+}
+
+export function usePluginAPI() {
+  const api = useContext(PluginAPIContext);
+  if (!api) {
+    throw new Error('usePluginAPI must be used within a PluginAPIProvider');
+  }
+  return api;
+}
+
+export function Engine(props) {
+  onMount(async () => {
+    // Starting Renzora Engine
+    try {
+      await pluginAPI.initialize();
+      // Renzora Engine started successfully
+    } catch (error) {
+    }
+  });
+
+  onCleanup(async () => {
+    // Shutting down Renzora Engine
+    try {
+      await pluginAPI.dispose();
+      // Renzora Engine shut down successfully
+    } catch (error) {
+    }
+  });
+
+  return (
+    <PluginAPIProvider>
+      {props.children}
+    </PluginAPIProvider>
+  );
+}
+
+export { createPlugin } from './Plugin.jsx';
+
+export {
+  topMenuItems,
+  propertyTabs,
+  viewportTypes,
+  footerButtons,
+  registeredPlugins,
+  propertiesPanelVisible,
+  horizontalMenuButtonsEnabled,
+  footerVisible,
+  viewportTabsVisible,
+  layoutComponents,
+  plugins,
+  pluginStates,
+  pluginErrors,
+  PLUGIN_STATES
+};
+

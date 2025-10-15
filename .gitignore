@@ -1,0 +1,43 @@
+dist
+.env
+.env*.local
+/node_modules
+
+# Project data
+projects/
+
+# Tauri build artifacts
+src-tauri/target
+src-tauri/gen
+*.app
+*.dmg
+*.deb
+*.rpm
+*.msi
+*.exe
+
+# Rust build artifacts
+server/target
+bridge/target
+target/
+*.dll
+*.node
+*.so
+*.dylib
+
+# IDE
+/.idea
+.project
+.classpath
+*.launch
+.settings/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Claude
+.claude
+CLAUDE.md
+prompt.txt
+AGENTS.md
