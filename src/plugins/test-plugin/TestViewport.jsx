@@ -1,4 +1,4 @@
-import { IconSparkles, IconRocket, IconCode, IconWorld, IconBolt, IconCube } from '@tabler/icons-solidjs';
+import { IconSparkles, IconDeviceGamepad2, IconCode, IconWorld, IconBolt, IconCube } from '@tabler/icons-solidjs';
 import { createSignal } from 'solid-js';
 
 export default function TestViewport(props) {
@@ -17,12 +17,12 @@ export default function TestViewport(props) {
         <div class="text-center mb-12 max-w-2xl">
           <div class="flex items-center justify-center mb-6">
             <div class="w-20 h-20 bg-gradient-to-r from-primary to-secondary rounded-2xl flex items-center justify-center shadow-lg transform rotate-12">
-              <IconRocket class="w-10 h-10 text-white" />
+              <IconDeviceGamepad2 class="w-10 h-10 text-white" />
             </div>
           </div>
           
           <h1 class="text-4xl font-bold bg-gradient-to-r from-primary to-secondary bg-clip-text text-transparent mb-4">
-            Welcome to Rocket
+            Welcome to WebArcade
           </h1>
           
           <p class="text-lg text-base-content/80 leading-relaxed">

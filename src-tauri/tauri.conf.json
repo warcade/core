@@ -1,9 +1,9 @@
 {
-  "productName": "rocket",
+  "productName": "webarcade",
   "version": "1.0.0",
-  "identifier": "com.rocket.framework",
+  "identifier": "com.webarcade.framework",
   "build": {
-    "beforeBuildCommand": "cargo build --release --manifest-path bridge/Cargo.toml --bin rocket-bridge && bunx rspack build --mode production",
+    "beforeBuildCommand": "cargo build --release --manifest-path bridge/Cargo.toml --bin webarcade-bridge && bunx rspack build --mode production",
     "beforeDevCommand": "bun x rspack serve",
     "frontendDist": "../dist",
     "devUrl": "http://localhost:3000"
@@ -12,7 +12,7 @@
     "windows": [
       {
         "label": "main",
-        "title": "Rocket",
+        "title": "WebArcade",
         "resizable": true,
         "fullscreen": false,
         "decorations": false,
@@ -202,7 +202,7 @@
       "icons/icon.ico"
     ],
     "resources": [
-      "../bridge/target/debug/rocket-bridge.exe"
+      "../bridge/target/debug/webarcade-bridge.exe"
     ]
   }
 }

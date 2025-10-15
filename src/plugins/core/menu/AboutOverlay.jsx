@@ -1,5 +1,5 @@
 import { Show } from 'solid-js';
-import { IconX, IconRocket, IconHeart, IconCode, IconWorld, IconUsers } from '@tabler/icons-solidjs';
+import { IconX, IconDeviceGamepad2, IconHeart, IconCode, IconWorld, IconUsers } from '@tabler/icons-solidjs';
 
 export default function AboutOverlay({ isOpen, onClose }) {
   const handleOverlayClick = (e) => {
@@ -19,7 +19,7 @@ export default function AboutOverlay({ isOpen, onClose }) {
           <div class="flex items-center justify-between p-6 border-b border-base-300">
             <div class="flex items-center gap-4">
               <div class="w-12 h-12 bg-gradient-to-br from-primary to-secondary rounded-xl flex items-center justify-center">
-                <IconRocket class="w-6 h-6 text-primary-content" />
+                <IconDeviceGamepad2 class="w-6 h-6 text-primary-content" />
               </div>
               <div>
                 <h2 class="text-2xl font-bold text-base-content">About Renzora Engine</h2>

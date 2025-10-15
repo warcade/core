@@ -1,8 +1,8 @@
-# 🚀 Rocket
+# 🎮 WebArcade
 
 **High-speed development framework for web and desktop applications**
 
-Rocket is a modern, fast development framework that helps you launch web and desktop applications at light speed. Built with SolidJS and Rust, it provides a complete development environment with plugin architecture, real-time file operations, and seamless desktop integration.
+WebArcade is a modern, fast development framework that helps you launch web and desktop applications at light speed. Built with SolidJS and Rust, it provides a complete development environment with plugin architecture, real-time file operations, and seamless desktop integration.
 
 ## ⚡ Features
 
@@ -31,9 +31,9 @@ Rocket is a modern, fast development framework that helps you launch web and des
 ### Launch Your Project
 
 ```bash
-# Clone Rocket
-git clone https://github.com/rocket-framework/rocket
-cd rocket
+# Clone WebArcade
+git clone https://github.com/webarcade-framework/webarcade
+cd webarcade
 
 # Install dependencies
 bun install
@@ -57,7 +57,7 @@ bun run app
 ## 🏗️ Project Structure
 
 ```
-rocket/
+webarcade/
 ├── src/                    # Frontend source code
 │   ├── plugins/           # Plugin system
 │   │   └── core/         # Core plugins
@@ -74,7 +74,7 @@ rocket/
 
 ## 🔌 Plugin System
 
-Rocket features a powerful plugin architecture:
+WebArcade features a powerful plugin architecture:
 
 - **Core Plugins**: Essential functionality (bridge, menu, file operations)
 - **Custom Plugins**: Easy to create and integrate

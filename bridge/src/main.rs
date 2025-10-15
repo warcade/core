@@ -20,7 +20,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .format_timestamp_secs()
         .init();
     
-    info!("Initializing Rocket Bridge server");
+    info!("Initializing WebArcade Bridge server");
     
     // Initialize application state with startup time
     let startup_time = SystemTime::now()

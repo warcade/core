@@ -1,12 +1,12 @@
 [package]
-name = "rocket-bridge"
+name = "webarcade-bridge"
 version = "0.1.0"
 edition = "2021"
-description = "🚀 Rocket Framework - High-speed bridge server for web/desktop development"
+description = "🎮 WebArcade Framework - High-speed bridge server for web/desktop development"
 authors = ["Renzora"]
 
 [[bin]]
-name = "rocket-bridge"
+name = "webarcade-bridge"
 path = "src/main.rs"
 
 [dependencies]

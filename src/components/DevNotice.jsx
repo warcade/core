@@ -31,7 +31,7 @@ export default function DevNotice() {
           </div>
 
           <p class="text-sm text-gray-300 leading-relaxed mb-4">
-            This is an early development version of Rocket. Expect breaking changes, experimental features, and potential bugs.
+            This is an early development version of WebArcade. Expect breaking changes, experimental features, and potential bugs.
           </p>
 
           <div class="flex gap-2 flex-wrap">

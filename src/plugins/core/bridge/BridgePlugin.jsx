@@ -12,8 +12,8 @@ export default function BridgePlugin() {
     api.registerPlugin('bridge-plugin', {
       name: 'Bridge Server Plugin',
       version: '1.0.0',
-      description: 'Manages communication between Rocket framework and project files',
-      author: 'Rocket Framework Team'
+      description: 'Manages communication between WebArcade framework and project files',
+      author: 'WebArcade Framework Team'
     });
 
     // Register bridge viewport

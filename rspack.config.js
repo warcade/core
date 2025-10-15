@@ -168,7 +168,7 @@ if (!isProduction) {
       const protocol = devServer.server.listening && devServer.options.server?.type === 'https' ? 'https' : 'http';
       const url = `${protocol}://localhost:${port}`;
       
-      console.log(`\n🚀 Rocket Development Server\n   Running at: ${url}\n`);
+      console.log(`\n🎮 WebArcade Development Server\n   Running at: ${url}\n`);
     },
     server: (() => {
       try {

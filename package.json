@@ -1,5 +1,5 @@
 {
-  "name": "rocket",
+  "name": "webarcade",
   "private": true,
   "version": "1.0.0",
   "type": "module",
@@ -7,8 +7,8 @@
   "scripts": {
     "web": "bun run kill && concurrently \"bun run bridge\" \"npx rspack serve\"",
     "app": "bun run kill && concurrently \"bun run bridge\" \"npx tauri dev\"",
-    "bridge": "cargo run --manifest-path bridge/Cargo.toml --bin rocket-bridge --features nvidia",
-    "build:bridge": "bun run kill && cargo build --release --manifest-path bridge/Cargo.toml --bin rocket-bridge --features nvidia",
+    "bridge": "cargo run --manifest-path bridge/Cargo.toml --bin webarcade-bridge --features nvidia",
+    "build:bridge": "bun run kill && cargo build --release --manifest-path bridge/Cargo.toml --bin webarcade-bridge --features nvidia",
     "build:web": "bun run kill && bun run build:bridge && npx rspack build --mode production",
     "serve": "bun run kill && concurrently \"bun run bridge\" \"npx serve dist -p 3000\"",
     "build:app": "bun run kill && npx tauri build",
