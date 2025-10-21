@@ -9,6 +9,13 @@
     },
     {
       "enabled": true,
+      "id": "default-plugin",
+      "main": "index.jsx",
+      "path": "/src/plugins/core/default",
+      "priority": -1
+    },
+    {
+      "enabled": true,
       "id": "web-browser-plugin",
       "main": "index.jsx",
       "path": "/src/plugins/core/web-browser",
@@ -23,16 +30,16 @@
     },
     {
       "enabled": true,
-      "id": "test-plugin",
-      "main": "index.jsx",
-      "path": "/src/plugins/test-plugin",
-      "priority": 1
-    },
-        {
-      "enabled": true,
       "id": "menu",
       "main": "index.jsx",
       "path": "/src/plugins/core/menu",
+      "priority": 1
+    },
+    {
+      "enabled": true,
+      "id": "twitch-plugin",
+      "main": "index.jsx",
+      "path": "/src/plugins/core/twitch",
       "priority": 1
     }
   ]

@@ -284,8 +284,8 @@ function TabMenu(props) {
 
 
   return (
-    <div class="relative w-10 h-full bg-base-300 border-r border-base-300/70 flex flex-col pointer-events-auto no-select">
-      <div class="flex-1 overflow-hidden h-full flex flex-col">
+    <div class="relative w-8 h-full bg-base-200 border-r border-base-300/50 flex flex-col pointer-events-auto no-select">
+      <div class="flex-1 overflow-hidden h-full flex flex-col gap-0.5 py-1">
         <For each={tools()}>
           {(tool) => {
             const isDragged = () => dragState().draggedTool?.id === tool.id;
@@ -300,23 +300,23 @@ function TabMenu(props) {
                 onDragLeave={handleDragLeave}
                 onDrop={(e) => handleDrop(e, tool, false)}
                 onDragEnd={handleDragEnd}
-                class={`p-1.5 transition-all duration-200 group relative select-none w-full flex items-center justify-center border border-transparent ${
-                  isDragged() 
-                    ? 'opacity-50 cursor-pointerbing scale-95' 
-                    : props.selectedTool === tool.id 
-                      ? 'bg-primary/30 text-primary cursor-pointer border-primary/10' 
-                      : 'text-base-content/60 hover:text-base-content hover:bg-base-200 cursor-pointer'
+                class={`btn btn-ghost btn-xs h-7 w-7 min-h-0 p-0 transition-all duration-200 group relative select-none flex items-center justify-center ${
+                  isDragged()
+                    ? 'opacity-50 cursor-grabbing scale-95'
+                    : props.selectedTool === tool.id
+                      ? 'btn-primary bg-primary/20'
+                      : 'text-base-content/60 hover:text-base-content'
                 }`}
                 title={tool.title}
               >
-                <tool.icon class="w-5 h-5" />
+                <tool.icon class="w-4 h-4" />
                 
                 {isDragOver() && (
                   <div class="absolute inset-x-0 top-0 h-0.5 bg-primary rounded-full"></div>
                 )}
                 
                 {!dragState().isDragging && (
-                  <div class={`absolute ${shouldTooltipGoRight() ? 'left-full ml-1' : 'right-full mr-1'} top-1/2 -translate-y-1/2 bg-base-300/95 backdrop-blur-sm border border-base-300 text-base-content text-xs px-3 py-1.5 rounded-md opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap shadow-2xl`} 
+                  <div class={`absolute ${shouldTooltipGoRight() ? 'left-full ml-1' : 'right-full mr-1'} top-1/2 -translate-y-1/2 bg-base-300/95 backdrop-blur-sm border border-base-300 text-base-content text-[11px] px-2 py-1 rounded-md opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap shadow-2xl`}
                        style={{ 'z-index': 999999 }}>
                     {tool.title}
                     <div class={`absolute ${shouldTooltipGoRight() ? 'right-full' : 'left-full'} top-1/2 -translate-y-1/2 w-0 h-0 ${shouldTooltipGoRight() ? 'border-r-4 border-r-base-300' : 'border-l-4 border-l-base-300'} border-t-4 border-t-transparent border-b-4 border-b-transparent`}></div>

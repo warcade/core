@@ -12,6 +12,7 @@ use crate::file_sync::{read_file_content, write_file_content, delete_file_or_dir
 use crate::file_watcher::{set_current_project};
 use crate::system_monitor::get_system_stats;
 use crate::modules::memory_cache::{MemoryCache};
+use crate::modules::twitch::{TwitchManager, TwitchConfig, SimpleCommand, PermissionLevel};
 
 // Unified file operations
 #[derive(Debug)]
@@ -34,6 +35,7 @@ struct UnifiedFileRequest {
 // Static variables for shared state
 static STARTUP_TIME: OnceLock<u64> = OnceLock::new();
 static MEMORY_CACHE: OnceLock<Arc<tokio::sync::Mutex<MemoryCache>>> = OnceLock::new();
+static TWITCH_MANAGER: OnceLock<Arc<TwitchManager>> = OnceLock::new();
 
 pub fn set_startup_time(timestamp: u64) {
     STARTUP_TIME.set(timestamp).ok();
@@ -41,6 +43,14 @@ pub fn set_startup_time(timestamp: u64) {
 
 pub fn set_memory_cache(memory_cache: Arc<tokio::sync::Mutex<MemoryCache>>) {
     MEMORY_CACHE.set(memory_cache).ok();
+}
+
+pub fn set_twitch_manager(manager: Arc<TwitchManager>) {
+    TWITCH_MANAGER.set(manager).ok();
+}
+
+fn get_twitch_manager() -> Option<&'static Arc<TwitchManager>> {
+    TWITCH_MANAGER.get()
 }
 
 pub async fn handle_http_request(req: Request<hyper::body::Incoming>) -> Result<Response<BoxBody<Bytes, Infallible>>, Infallible> {
@@ -190,6 +200,58 @@ pub async fn handle_http_request(req: Request<hyper::body::Incoming>) -> Result<
         (&Method::GET, "/system/stats") => handle_get_system_stats(),
         (&Method::POST, "/restart") => handle_restart_bridge(),
         (&Method::POST, "/clear-cache") => handle_clear_cache(),
+
+        // Twitch endpoints
+        (&Method::POST, "/twitch/start") => return Ok(handle_twitch_start().await),
+        (&Method::POST, "/twitch/stop") => return Ok(handle_twitch_stop().await),
+        (&Method::GET, "/twitch/status") => return Ok(handle_twitch_status().await),
+        (&Method::GET, "/twitch/auth-url") => return Ok(handle_twitch_auth_url().await),
+        (&Method::POST, "/twitch/callback") => {
+            match &body {
+                Some(body_content) => return Ok(handle_twitch_callback(body_content).await),
+                None => error_response(StatusCode::BAD_REQUEST, "Missing request body"),
+            }
+        }
+        (&Method::POST, "/twitch/send-message") => {
+            match &body {
+                Some(body_content) => return Ok(handle_twitch_send_message(body_content).await),
+                None => error_response(StatusCode::BAD_REQUEST, "Missing request body"),
+            }
+        }
+        (&Method::GET, "/twitch/commands") => return Ok(handle_twitch_get_commands().await),
+        (&Method::POST, "/twitch/register-command") => {
+            match &body {
+                Some(body_content) => return Ok(handle_twitch_register_command(body_content).await),
+                None => error_response(StatusCode::BAD_REQUEST, "Missing request body"),
+            }
+        }
+        (&Method::POST, "/twitch/unregister-command") => {
+            match &body {
+                Some(body_content) => return Ok(handle_twitch_unregister_command(body_content).await),
+                None => error_response(StatusCode::BAD_REQUEST, "Missing request body"),
+            }
+        }
+        (&Method::GET, "/twitch/config") => return Ok(handle_twitch_get_config().await),
+        (&Method::POST, "/twitch/config") => {
+            match &body {
+                Some(body_content) => return Ok(handle_twitch_save_config(body_content).await),
+                None => error_response(StatusCode::BAD_REQUEST, "Missing request body"),
+            }
+        }
+        (&Method::POST, "/twitch/join-channel") => {
+            match &body {
+                Some(body_content) => return Ok(handle_twitch_join_channel(body_content).await),
+                None => error_response(StatusCode::BAD_REQUEST, "Missing request body"),
+            }
+        }
+        (&Method::POST, "/twitch/part-channel") => {
+            match &body {
+                Some(body_content) => return Ok(handle_twitch_part_channel(body_content).await),
+                None => error_response(StatusCode::BAD_REQUEST, "Missing request body"),
+            }
+        }
+        (&Method::POST, "/twitch/revoke") => return Ok(handle_twitch_revoke().await),
+
         _ => {
             warn!("❓ Unknown route: {} {}", method, path);
             error_response(StatusCode::NOT_FOUND, "Not Found")
@@ -512,4 +574,449 @@ fn handle_clear_cache() -> Response<BoxBody<Bytes, Infallible>> {
         error: None,
     };
     json_response(&response)
+}
+
+// ========== Twitch Handlers ==========
+
+async fn handle_twitch_start() -> Response<BoxBody<Bytes, Infallible>> {
+    match get_twitch_manager() {
+        Some(manager) => {
+            match manager.start().await {
+                Ok(_) => {
+                    let response = ApiResponse {
+                        success: true,
+                        content: Some("Twitch bot started successfully".to_string()),
+                        error: None,
+                    };
+                    json_response(&response)
+                }
+                Err(e) => {
+                    error!("Failed to start Twitch bot: {}", e);
+                    error_response(StatusCode::INTERNAL_SERVER_ERROR, &format!("Failed to start bot: {}", e))
+                }
+            }
+        }
+        None => error_response(StatusCode::SERVICE_UNAVAILABLE, "Twitch manager not initialized"),
+    }
+}
+
+async fn handle_twitch_stop() -> Response<BoxBody<Bytes, Infallible>> {
+    match get_twitch_manager() {
+        Some(manager) => {
+            match manager.stop().await {
+                Ok(_) => {
+                    let response = ApiResponse {
+                        success: true,
+                        content: Some("Twitch bot stopped successfully".to_string()),
+                        error: None,
+                    };
+                    json_response(&response)
+                }
+                Err(e) => {
+                    error!("Failed to stop Twitch bot: {}", e);
+                    error_response(StatusCode::INTERNAL_SERVER_ERROR, &format!("Failed to stop bot: {}", e))
+                }
+            }
+        }
+        None => error_response(StatusCode::SERVICE_UNAVAILABLE, "Twitch manager not initialized"),
+    }
+}
+
+async fn handle_twitch_status() -> Response<BoxBody<Bytes, Infallible>> {
+    match get_twitch_manager() {
+        Some(manager) => {
+            let stats = manager.get_stats().await;
+            json_response(&stats)
+        }
+        None => error_response(StatusCode::SERVICE_UNAVAILABLE, "Twitch manager not initialized"),
+    }
+}
+
+async fn handle_twitch_auth_url() -> Response<BoxBody<Bytes, Infallible>> {
+    match get_twitch_manager() {
+        Some(manager) => {
+            let auth = manager.get_auth();
+            let scopes = crate::modules::twitch::TwitchAuth::get_default_scopes();
+
+            match auth.generate_auth_url(scopes).await {
+                Ok(url) => {
+                    let response = serde_json::json!({
+                        "success": true,
+                        "url": url
+                    });
+                    json_response(&response)
+                }
+                Err(e) => {
+                    error!("Failed to generate auth URL: {}", e);
+                    error_response(StatusCode::INTERNAL_SERVER_ERROR, &format!("Failed to generate auth URL: {}", e))
+                }
+            }
+        }
+        None => error_response(StatusCode::SERVICE_UNAVAILABLE, "Twitch manager not initialized"),
+    }
+}
+
+async fn handle_twitch_callback(body: &str) -> Response<BoxBody<Bytes, Infallible>> {
+    #[derive(serde::Deserialize)]
+    struct CallbackRequest {
+        code: String,
+        state: String,
+    }
+
+    match get_twitch_manager() {
+        Some(manager) => {
+            match serde_json::from_str::<CallbackRequest>(body) {
+                Ok(req) => {
+                    let auth = manager.get_auth();
+
+                    // Verify state
+                    match auth.verify_state(&req.state).await {
+                        Ok(true) => {
+                            // Exchange code for token
+                            match auth.exchange_code(&req.code).await {
+                                Ok(_token) => {
+                                    let response = ApiResponse {
+                                        success: true,
+                                        content: Some("Authentication successful".to_string()),
+                                        error: None,
+                                    };
+                                    json_response(&response)
+                                }
+                                Err(e) => {
+                                    error!("Failed to exchange code: {}", e);
+                                    error_response(StatusCode::INTERNAL_SERVER_ERROR, &format!("Authentication failed: {}", e))
+                                }
+                            }
+                        }
+                        Ok(false) => {
+                            error_response(StatusCode::BAD_REQUEST, "Invalid state (CSRF check failed)")
+                        }
+                        Err(e) => {
+                            error!("Failed to verify state: {}", e);
+                            error_response(StatusCode::INTERNAL_SERVER_ERROR, "State verification failed")
+                        }
+                    }
+                }
+                Err(e) => {
+                    error_response(StatusCode::BAD_REQUEST, &format!("Invalid request: {}", e))
+                }
+            }
+        }
+        None => error_response(StatusCode::SERVICE_UNAVAILABLE, "Twitch manager not initialized"),
+    }
+}
+
+async fn handle_twitch_send_message(body: &str) -> Response<BoxBody<Bytes, Infallible>> {
+    #[derive(serde::Deserialize)]
+    struct SendMessageRequest {
+        channel: String,
+        message: String,
+    }
+
+    match get_twitch_manager() {
+        Some(manager) => {
+            match serde_json::from_str::<SendMessageRequest>(body) {
+                Ok(req) => {
+                    match manager.send_message(&req.channel, &req.message).await {
+                        Ok(_) => {
+                            let response = ApiResponse {
+                                success: true,
+                                content: Some("Message sent".to_string()),
+                                error: None,
+                            };
+                            json_response(&response)
+                        }
+                        Err(e) => {
+                            error!("Failed to send message: {}", e);
+                            error_response(StatusCode::INTERNAL_SERVER_ERROR, &format!("Failed to send message: {}", e))
+                        }
+                    }
+                }
+                Err(e) => {
+                    error_response(StatusCode::BAD_REQUEST, &format!("Invalid request: {}", e))
+                }
+            }
+        }
+        None => error_response(StatusCode::SERVICE_UNAVAILABLE, "Twitch manager not initialized"),
+    }
+}
+
+async fn handle_twitch_get_commands() -> Response<BoxBody<Bytes, Infallible>> {
+    match get_twitch_manager() {
+        Some(manager) => {
+            let commands = manager.get_commands().await;
+
+            let command_info: Vec<serde_json::Value> = commands
+                .iter()
+                .map(|cmd| {
+                    serde_json::json!({
+                        "name": cmd.name,
+                        "aliases": cmd.aliases,
+                        "description": cmd.description,
+                        "usage": cmd.usage,
+                        "permission": cmd.permission,
+                        "cooldown": cmd.cooldown_seconds,
+                        "enabled": cmd.enabled,
+                    })
+                })
+                .collect();
+
+            json_response(&command_info)
+        }
+        None => error_response(StatusCode::SERVICE_UNAVAILABLE, "Twitch manager not initialized"),
+    }
+}
+
+async fn handle_twitch_register_command(body: &str) -> Response<BoxBody<Bytes, Infallible>> {
+    #[derive(serde::Deserialize)]
+    struct RegisterCommandRequest {
+        name: String,
+        aliases: Option<Vec<String>>,
+        description: String,
+        permission: Option<String>,
+        response: String,
+    }
+
+    match get_twitch_manager() {
+        Some(manager) => {
+            match serde_json::from_str::<RegisterCommandRequest>(body) {
+                Ok(req) => {
+                    let permission = match req.permission.as_deref() {
+                        Some("subscriber") => PermissionLevel::Subscriber,
+                        Some("vip") => PermissionLevel::Vip,
+                        Some("moderator") => PermissionLevel::Moderator,
+                        Some("broadcaster") => PermissionLevel::Broadcaster,
+                        _ => PermissionLevel::Everyone,
+                    };
+
+                    let simple_cmd = SimpleCommand {
+                        name: req.name.clone(),
+                        aliases: req.aliases.unwrap_or_default(),
+                        description: req.description,
+                        permission,
+                        response: req.response,
+                    };
+
+                    manager.register_simple_command(simple_cmd).await;
+
+                    let response = ApiResponse {
+                        success: true,
+                        content: Some(format!("Command '{}' registered", req.name)),
+                        error: None,
+                    };
+                    json_response(&response)
+                }
+                Err(e) => {
+                    error_response(StatusCode::BAD_REQUEST, &format!("Invalid request: {}", e))
+                }
+            }
+        }
+        None => error_response(StatusCode::SERVICE_UNAVAILABLE, "Twitch manager not initialized"),
+    }
+}
+
+async fn handle_twitch_unregister_command(body: &str) -> Response<BoxBody<Bytes, Infallible>> {
+    #[derive(serde::Deserialize)]
+    struct UnregisterCommandRequest {
+        name: String,
+    }
+
+    match get_twitch_manager() {
+        Some(manager) => {
+            match serde_json::from_str::<UnregisterCommandRequest>(body) {
+                Ok(req) => {
+                    manager.unregister_command(&req.name).await;
+
+                    let response = ApiResponse {
+                        success: true,
+                        content: Some(format!("Command '{}' unregistered", req.name)),
+                        error: None,
+                    };
+                    json_response(&response)
+                }
+                Err(e) => {
+                    error_response(StatusCode::BAD_REQUEST, &format!("Invalid request: {}", e))
+                }
+            }
+        }
+        None => error_response(StatusCode::SERVICE_UNAVAILABLE, "Twitch manager not initialized"),
+    }
+}
+
+async fn handle_twitch_get_config() -> Response<BoxBody<Bytes, Infallible>> {
+    match get_twitch_manager() {
+        Some(manager) => {
+            let config_manager = manager.get_config_manager();
+
+            match config_manager.load() {
+                Ok(config) => {
+                    // Don't send sensitive data
+                    let safe_config = serde_json::json!({
+                        "client_id": config.client_id,
+                        "bot_username": config.bot_username,
+                        "channels": config.channels,
+                        "has_token": config.access_token.is_some(),
+                    });
+                    json_response(&safe_config)
+                }
+                Err(e) => {
+                    error!("Failed to load config: {}", e);
+                    error_response(StatusCode::INTERNAL_SERVER_ERROR, &format!("Failed to load config: {}", e))
+                }
+            }
+        }
+        None => error_response(StatusCode::SERVICE_UNAVAILABLE, "Twitch manager not initialized"),
+    }
+}
+
+async fn handle_twitch_save_config(body: &str) -> Response<BoxBody<Bytes, Infallible>> {
+    #[derive(serde::Deserialize)]
+    struct SaveConfigRequest {
+        client_id: Option<String>,
+        client_secret: Option<String>,
+        bot_username: Option<String>,
+        channels: Option<Vec<String>>,
+    }
+
+    match get_twitch_manager() {
+        Some(manager) => {
+            let config_manager = manager.get_config_manager();
+
+            match serde_json::from_str::<SaveConfigRequest>(body) {
+                Ok(req) => {
+                    match config_manager.load() {
+                        Ok(mut config) => {
+                            if let Some(client_id) = req.client_id {
+                                config.client_id = client_id;
+                            }
+                            if let Some(client_secret) = req.client_secret {
+                                config.client_secret = client_secret;
+                            }
+                            if let Some(bot_username) = req.bot_username {
+                                config.bot_username = bot_username;
+                            }
+                            if let Some(channels) = req.channels {
+                                config.channels = channels;
+                            }
+
+                            match config_manager.save(&config) {
+                                Ok(_) => {
+                                    let response = ApiResponse {
+                                        success: true,
+                                        content: Some("Config saved successfully".to_string()),
+                                        error: None,
+                                    };
+                                    json_response(&response)
+                                }
+                                Err(e) => {
+                                    error!("Failed to save config: {}", e);
+                                    error_response(StatusCode::INTERNAL_SERVER_ERROR, &format!("Failed to save config: {}", e))
+                                }
+                            }
+                        }
+                        Err(e) => {
+                            error!("Failed to load config: {}", e);
+                            error_response(StatusCode::INTERNAL_SERVER_ERROR, &format!("Failed to load config: {}", e))
+                        }
+                    }
+                }
+                Err(e) => {
+                    error_response(StatusCode::BAD_REQUEST, &format!("Invalid request: {}", e))
+                }
+            }
+        }
+        None => error_response(StatusCode::SERVICE_UNAVAILABLE, "Twitch manager not initialized"),
+    }
+}
+
+async fn handle_twitch_join_channel(body: &str) -> Response<BoxBody<Bytes, Infallible>> {
+    #[derive(serde::Deserialize)]
+    struct JoinChannelRequest {
+        channel: String,
+    }
+
+    match get_twitch_manager() {
+        Some(manager) => {
+            match serde_json::from_str::<JoinChannelRequest>(body) {
+                Ok(req) => {
+                    match manager.join_channel(&req.channel).await {
+                        Ok(_) => {
+                            let response = ApiResponse {
+                                success: true,
+                                content: Some(format!("Joined channel: {}", req.channel)),
+                                error: None,
+                            };
+                            json_response(&response)
+                        }
+                        Err(e) => {
+                            error!("Failed to join channel: {}", e);
+                            error_response(StatusCode::INTERNAL_SERVER_ERROR, &format!("Failed to join channel: {}", e))
+                        }
+                    }
+                }
+                Err(e) => {
+                    error_response(StatusCode::BAD_REQUEST, &format!("Invalid request: {}", e))
+                }
+            }
+        }
+        None => error_response(StatusCode::SERVICE_UNAVAILABLE, "Twitch manager not initialized"),
+    }
+}
+
+async fn handle_twitch_part_channel(body: &str) -> Response<BoxBody<Bytes, Infallible>> {
+    #[derive(serde::Deserialize)]
+    struct PartChannelRequest {
+        channel: String,
+    }
+
+    match get_twitch_manager() {
+        Some(manager) => {
+            match serde_json::from_str::<PartChannelRequest>(body) {
+                Ok(req) => {
+                    match manager.part_channel(&req.channel).await {
+                        Ok(_) => {
+                            let response = ApiResponse {
+                                success: true,
+                                content: Some(format!("Parted channel: {}", req.channel)),
+                                error: None,
+                            };
+                            json_response(&response)
+                        }
+                        Err(e) => {
+                            error!("Failed to part channel: {}", e);
+                            error_response(StatusCode::INTERNAL_SERVER_ERROR, &format!("Failed to part channel: {}", e))
+                        }
+                    }
+                }
+                Err(e) => {
+                    error_response(StatusCode::BAD_REQUEST, &format!("Invalid request: {}", e))
+                }
+            }
+        }
+        None => error_response(StatusCode::SERVICE_UNAVAILABLE, "Twitch manager not initialized"),
+    }
+}
+
+async fn handle_twitch_revoke() -> Response<BoxBody<Bytes, Infallible>> {
+    match get_twitch_manager() {
+        Some(manager) => {
+            let auth = manager.get_auth();
+
+            match auth.revoke_token().await {
+                Ok(_) => {
+                    let response = ApiResponse {
+                        success: true,
+                        content: Some("Token revoked successfully".to_string()),
+                        error: None,
+                    };
+                    json_response(&response)
+                }
+                Err(e) => {
+                    error!("Failed to revoke token: {}", e);
+                    error_response(StatusCode::INTERNAL_SERVER_ERROR, &format!("Failed to revoke token: {}", e))
+                }
+            }
+        }
+        None => error_response(StatusCode::SERVICE_UNAVAILABLE, "Twitch manager not initialized"),
+    }
 }

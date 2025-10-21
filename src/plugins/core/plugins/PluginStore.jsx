@@ -1,11 +1,16 @@
-import { createSignal, createEffect } from 'solid-js';
+import { createSignal, createEffect, createRoot } from 'solid-js';
 import pluginsConfig from '@/api/plugin/plugins.json';
 
-// Create reactive signals for plugin management
-const [pluginConfigs, setPluginConfigs] = createSignal(new Map());
-const [pluginInstances, setPluginInstances] = createSignal(new Map());
-const [pluginStates, setPluginStates] = createSignal(new Map());
-const [pluginErrors, setPluginErrors] = createSignal(new Map());
+// Create reactive signals for plugin management within a root to avoid disposal warnings
+let pluginConfigs, setPluginConfigs, pluginInstances, setPluginInstances;
+let pluginStates, setPluginStates, pluginErrors, setPluginErrors;
+
+createRoot(() => {
+  [pluginConfigs, setPluginConfigs] = createSignal(new Map());
+  [pluginInstances, setPluginInstances] = createSignal(new Map());
+  [pluginStates, setPluginStates] = createSignal(new Map());
+  [pluginErrors, setPluginErrors] = createSignal(new Map());
+});
 
 // Plugin states enum
 export const PLUGIN_STATES = {
@@ -56,9 +61,6 @@ const initializePluginConfigs = () => {
   
   setPluginConfigs(configs);
 };
-
-// Initialize on import
-initializePluginConfigs();
 
 // Plugin Store API
 export const pluginStore = {
@@ -364,15 +366,20 @@ export const pluginStore = {
   }
 };
 
-// Auto-emit events when things change
-createEffect(() => {
-  const configs = pluginConfigs();
-  pluginStore.emit('configs-changed', Array.from(configs.values()));
-});
+// Initialize plugin configurations from JSON and localStorage
+initializePluginConfigs();
 
-createEffect(() => {
-  const states = pluginStates();
-  pluginStore.emit('states-changed', Object.fromEntries(states));
+// Auto-emit events when things change (after pluginStore is defined)
+createRoot(() => {
+  createEffect(() => {
+    const configs = pluginConfigs();
+    pluginStore.emit('configs-changed', Array.from(configs.values()));
+  });
+
+  createEffect(() => {
+    const states = pluginStates();
+    pluginStore.emit('states-changed', Object.fromEntries(states));
+  });
 });
 
 // Export reactive signals for direct access if needed

@@ -23,23 +23,14 @@ export default createPlugin({
       description: 'Code editor for scripts and text files'
     });
     
-    const effect = createEffect(() => {
-      const activeTabId = viewportStore.activeTabId;
-      const tabs = viewportStore.tabs;
-      const activeTab = tabs.find(tab => tab.id === activeTabId);
-      
-      
-      if (activeTab && activeTab.type === 'code-editor') {
-        api.hideToolbar();
-        requestAnimationFrame(() => api.hideToolbar());
-        setTimeout(() => api.hideToolbar(), 10);
-        setTimeout(() => api.hideToolbar(), 100);
-      } else if (activeTab) {
-        api.showToolbar();
-      }
-    });
-    
-    api.toolbarEffect = effect;
+    // Toolbar visibility is now managed elsewhere
+    // const effect = createEffect(() => {
+    //   const activeTabId = viewportStore.activeTabId;
+    //   const tabs = viewportStore.tabs;
+    //   const activeTab = tabs.find(tab => tab.id === activeTabId);
+    // });
+
+    // api.toolbarEffect = effect;
     
   },
 
@@ -48,18 +39,10 @@ export default createPlugin({
   },
 
   async onStop(api) {
-    
-    if (api.toolbarEffect) {
-      api.toolbarEffect();
-      api.toolbarEffect = null;
-    }
-    
-    const { pluginAPI } = await import('@/api/plugin');
-    pluginAPI.showToolbar();
+    // Cleanup if needed
   },
 
   async onDispose() {
-    const { pluginAPI } = await import('@/api/plugin');
-    pluginAPI.showToolbar();
+    // Cleanup if needed
   }
 });

@@ -77,6 +77,18 @@ const config = {
     new rspack.HtmlRspackPlugin({
       template: './src/index.html',
     }),
+    new rspack.CopyRspackPlugin({
+      patterns: [
+        {
+          from: 'public',
+          to: '.',
+          noErrorOnMissing: true,
+          globOptions: {
+            ignore: ['**/.*'],
+          },
+        },
+      ],
+    }),
     new rspack.DefinePlugin({
       'process.env.NODE_ENV': JSON.stringify(isProduction ? 'production' : 'development'),
       'import.meta.env.DEV': JSON.stringify(!isProduction),
@@ -139,11 +151,24 @@ if (!isProduction) {
     host: 'localhost',
     hot: true,
     liveReload: false,
-    historyApiFallback: true,
-    static: {
-      directory: resolve(import.meta.dirname, 'dist'),
-      publicPath: '/',
+    historyApiFallback: {
+      disableDotRule: true,
+      rewrites: [
+        { from: /^\/twitch\/callback$/, to: '/twitch-callback.html' },
+        { from: /^\/twitch\/callback\?.*$/, to: '/twitch-callback.html' },
+      ],
     },
+    static: [
+      {
+        directory: resolve(import.meta.dirname, 'public'),
+        publicPath: '/',
+        watch: true,
+      },
+      {
+        directory: resolve(import.meta.dirname, 'dist'),
+        publicPath: '/',
+      },
+    ],
     headers: {
       'Access-Control-Allow-Origin': '*',
       'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, PATCH, OPTIONS',
@@ -152,6 +177,11 @@ if (!isProduction) {
     client: {
       logging: 'error',
       progress: false,
+      webSocketURL: {
+        protocol: 'wss',
+        hostname: 'localhost',
+        port: 3000,
+      },
     },
     setupExitSignals: false,
     compress: false,
@@ -160,6 +190,14 @@ if (!isProduction) {
       writeToDisk: false,
     },
     allowedHosts: 'all',
+    proxy: [
+      {
+        context: ['/system', '/health', '/twitch'],
+        target: 'http://localhost:3001',
+        changeOrigin: true,
+        secure: false,
+      },
+    ],
     onListening: function (devServer) {
       if (!devServer) {
         throw new Error('webpack-dev-server is not defined');

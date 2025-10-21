@@ -41,3 +41,7 @@ Thumbs.db
 CLAUDE.md
 prompt.txt
 AGENTS.md
+
+# Sensitive config files
+config/.twitch_key
+config/twitch_config.toml

@@ -6,7 +6,7 @@
     "beforeBuildCommand": "cargo build --release --manifest-path bridge/Cargo.toml --bin webarcade-bridge && bunx rspack build --mode production",
     "beforeDevCommand": "bun x rspack serve",
     "frontendDist": "../dist",
-    "devUrl": "http://localhost:3000"
+    "devUrl": "https://localhost:3000"
   },
   "app": {
     "windows": [
@@ -23,7 +23,7 @@
         "dragDropEnabled": false,
         "devtools": true,
         "transparent": true,
-        "visible": false
+        "visible": true
       }
     ],
     "security": {

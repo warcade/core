@@ -11,6 +11,7 @@ path = "src/main.rs"
 
 [dependencies]
 tokio = { version = "1", features = ["rt-multi-thread", "net", "fs", "sync", "time", "macros", "io-util"] }
+tokio-stream = { version = "0.1", features = ["time"] }
 hyper = { version = "1.0", features = ["server", "http1", "http2"] }
 hyper-util = { version = "0.1", features = ["tokio"] }
 http-body-util = "0.1"
@@ -35,6 +36,19 @@ dashmap = "6.0"
 # Error handling
 thiserror = "1.0"
 anyhow = "1.0"
+# Twitch integration
+twitch-irc = "5.0"
+reqwest = { version = "0.12", features = ["json"] }
+toml = "0.8"
+url = "2.5"
+rand = "0.8"
+aes-gcm = "0.10"
+# System utilities
+dirs = "5.0"
+# Database
+rusqlite = { version = "0.32", features = ["bundled"] }
+# Audio playback
+rodio = "0.17"
 
 [features]
 default = []

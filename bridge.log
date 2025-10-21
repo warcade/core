@@ -1,0 +1,2 @@
+🔍 File watcher started for: C:\Users\piano\webarcade\projects
+[2025-10-19T09:19:30Z ERROR webarcade_bridge::modules::websocket_server] WebSocket error from 127.0.0.1:56377: IO error: An existing connection was forcibly closed by the remote host. (os error 10054)

@@ -7,8 +7,20 @@ use futures_util::{SinkExt, StreamExt, stream::SplitSink};
 use log::{info, warn, error, debug};
 use tokio::sync::broadcast;
 use crate::file_watcher::get_file_change_receiver;
+use super::twitch::{TwitchEvent, TwitchManager};
 
 pub type WsSink = SplitSink<WebSocketStream<TcpStream>, Message>;
+
+// Global managers for WebSocket access
+static TWITCH_MANAGER: tokio::sync::OnceCell<Option<Arc<TwitchManager>>> = tokio::sync::OnceCell::const_new();
+
+pub async fn set_twitch_manager(manager: Option<Arc<TwitchManager>>) {
+    let _ = TWITCH_MANAGER.set(manager);
+}
+
+pub async fn get_twitch_manager() -> Option<Arc<TwitchManager>> {
+    TWITCH_MANAGER.get().and_then(|m| m.clone())
+}
 
 pub async fn start_websocket_server(port: u16) -> Result<(), Box<dyn std::error::Error>> {
     let addr = SocketAddr::from(([127, 0, 0, 1], port));
@@ -58,6 +70,14 @@ async fn handle_websocket_connection(stream: TcpStream, client_addr: SocketAddr)
         }
     };
 
+    // Get Twitch event receiver if available
+    let mut twitch_receiver_opt: Option<broadcast::Receiver<TwitchEvent>> = None;
+    if let Some(twitch_manager) = get_twitch_manager().await {
+        let receiver = twitch_manager.get_event_sender().subscribe();
+        twitch_receiver_opt = Some(receiver);
+        info!("📡 WebSocket client {} subscribed to Twitch events", client_addr);
+    }
+
     info!("📡 WebSocket client {} subscribed to file changes", client_addr);
 
     loop {
@@ -90,12 +110,12 @@ async fn handle_websocket_connection(stream: TcpStream, client_addr: SocketAddr)
                 match file_change {
                     Ok(change_message) => {
                         debug!("📡 Broadcasting file change to {}: {}", client_addr, change_message);
-                        
+
                         let ws_message = serde_json::json!({
                             "type": "file_change",
                             "message": change_message
                         });
-                        
+
                         if let Ok(message_text) = serde_json::to_string(&ws_message) {
                             if let Err(e) = ws_sender.send(Message::Text(message_text)).await {
                                 error!("Failed to send file change to {}: {}", client_addr, e);
@@ -109,6 +129,41 @@ async fn handle_websocket_connection(stream: TcpStream, client_addr: SocketAddr)
                     Err(broadcast::error::RecvError::Closed) => {
                         info!("📡 File change broadcaster closed, ending WebSocket connection for {}", client_addr);
                         break;
+                    }
+                }
+            }
+
+            // Handle Twitch events (if subscribed)
+            twitch_event = async {
+                if let Some(ref mut receiver) = twitch_receiver_opt {
+                    Some(receiver.recv().await)
+                } else {
+                    std::future::pending::<Option<Result<TwitchEvent, tokio::sync::broadcast::error::RecvError>>>().await
+                }
+            }, if twitch_receiver_opt.is_some() => {
+                let twitch_event = twitch_event.unwrap();
+                match twitch_event {
+                    Ok(event) => {
+                        debug!("📡 Broadcasting Twitch event to {}", client_addr);
+
+                        let ws_message = serde_json::json!({
+                            "type": "twitch_event",
+                            "event": event
+                        });
+
+                        if let Ok(message_text) = serde_json::to_string(&ws_message) {
+                            if let Err(e) = ws_sender.send(Message::Text(message_text)).await {
+                                error!("Failed to send Twitch event to {}: {}", client_addr, e);
+                                break;
+                            }
+                        }
+                    }
+                    Err(broadcast::error::RecvError::Lagged(count)) => {
+                        warn!("📡 WebSocket client {} lagged {} Twitch messages", client_addr, count);
+                    }
+                    Err(broadcast::error::RecvError::Closed) => {
+                        info!("📡 Twitch event broadcaster closed for {}", client_addr);
+                        twitch_receiver_opt = None;
                     }
                 }
             }
