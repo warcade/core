@@ -1,4 +1,4 @@
-use rusqlite::{Connection, Result, OptionalExtension};
+use rusqlite::{Connection, Result, OptionalExtension, params};
 use std::sync::{Arc, Mutex};
 use std::path::PathBuf;
 use serde::{Deserialize, Serialize};
@@ -24,6 +24,21 @@ pub struct DiscordConfig {
     pub max_queue_size: i64,
 }
 
+/// Discord custom command
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DiscordCustomCommand {
+    pub id: i64,
+    pub name: String,
+    pub aliases: Vec<String>,
+    pub response: String,
+    pub description: String,
+    pub permission: String,
+    pub cooldown: i64,
+    pub enabled: bool,
+    pub created_at: i64,
+    pub updated_at: i64,
+}
+
 /// Song request data
 #[derive(Debug, Clone, Serialize)]
 pub struct SongRequest {
@@ -38,6 +53,35 @@ pub struct SongRequest {
     pub played_at: Option<i64>,
     pub skipped_at: Option<i64>,
     pub error: Option<String>,
+}
+
+/// Ticker message data
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TickerMessage {
+    pub id: i64,
+    pub message: String,
+    pub enabled: bool,
+    pub created_at: i64,
+    pub updated_at: i64,
+}
+
+/// Status configuration data
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StatusConfig {
+    pub stream_start_days: i64,
+    pub updated_at: i64,
+}
+
+/// Ticker events configuration data
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TickerEventsConfig {
+    pub show_followers: bool,
+    pub show_subscribers: bool,
+    pub show_raids: bool,
+    pub show_donations: bool,
+    pub show_gifted_subs: bool,
+    pub show_cheers: bool,
+    pub updated_at: i64,
 }
 
 /// Thread-safe database connection pool
@@ -267,29 +311,6 @@ impl Database {
             log::info!("✅ Migrated users table to add followed_at column");
         }
 
-        // Migrate text_commands table to add auto-posting fields
-        let auto_post_exists: Result<i64, _> = conn.query_row(
-            "SELECT COUNT(*) FROM pragma_table_info('text_commands') WHERE name='auto_post'",
-            [],
-            |row| row.get(0)
-        );
-
-        if let Ok(0) = auto_post_exists {
-            conn.execute(
-                "ALTER TABLE text_commands ADD COLUMN auto_post INTEGER NOT NULL DEFAULT 0",
-                [],
-            )?;
-            conn.execute(
-                "ALTER TABLE text_commands ADD COLUMN interval_minutes INTEGER NOT NULL DEFAULT 10",
-                [],
-            )?;
-            conn.execute(
-                "ALTER TABLE text_commands ADD COLUMN last_posted_at INTEGER",
-                [],
-            )?;
-            log::info!("✅ Migrated text_commands table to add auto-posting fields");
-        }
-
         // Create stream uptime table
         conn.execute(
             "CREATE TABLE IF NOT EXISTS stream_uptime (
@@ -474,6 +495,28 @@ impl Database {
             [],
         )?;
 
+        // Create discord custom commands table
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS discord_commands (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT UNIQUE NOT NULL,
+                aliases TEXT,
+                response TEXT NOT NULL,
+                description TEXT,
+                permission TEXT DEFAULT 'Everyone',
+                cooldown INTEGER DEFAULT 0,
+                enabled INTEGER DEFAULT 1,
+                created_at INTEGER NOT NULL,
+                updated_at INTEGER NOT NULL
+            )",
+            [],
+        )?;
+
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_discord_commands_enabled ON discord_commands(enabled)",
+            [],
+        )?;
+
         // Create Pear Desktop configuration table
         conn.execute(
             "CREATE TABLE IF NOT EXISTS pear_config (
@@ -482,6 +525,101 @@ impl Database {
                 enabled BOOLEAN DEFAULT 0,
                 auto_play BOOLEAN DEFAULT 1,
                 created_at INTEGER NOT NULL,
+                updated_at INTEGER NOT NULL
+            )",
+            [],
+        )?;
+
+        // Create confessions table
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS confessions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                channel TEXT NOT NULL,
+                username TEXT NOT NULL,
+                message TEXT NOT NULL,
+                created_at INTEGER NOT NULL
+            )",
+            [],
+        )?;
+
+        // Create alexa_commands table
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS alexa_commands (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL UNIQUE,
+                intent_name TEXT NOT NULL UNIQUE,
+                action_type TEXT NOT NULL,
+                action_value TEXT NOT NULL,
+                response_text TEXT NOT NULL,
+                enabled INTEGER NOT NULL DEFAULT 1,
+                created_at INTEGER NOT NULL,
+                updated_at INTEGER NOT NULL
+            )",
+            [],
+        )?;
+
+        // Create alexa_config table
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS alexa_config (
+                id INTEGER PRIMARY KEY CHECK (id = 1),
+                obs_host TEXT DEFAULT 'localhost',
+                obs_port INTEGER DEFAULT 4455,
+                obs_password TEXT,
+                skill_id TEXT,
+                enabled INTEGER NOT NULL DEFAULT 0
+            )",
+            [],
+        )?;
+
+        // Create twitch_config table (for Twitch bot configuration)
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS twitch_config (
+                id INTEGER PRIMARY KEY CHECK (id = 1),
+                access_token TEXT,
+                refresh_token TEXT,
+                client_id TEXT,
+                client_secret TEXT,
+                bot_username TEXT,
+                channels TEXT,
+                token_expires_at INTEGER,
+                encryption_key TEXT,
+                updated_at INTEGER NOT NULL
+            )",
+            [],
+        )?;
+
+        // Create ticker_messages table
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS ticker_messages (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                message TEXT NOT NULL,
+                enabled INTEGER NOT NULL DEFAULT 1,
+                created_at INTEGER NOT NULL,
+                updated_at INTEGER NOT NULL
+            )",
+            [],
+        )?;
+
+        // Create status_config table (for stream status display)
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS status_config (
+                id INTEGER PRIMARY KEY CHECK (id = 1),
+                stream_start_days INTEGER NOT NULL DEFAULT 0,
+                updated_at INTEGER NOT NULL
+            )",
+            [],
+        )?;
+
+        // Create ticker_events_config table (for enabling/disabling event types in ticker)
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS ticker_events_config (
+                id INTEGER PRIMARY KEY CHECK (id = 1),
+                show_followers INTEGER NOT NULL DEFAULT 1,
+                show_subscribers INTEGER NOT NULL DEFAULT 1,
+                show_raids INTEGER NOT NULL DEFAULT 1,
+                show_donations INTEGER NOT NULL DEFAULT 1,
+                show_gifted_subs INTEGER NOT NULL DEFAULT 1,
+                show_cheers INTEGER NOT NULL DEFAULT 1,
                 updated_at INTEGER NOT NULL
             )",
             [],
@@ -531,6 +669,50 @@ impl Database {
 
             log::info!("✅ Migrated {} users to the new users table", migrated_count);
         }
+
+        // Initialize default overlays (uses INSERT OR IGNORE to only add if they don't exist)
+        log::info!("🔄 Registering default overlays...");
+        let timestamp = chrono::Utc::now().timestamp();
+
+        // Register chat overlay
+        conn.execute(
+            "INSERT INTO overlays (id, name, file_path, width, height, created_at, updated_at)
+             VALUES ('chat', 'Chat', '../dist/overlays/chat.html', 400, 600, ?1, ?1)
+             ON CONFLICT(id) DO UPDATE SET file_path = '../dist/overlays/chat.html', updated_at = ?1",
+            [timestamp],
+        )?;
+
+        // Register levelup overlay
+        conn.execute(
+            "INSERT INTO overlays (id, name, file_path, width, height, created_at, updated_at)
+             VALUES ('levelup', 'Level Up', '../dist/overlays/levelup.html', 800, 600, ?1, ?1)
+             ON CONFLICT(id) DO UPDATE SET file_path = '../dist/overlays/levelup.html', updated_at = ?1",
+            [timestamp],
+        )?;
+
+        // Register ticker overlay
+        conn.execute(
+            "INSERT INTO overlays (id, name, file_path, width, height, created_at, updated_at)
+             VALUES ('ticker', 'Ticker', '../dist/overlays/ticker.html', 1920, 1080, ?1, ?1)
+             ON CONFLICT(id) DO UPDATE SET file_path = '../dist/overlays/ticker.html', updated_at = ?1",
+            [timestamp],
+        )?;
+
+        // Register status overlay
+        conn.execute(
+            "INSERT INTO overlays (id, name, file_path, width, height, created_at, updated_at)
+             VALUES ('status', 'Status', '../dist/overlays/status.html', 1920, 1080, ?1, ?1)
+             ON CONFLICT(id) DO UPDATE SET file_path = '../dist/overlays/status.html', updated_at = ?1",
+            [timestamp],
+        )?;
+
+        let overlay_count: i64 = conn.query_row(
+            "SELECT COUNT(*) FROM overlays",
+            [],
+            |row| row.get(0)
+        )?;
+
+        log::info!("✅ Registered {} overlays", overlay_count);
 
         log::info!("✅ Database initialized: data/counters.db");
 
@@ -2232,14 +2414,14 @@ impl Database {
                 max_song_length = ?5,
                 max_queue_size = ?6,
                 updated_at = ?7",
-            [
-                &bot_token.map(|s| s.to_string()),
-                &channel_id.map(|s| s.to_string()),
-                &Some(enabled.to_string()),
-                &Some(command_prefix.to_string()),
-                &Some(max_song_length.to_string()),
-                &Some(max_queue_size.to_string()),
-                &Some(now.to_string()),
+            params![
+                bot_token,
+                channel_id,
+                enabled,
+                command_prefix,
+                max_song_length,
+                max_queue_size,
+                now,
             ],
         )?;
 
@@ -2395,6 +2577,196 @@ impl Database {
         Ok(())
     }
 
+    // === DISCORD CUSTOM COMMAND METHODS ===
+
+    /// Get all custom Discord commands
+    pub fn get_discord_custom_commands(&self) -> Result<Vec<DiscordCustomCommand>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT id, name, aliases, response, description, permission, cooldown, enabled, created_at, updated_at
+             FROM discord_commands
+             ORDER BY name ASC"
+        )?;
+
+        let commands = stmt
+            .query_map([], |row| {
+                let aliases_json: String = row.get(2).unwrap_or_else(|_| "[]".to_string());
+                let aliases: Vec<String> = serde_json::from_str(&aliases_json).unwrap_or_default();
+
+                Ok(DiscordCustomCommand {
+                    id: row.get(0)?,
+                    name: row.get(1)?,
+                    aliases,
+                    response: row.get(3)?,
+                    description: row.get(4)?,
+                    permission: row.get(5)?,
+                    cooldown: row.get(6)?,
+                    enabled: row.get::<_, i64>(7)? != 0,
+                    created_at: row.get(8)?,
+                    updated_at: row.get(9)?,
+                })
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
+
+        Ok(commands)
+    }
+
+    /// Get enabled custom Discord commands
+    pub fn get_enabled_discord_custom_commands(&self) -> Result<Vec<DiscordCustomCommand>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT id, name, aliases, response, description, permission, cooldown, enabled, created_at, updated_at
+             FROM discord_commands
+             WHERE enabled = 1
+             ORDER BY name ASC"
+        )?;
+
+        let commands = stmt
+            .query_map([], |row| {
+                let aliases_json: String = row.get(2).unwrap_or_else(|_| "[]".to_string());
+                let aliases: Vec<String> = serde_json::from_str(&aliases_json).unwrap_or_default();
+
+                Ok(DiscordCustomCommand {
+                    id: row.get(0)?,
+                    name: row.get(1)?,
+                    aliases,
+                    response: row.get(3)?,
+                    description: row.get(4)?,
+                    permission: row.get(5)?,
+                    cooldown: row.get(6)?,
+                    enabled: row.get::<_, i64>(7)? != 0,
+                    created_at: row.get(8)?,
+                    updated_at: row.get(9)?,
+                })
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
+
+        Ok(commands)
+    }
+
+    /// Get a custom Discord command by ID
+    pub fn get_discord_custom_command(&self, id: i64) -> Result<Option<DiscordCustomCommand>> {
+        let conn = self.conn.lock().unwrap();
+        let result = conn.query_row(
+            "SELECT id, name, aliases, response, description, permission, cooldown, enabled, created_at, updated_at
+             FROM discord_commands WHERE id = ?1",
+            [id],
+            |row| {
+                let aliases_json: String = row.get(2).unwrap_or_else(|_| "[]".to_string());
+                let aliases: Vec<String> = serde_json::from_str(&aliases_json).unwrap_or_default();
+
+                Ok(DiscordCustomCommand {
+                    id: row.get(0)?,
+                    name: row.get(1)?,
+                    aliases,
+                    response: row.get(3)?,
+                    description: row.get(4)?,
+                    permission: row.get(5)?,
+                    cooldown: row.get(6)?,
+                    enabled: row.get::<_, i64>(7)? != 0,
+                    created_at: row.get(8)?,
+                    updated_at: row.get(9)?,
+                })
+            },
+        );
+
+        match result {
+            Ok(cmd) => Ok(Some(cmd)),
+            Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+            Err(e) => Err(e),
+        }
+    }
+
+    /// Create a new custom Discord command
+    pub fn create_discord_custom_command(
+        &self,
+        name: &str,
+        aliases: &[String],
+        response: &str,
+        description: &str,
+        permission: &str,
+        cooldown: i64,
+        enabled: bool,
+    ) -> anyhow::Result<i64> {
+        let conn = self.conn.lock().unwrap();
+        let now = chrono::Utc::now().timestamp();
+        let aliases_json = serde_json::to_string(aliases)?;
+
+        conn.execute(
+            "INSERT INTO discord_commands (name, aliases, response, description, permission, cooldown, enabled, created_at, updated_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?8)",
+            params![
+                name,
+                aliases_json,
+                response,
+                description,
+                permission,
+                cooldown,
+                enabled as i64,
+                now,
+            ],
+        )?;
+
+        Ok(conn.last_insert_rowid())
+    }
+
+    /// Update a custom Discord command
+    pub fn update_discord_custom_command(
+        &self,
+        id: i64,
+        name: &str,
+        aliases: &[String],
+        response: &str,
+        description: &str,
+        permission: &str,
+        cooldown: i64,
+        enabled: bool,
+    ) -> anyhow::Result<()> {
+        let conn = self.conn.lock().unwrap();
+        let now = chrono::Utc::now().timestamp();
+        let aliases_json = serde_json::to_string(aliases)?;
+
+        conn.execute(
+            "UPDATE discord_commands SET
+                name = ?1, aliases = ?2, response = ?3, description = ?4,
+                permission = ?5, cooldown = ?6, enabled = ?7, updated_at = ?8
+             WHERE id = ?9",
+            params![
+                name,
+                aliases_json,
+                response,
+                description,
+                permission,
+                cooldown,
+                enabled as i64,
+                now,
+                id,
+            ],
+        )?;
+
+        Ok(())
+    }
+
+    /// Delete a custom Discord command
+    pub fn delete_discord_custom_command(&self, id: i64) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute("DELETE FROM discord_commands WHERE id = ?1", [id])?;
+        Ok(())
+    }
+
+    /// Toggle a custom Discord command's enabled state
+    pub fn toggle_discord_custom_command(&self, id: i64, enabled: bool) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        let now = chrono::Utc::now().timestamp();
+
+        conn.execute(
+            "UPDATE discord_commands SET enabled = ?1, updated_at = ?2 WHERE id = ?3",
+            params![enabled as i64, now, id],
+        )?;
+
+        Ok(())
+    }
+
     // === RAW QUERY METHODS ===
 
     /// Execute a raw SELECT query and return results as JSON
@@ -2471,6 +2843,664 @@ impl Database {
         let conn = self.conn.lock().unwrap();
         let rows_affected = conn.execute(query, [])?;
         Ok(rows_affected)
+    }
+
+    // === CONFESSION METHODS ===
+
+    /// Add a new confession
+    pub fn add_confession(&self, channel: &str, username: &str, message: &str) -> Result<i64> {
+        let conn = self.conn.lock().unwrap();
+        let timestamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs() as i64;
+
+        conn.execute(
+            "INSERT INTO confessions (channel, username, message, created_at) VALUES (?1, ?2, ?3, ?4)",
+            rusqlite::params![channel, username, message, timestamp],
+        )?;
+
+        Ok(conn.last_insert_rowid())
+    }
+
+    /// Get all confessions for a channel
+    pub fn get_confessions(&self, channel: &str) -> Result<Vec<(i64, String, String, i64)>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT id, username, message, created_at FROM confessions WHERE channel = ?1 ORDER BY created_at DESC"
+        )?;
+
+        let confessions = stmt.query_map([channel], |row| {
+            Ok((
+                row.get(0)?,
+                row.get(1)?,
+                row.get(2)?,
+                row.get(3)?,
+            ))
+        })?
+        .collect::<Result<Vec<_>, _>>()?;
+
+        Ok(confessions)
+    }
+
+    /// Delete a confession by ID
+    pub fn delete_confession(&self, id: i64) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute("DELETE FROM confessions WHERE id = ?1", [&id.to_string()])?;
+        Ok(())
+    }
+
+    // === ALEXA COMMANDS ===
+
+    /// Get all Alexa commands
+    pub fn get_all_alexa_commands(&self) -> std::result::Result<Vec<crate::modules::alexa::AlexaCommand>, String> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT id, name, intent_name, action_type, action_value, response_text, enabled
+             FROM alexa_commands
+             ORDER BY name"
+        ).map_err(|e| e.to_string())?;
+
+        let commands = stmt.query_map([], |row| {
+            Ok(crate::modules::alexa::AlexaCommand {
+                id: row.get(0)?,
+                name: row.get(1)?,
+                intent_name: row.get(2)?,
+                action_type: row.get(3)?,
+                action_value: row.get(4)?,
+                response_text: row.get(5)?,
+                enabled: row.get::<_, i64>(6)? == 1,
+            })
+        }).map_err(|e| e.to_string())?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| e.to_string())?;
+
+        Ok(commands)
+    }
+
+    /// Get Alexa command by intent name
+    pub fn get_alexa_command_by_intent(&self, intent_name: &str) -> std::result::Result<Option<crate::modules::alexa::AlexaCommand>, String> {
+        let conn = self.conn.lock().unwrap();
+        let result = conn.query_row(
+            "SELECT id, name, intent_name, action_type, action_value, response_text, enabled
+             FROM alexa_commands
+             WHERE intent_name = ?1",
+            [intent_name],
+            |row| {
+                Ok(crate::modules::alexa::AlexaCommand {
+                    id: row.get(0)?,
+                    name: row.get(1)?,
+                    intent_name: row.get(2)?,
+                    action_type: row.get(3)?,
+                    action_value: row.get(4)?,
+                    response_text: row.get(5)?,
+                    enabled: row.get::<_, i64>(6)? == 1,
+                })
+            }
+        ).optional().map_err(|e| e.to_string())?;
+
+        Ok(result)
+    }
+
+    /// Save Alexa command (insert or update)
+    pub fn save_alexa_command(&self, command: &crate::modules::alexa::AlexaCommand) -> std::result::Result<(), String> {
+        let conn = self.conn.lock().unwrap();
+        let now = chrono::Utc::now().timestamp();
+
+        if command.id == 0 {
+            // Insert new
+            conn.execute(
+                "INSERT INTO alexa_commands (name, intent_name, action_type, action_value, response_text, enabled, created_at, updated_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+                rusqlite::params![
+                    command.name,
+                    command.intent_name,
+                    command.action_type,
+                    command.action_value,
+                    command.response_text,
+                    if command.enabled { 1 } else { 0 },
+                    now,
+                    now
+                ]
+            ).map_err(|e| e.to_string())?;
+        } else {
+            // Update existing
+            conn.execute(
+                "UPDATE alexa_commands
+                 SET name = ?1, intent_name = ?2, action_type = ?3, action_value = ?4,
+                     response_text = ?5, enabled = ?6, updated_at = ?7
+                 WHERE id = ?8",
+                rusqlite::params![
+                    command.name,
+                    command.intent_name,
+                    command.action_type,
+                    command.action_value,
+                    command.response_text,
+                    if command.enabled { 1 } else { 0 },
+                    now,
+                    command.id
+                ]
+            ).map_err(|e| e.to_string())?;
+        }
+
+        Ok(())
+    }
+
+    /// Delete Alexa command
+    pub fn delete_alexa_command(&self, id: i64) -> std::result::Result<(), String> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute("DELETE FROM alexa_commands WHERE id = ?1", [&id.to_string()])
+            .map_err(|e| e.to_string())?;
+        Ok(())
+    }
+
+    /// Get Alexa configuration
+    pub fn get_alexa_config(&self) -> std::result::Result<Option<(String, u16, Option<String>, Option<String>, bool)>, String> {
+        let conn = self.conn.lock().unwrap();
+        let result = conn.query_row(
+            "SELECT obs_host, obs_port, obs_password, skill_id, enabled FROM alexa_config WHERE id = 1",
+            [],
+            |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, i64>(1)? as u16,
+                    row.get::<_, Option<String>>(2)?,
+                    row.get::<_, Option<String>>(3)?,
+                    row.get::<_, i64>(4)? == 1,
+                ))
+            }
+        ).optional().map_err(|e| e.to_string())?;
+
+        Ok(result)
+    }
+
+    /// Save Alexa configuration
+    pub fn save_alexa_config(&self, obs_host: &str, obs_port: u16, obs_password: Option<String>, skill_id: Option<String>, enabled: bool) -> std::result::Result<(), String> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "INSERT OR REPLACE INTO alexa_config (id, obs_host, obs_port, obs_password, skill_id, enabled)
+             VALUES (1, ?1, ?2, ?3, ?4, ?5)",
+            rusqlite::params![
+                obs_host,
+                obs_port as i64,
+                obs_password,
+                skill_id,
+                if enabled { 1 } else { 0 }
+            ]
+        ).map_err(|e| e.to_string())?;
+
+        Ok(())
+    }
+
+    // === TWITCH CONFIG METHODS ===
+
+    /// Encrypt sensitive data using AES-256-GCM
+    fn encrypt_value(&self, plaintext: &str, key_base64: &str) -> std::result::Result<String, String> {
+        use aes_gcm::{
+            aead::{Aead, KeyInit},
+            Aes256Gcm, Nonce,
+        };
+        use base64::{engine::general_purpose, Engine as _};
+
+        let key_bytes = general_purpose::STANDARD
+            .decode(key_base64)
+            .map_err(|e| format!("Failed to decode encryption key: {}", e))?;
+
+        let key = aes_gcm::Key::<Aes256Gcm>::from_slice(&key_bytes);
+        let cipher = Aes256Gcm::new(key);
+
+        // Generate random nonce
+        let nonce_bytes: [u8; 12] = rand::random();
+        let nonce = Nonce::from_slice(&nonce_bytes);
+
+        let ciphertext = cipher
+            .encrypt(nonce, plaintext.as_bytes())
+            .map_err(|e| format!("Encryption failed: {}", e))?;
+
+        // Combine nonce + ciphertext and encode as base64
+        let mut result = nonce_bytes.to_vec();
+        result.extend_from_slice(&ciphertext);
+
+        Ok(general_purpose::STANDARD.encode(&result))
+    }
+
+    /// Decrypt sensitive data using AES-256-GCM
+    fn decrypt_value(&self, ciphertext: &str, key_base64: &str) -> std::result::Result<String, String> {
+        use aes_gcm::{
+            aead::{Aead, KeyInit},
+            Aes256Gcm, Nonce,
+        };
+        use base64::{engine::general_purpose, Engine as _};
+
+        let key_bytes = general_purpose::STANDARD
+            .decode(key_base64)
+            .map_err(|e| format!("Failed to decode encryption key: {}", e))?;
+
+        let key = aes_gcm::Key::<Aes256Gcm>::from_slice(&key_bytes);
+        let cipher = Aes256Gcm::new(key);
+
+        let encrypted_data = general_purpose::STANDARD
+            .decode(ciphertext)
+            .map_err(|e| format!("Failed to decode encrypted data: {}", e))?;
+
+        if encrypted_data.len() < 12 {
+            return Err("Invalid encrypted data: too short".to_string());
+        }
+
+        let (nonce_bytes, ciphertext_bytes) = encrypted_data.split_at(12);
+        let nonce = Nonce::from_slice(nonce_bytes);
+
+        let plaintext = cipher
+            .decrypt(nonce, ciphertext_bytes)
+            .map_err(|e| format!("Decryption failed: {}", e))?;
+
+        String::from_utf8(plaintext).map_err(|e| format!("Invalid UTF-8 in decrypted data: {}", e))
+    }
+
+    /// Get or generate encryption key for Twitch config
+    fn get_or_create_twitch_encryption_key(&self, conn: &rusqlite::Connection) -> std::result::Result<String, String> {
+        use base64::{engine::general_purpose, Engine as _};
+
+        // Try to get existing key
+        let existing_key: Option<String> = conn.query_row(
+            "SELECT encryption_key FROM twitch_config WHERE id = 1",
+            [],
+            |row| row.get(0)
+        ).optional().map_err(|e| e.to_string())?;
+
+        if let Some(key) = existing_key {
+            return Ok(key);
+        }
+
+        // Generate new 256-bit key
+        let key: [u8; 32] = rand::random();
+        let key_str = general_purpose::STANDARD.encode(&key);
+
+        Ok(key_str)
+    }
+
+    /// Get Twitch configuration
+    pub fn get_twitch_config(&self) -> std::result::Result<crate::modules::twitch::TwitchConfig, String> {
+        let conn = self.conn.lock().unwrap();
+
+        let result = conn.query_row(
+            "SELECT access_token, refresh_token, client_id, client_secret, bot_username, channels, token_expires_at, encryption_key
+             FROM twitch_config WHERE id = 1",
+            [],
+            |row| {
+                let access_token_encrypted: Option<String> = row.get(0)?;
+                let refresh_token_encrypted: Option<String> = row.get(1)?;
+                let client_id: String = row.get(2)?;
+                let client_secret_encrypted: String = row.get(3)?;
+                let bot_username: String = row.get(4)?;
+                let channels_json: String = row.get(5)?;
+                let token_expires_at: Option<i64> = row.get(6)?;
+                let encryption_key: String = row.get(7)?;
+
+                Ok((
+                    access_token_encrypted,
+                    refresh_token_encrypted,
+                    client_id,
+                    client_secret_encrypted,
+                    bot_username,
+                    channels_json,
+                    token_expires_at,
+                    encryption_key,
+                ))
+            },
+        ).optional().map_err(|e| e.to_string())?;
+
+        match result {
+            Some((access_token_enc, refresh_token_enc, client_id, client_secret_enc, bot_username, channels_json, token_expires_at, encryption_key)) => {
+                // Decrypt sensitive fields
+                let access_token = if let Some(enc) = access_token_enc {
+                    Some(self.decrypt_value(&enc, &encryption_key)?)
+                } else {
+                    None
+                };
+
+                let refresh_token = if let Some(enc) = refresh_token_enc {
+                    Some(self.decrypt_value(&enc, &encryption_key)?)
+                } else {
+                    None
+                };
+
+                let client_secret = if !client_secret_enc.is_empty() {
+                    self.decrypt_value(&client_secret_enc, &encryption_key)?
+                } else {
+                    String::new()
+                };
+
+                let channels: Vec<String> = serde_json::from_str(&channels_json)
+                    .unwrap_or_else(|_| vec![]);
+
+                Ok(crate::modules::twitch::TwitchConfig {
+                    access_token,
+                    refresh_token,
+                    client_id,
+                    client_secret,
+                    bot_username,
+                    channels,
+                    token_expires_at,
+                    encryption_key: Some(encryption_key),
+                })
+            }
+            None => {
+                // Return default config if none exists
+                Ok(crate::modules::twitch::TwitchConfig::default())
+            }
+        }
+    }
+
+    /// Save Twitch configuration
+    pub fn save_twitch_config(&self, config: &crate::modules::twitch::TwitchConfig) -> std::result::Result<(), String> {
+        let conn = self.conn.lock().unwrap();
+        let now = chrono::Utc::now().timestamp();
+
+        // Get or create encryption key
+        let encryption_key = self.get_or_create_twitch_encryption_key(&conn)?;
+
+        // Encrypt sensitive fields
+        let access_token_encrypted = if let Some(ref token) = config.access_token {
+            Some(self.encrypt_value(token, &encryption_key)?)
+        } else {
+            None
+        };
+
+        let refresh_token_encrypted = if let Some(ref token) = config.refresh_token {
+            Some(self.encrypt_value(token, &encryption_key)?)
+        } else {
+            None
+        };
+
+        let client_secret_encrypted = if !config.client_secret.is_empty() {
+            self.encrypt_value(&config.client_secret, &encryption_key)?
+        } else {
+            String::new()
+        };
+
+        let channels_json = serde_json::to_string(&config.channels)
+            .map_err(|e| format!("Failed to serialize channels: {}", e))?;
+
+        conn.execute(
+            "INSERT INTO twitch_config (id, access_token, refresh_token, client_id, client_secret, bot_username, channels, token_expires_at, encryption_key, updated_at)
+             VALUES (1, ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
+             ON CONFLICT(id) DO UPDATE SET
+                access_token = ?1,
+                refresh_token = ?2,
+                client_id = ?3,
+                client_secret = ?4,
+                bot_username = ?5,
+                channels = ?6,
+                token_expires_at = ?7,
+                encryption_key = ?8,
+                updated_at = ?9",
+            rusqlite::params![
+                access_token_encrypted,
+                refresh_token_encrypted,
+                config.client_id,
+                client_secret_encrypted,
+                config.bot_username,
+                channels_json,
+                config.token_expires_at,
+                encryption_key,
+                now,
+            ],
+        ).map_err(|e| e.to_string())?;
+
+        log::info!("✅ Twitch config saved to database");
+        Ok(())
+    }
+
+    /// Update OAuth tokens
+    pub fn update_twitch_tokens(&self, access_token: String, refresh_token: String, expires_in: i64) -> std::result::Result<(), String> {
+        let mut config = self.get_twitch_config()?;
+
+        config.access_token = Some(access_token);
+        config.refresh_token = Some(refresh_token);
+        config.token_expires_at = Some(chrono::Utc::now().timestamp() + expires_in);
+
+        self.save_twitch_config(&config)
+    }
+
+    /// Check if Twitch token is expired or about to expire (within 5 minutes)
+    pub fn is_twitch_token_expired(&self) -> std::result::Result<bool, String> {
+        let config = self.get_twitch_config()?;
+
+        if let Some(expires_at) = config.token_expires_at {
+            let now = chrono::Utc::now().timestamp();
+            let time_until_expiry = expires_at - now;
+            log::info!("Twitch token expiry check - expires_at: {}, now: {}, time_until_expiry: {}s", expires_at, now, time_until_expiry);
+            // Consider expired if within 5 minutes of expiration
+            Ok(now >= expires_at - 300)
+        } else {
+            log::warn!("No Twitch token expiration time set - treating as expired");
+            Ok(true) // No expiration time means treat as expired
+        }
+    }
+
+    // ========== Ticker Methods ==========
+
+    /// Get all ticker messages
+    pub fn get_ticker_messages(&self) -> Result<Vec<TickerMessage>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT id, message, enabled, created_at, updated_at
+             FROM ticker_messages
+             ORDER BY id ASC"
+        )?;
+
+        let messages = stmt.query_map([], |row| {
+            Ok(TickerMessage {
+                id: row.get(0)?,
+                message: row.get(1)?,
+                enabled: row.get::<_, i64>(2)? == 1,
+                created_at: row.get(3)?,
+                updated_at: row.get(4)?,
+            })
+        })?
+        .collect::<Result<Vec<_>>>()?;
+
+        Ok(messages)
+    }
+
+    /// Get enabled ticker messages only
+    pub fn get_enabled_ticker_messages(&self) -> Result<Vec<TickerMessage>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT id, message, enabled, created_at, updated_at
+             FROM ticker_messages
+             WHERE enabled = 1
+             ORDER BY id ASC"
+        )?;
+
+        let messages = stmt.query_map([], |row| {
+            Ok(TickerMessage {
+                id: row.get(0)?,
+                message: row.get(1)?,
+                enabled: row.get::<_, i64>(2)? == 1,
+                created_at: row.get(3)?,
+                updated_at: row.get(4)?,
+            })
+        })?
+        .collect::<Result<Vec<_>>>()?;
+
+        Ok(messages)
+    }
+
+    /// Add a ticker message
+    pub fn add_ticker_message(&self, message: &str) -> Result<i64> {
+        let conn = self.conn.lock().unwrap();
+        let now = chrono::Utc::now().timestamp();
+
+        conn.execute(
+            "INSERT INTO ticker_messages (message, enabled, created_at, updated_at)
+             VALUES (?1, 1, ?2, ?3)",
+            params![message, now, now],
+        )?;
+
+        Ok(conn.last_insert_rowid())
+    }
+
+    /// Update a ticker message
+    pub fn update_ticker_message(&self, id: i64, message: &str, enabled: bool) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        let now = chrono::Utc::now().timestamp();
+
+        conn.execute(
+            "UPDATE ticker_messages
+             SET message = ?1, enabled = ?2, updated_at = ?3
+             WHERE id = ?4",
+            params![message, if enabled { 1 } else { 0 }, now, id],
+        )?;
+
+        Ok(())
+    }
+
+    /// Delete a ticker message
+    pub fn delete_ticker_message(&self, id: i64) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute("DELETE FROM ticker_messages WHERE id = ?1", params![id])?;
+        Ok(())
+    }
+
+    /// Toggle ticker message enabled state
+    pub fn toggle_ticker_message(&self, id: i64) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        let now = chrono::Utc::now().timestamp();
+
+        conn.execute(
+            "UPDATE ticker_messages
+             SET enabled = NOT enabled, updated_at = ?1
+             WHERE id = ?2",
+            params![now, id],
+        )?;
+
+        Ok(())
+    }
+
+    // ========== Status Config Methods ==========
+
+    /// Get status configuration
+    pub fn get_status_config(&self) -> Result<StatusConfig> {
+        let conn = self.conn.lock().unwrap();
+
+        match conn.query_row(
+            "SELECT stream_start_days, updated_at FROM status_config WHERE id = 1",
+            [],
+            |row| {
+                Ok(StatusConfig {
+                    stream_start_days: row.get(0)?,
+                    updated_at: row.get(1)?,
+                })
+            },
+        ).optional()? {
+            Some(config) => Ok(config),
+            None => {
+                // Create default config
+                let now = chrono::Utc::now().timestamp();
+                conn.execute(
+                    "INSERT INTO status_config (id, stream_start_days, updated_at)
+                     VALUES (1, 0, ?1)",
+                    params![now],
+                )?;
+                Ok(StatusConfig {
+                    stream_start_days: 0,
+                    updated_at: now,
+                })
+            }
+        }
+    }
+
+    /// Update stream start days
+    pub fn update_stream_start_days(&self, days: i64) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        let now = chrono::Utc::now().timestamp();
+
+        conn.execute(
+            "INSERT INTO status_config (id, stream_start_days, updated_at)
+             VALUES (1, ?1, ?2)
+             ON CONFLICT(id) DO UPDATE SET
+                stream_start_days = ?1,
+                updated_at = ?2",
+            params![days, now],
+        )?;
+
+        Ok(())
+    }
+
+    /// Get ticker events configuration
+    pub fn get_ticker_events_config(&self) -> Result<TickerEventsConfig> {
+        let conn = self.conn.lock().unwrap();
+
+        match conn.query_row(
+            "SELECT show_followers, show_subscribers, show_raids, show_donations, show_gifted_subs, show_cheers, updated_at
+             FROM ticker_events_config WHERE id = 1",
+            [],
+            |row| {
+                Ok(TickerEventsConfig {
+                    show_followers: row.get::<_, i64>(0)? != 0,
+                    show_subscribers: row.get::<_, i64>(1)? != 0,
+                    show_raids: row.get::<_, i64>(2)? != 0,
+                    show_donations: row.get::<_, i64>(3)? != 0,
+                    show_gifted_subs: row.get::<_, i64>(4)? != 0,
+                    show_cheers: row.get::<_, i64>(5)? != 0,
+                    updated_at: row.get(6)?,
+                })
+            },
+        ).optional()? {
+            Some(config) => Ok(config),
+            None => {
+                // Create default config with all events enabled
+                let now = chrono::Utc::now().timestamp();
+                conn.execute(
+                    "INSERT INTO ticker_events_config
+                     (id, show_followers, show_subscribers, show_raids, show_donations, show_gifted_subs, show_cheers, updated_at)
+                     VALUES (1, 1, 1, 1, 1, 1, 1, ?1)",
+                    params![now],
+                )?;
+                Ok(TickerEventsConfig {
+                    show_followers: true,
+                    show_subscribers: true,
+                    show_raids: true,
+                    show_donations: true,
+                    show_gifted_subs: true,
+                    show_cheers: true,
+                    updated_at: now,
+                })
+            }
+        }
+    }
+
+    /// Update ticker events configuration
+    pub fn update_ticker_events_config(&self, config: &TickerEventsConfig) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        let now = chrono::Utc::now().timestamp();
+
+        conn.execute(
+            "INSERT INTO ticker_events_config
+             (id, show_followers, show_subscribers, show_raids, show_donations, show_gifted_subs, show_cheers, updated_at)
+             VALUES (1, ?1, ?2, ?3, ?4, ?5, ?6, ?7)
+             ON CONFLICT(id) DO UPDATE SET
+                show_followers = ?1,
+                show_subscribers = ?2,
+                show_raids = ?3,
+                show_donations = ?4,
+                show_gifted_subs = ?5,
+                show_cheers = ?6,
+                updated_at = ?7",
+            params![
+                config.show_followers as i64,
+                config.show_subscribers as i64,
+                config.show_raids as i64,
+                config.show_donations as i64,
+                config.show_gifted_subs as i64,
+                config.show_cheers as i64,
+                now
+            ],
+        )?;
+
+        Ok(())
     }
 }
 

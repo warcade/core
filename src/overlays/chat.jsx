@@ -85,11 +85,12 @@ function ChatOverlay() {
     // Debug logging
     console.log('Chat message event:', {
       username: event.username,
-      location_flag: event.location_flag,
-      location_flag_type: typeof event.location_flag,
-      is_url: event.location_flag?.startsWith('http'),
-      is_birthday: event.is_birthday,
-      level: event.level
+      level: event.level,
+      current_xp: event.current_xp,
+      xp_for_next_level: event.xp_for_next_level,
+      progress_percent: event.current_xp && event.xp_for_next_level
+        ? ((event.current_xp / event.xp_for_next_level) * 100).toFixed(1) + '%'
+        : 'N/A'
     });
 
     const msg = {
@@ -110,7 +111,9 @@ function ChatOverlay() {
       commandName: command,
       locationFlag: event.location_flag || null,
       isBirthday: event.is_birthday || false,
-      level: event.level || null
+      level: event.level || null,
+      current_xp: event.current_xp || null,
+      xp_for_next_level: event.xp_for_next_level || null
     };
 
     setMessages(prev => {
@@ -236,19 +239,65 @@ function ChatOverlay() {
               }`}
               style={{ 'border-left-color': msg.color || '#9146FF' }}
             >
-              {/* Profile Picture */}
+              {/* Profile Picture with XP Ring */}
               <div class="flex-shrink-0 relative">
+                {/* XP Progress Ring */}
+                <Show when={msg.level && msg.current_xp !== null && msg.xp_for_next_level !== null}>
+                  {(() => {
+                    const progress = Math.max(0.02, Math.min(1, (msg.current_xp || 0) / (msg.xp_for_next_level || 1)));
+                    const circumference = 2 * Math.PI * 22;
+                    const dashOffset = circumference * (1 - progress);
+                    const gradientId = `xp-gradient-${msg.id}`;
+
+                    return (
+                      <svg class="absolute -inset-1 w-12 h-12" style="transform: rotate(-90deg)">
+                        {/* Background ring */}
+                        <circle
+                          cx="24"
+                          cy="24"
+                          r="22"
+                          fill="none"
+                          stroke="rgba(0, 0, 0, 0.5)"
+                          stroke-width="2.5"
+                        />
+                        {/* Progress ring with gradient */}
+                        <circle
+                          cx="24"
+                          cy="24"
+                          r="22"
+                          fill="none"
+                          stroke={`url(#${gradientId})`}
+                          stroke-width="2.5"
+                          stroke-linecap="round"
+                          stroke-dasharray={circumference}
+                          stroke-dashoffset={dashOffset}
+                          class="transition-all duration-500 ease-out animate-[pulseRing_2s_ease-in-out_infinite]"
+                        />
+                        {/* Define gradient */}
+                        <defs>
+                          <linearGradient id={gradientId} x1="0%" y1="0%" x2="100%" y2="100%">
+                            <stop offset="0%" style="stop-color: #3b82f6; stop-opacity: 1" />
+                            <stop offset="50%" style="stop-color: #a855f7; stop-opacity: 1" />
+                            <stop offset="100%" style="stop-color: #ec4899; stop-opacity: 1" />
+                          </linearGradient>
+                        </defs>
+                      </svg>
+                    );
+                  })()}
+                </Show>
+
+                {/* Profile Image */}
                 <img
                   src={msg.profilePicture}
                   alt={msg.displayName}
-                  class={`w-10 h-10 rounded-full border-2 ${
+                  class={`w-10 h-10 rounded-full border-2 border-black/50 relative z-10 ${
                     msg.isCommand ? 'animate-[commandBounce_0.6s_ease-out]' : 'animate-[bounceIn_0.3s_ease-out]'
                   }`}
-                  style={{ 'border-color': msg.color || '#9146FF' }}
                 />
+
                 {/* Command Icon Badge */}
                 <Show when={msg.isCommand}>
-                  <div class={`absolute -bottom-1 -right-1 text-lg ${
+                  <div class={`absolute -bottom-1 -right-1 text-lg z-20 ${
                     msg.commandName === 'dice' ? 'animate-[diceRoll_1s_ease-in-out]' : 'animate-[iconPop_0.5s_ease-out]'
                   }`}>
                     {getCommandIcon(msg.commandName)}
@@ -279,6 +328,12 @@ function ChatOverlay() {
                     >
                       {msg.displayName}
                     </span>
+                    {/* Level Badge */}
+                    <Show when={msg.level}>
+                      <span class="text-[9px] bg-gradient-to-r from-yellow-400 to-yellow-600 text-black font-bold px-1.5 py-0.5 rounded leading-none shadow-lg border border-yellow-700">
+                        Lvl {msg.level}
+                      </span>
+                    </Show>
                     {/* Location Flag */}
                     <Show when={msg.locationFlag}>
                       <Show
@@ -302,13 +357,6 @@ function ChatOverlay() {
                       <span class="text-sm animate-bounce" title="It's their birthday!">🎂</span>
                     </Show>
                   </div>
-
-                  {/* Level Badge - Floated Right */}
-                  <Show when={msg.level}>
-                    <span class="text-[10px] bg-gradient-to-r from-yellow-400 to-yellow-600 text-black font-bold px-1 py-0.5 rounded leading-none" title={`Level ${msg.level}`}>
-                      Lvl {msg.level}
-                    </span>
-                  </Show>
                 </div>
 
                 {/* Message with Emotes and Typewriter Effect */}
@@ -502,6 +550,18 @@ function ChatOverlay() {
           50% {
             opacity: 1;
             transform: scale(1.2) rotate(180deg);
+          }
+        }
+
+        /* XP Progress Ring Animations */
+        @keyframes pulseRing {
+          0%, 100% {
+            opacity: 1;
+            filter: drop-shadow(0 0 2px rgba(59, 130, 246, 0.5));
+          }
+          50% {
+            opacity: 0.9;
+            filter: drop-shadow(0 0 6px rgba(168, 85, 247, 0.8));
           }
         }
       `}</style>

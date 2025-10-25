@@ -1,8 +1,6 @@
-import { editorStore } from "@/layout/stores/EditorStore";
 import { viewportStore } from "./store";
-import ViewportTabs from './ViewportTabs.jsx';
-import { viewportTypes, propertiesPanelVisible, footerVisible, viewportTabsVisible } from "@/api/plugin";
-import { Show, createMemo, createSignal, createEffect, onCleanup } from 'solid-js';
+import { viewportTypes } from "@/api/plugin";
+import { Show, createMemo } from 'solid-js';
 
 // Simple empty viewport
 const EmptyViewport = (props) => {
@@ -24,30 +22,7 @@ const PersistentRenderViewport = (_props) => {
 };
 
 const Viewport = () => {
-  // Get reactive store values
-  const settings = () => editorStore.settings;
-  const rightPanelWidth = () => editorStore.ui.rightPanelWidth;
-  const bottomPanelHeight = () => editorStore.ui.bottomPanelHeight;
-  
-  const isScenePanelOpen = () => {
-    return propertiesPanelVisible() && editorStore.panels.isScenePanelOpen;
-  };
-  
-  
-  const panelPosition = () => settings().editor.panelPosition || 'right';
-  const isLeftPanel = () => panelPosition() === 'left';
-  
-  
-  const getViewportPositioning = () => {
-    const top = '0px';
-    const left = isLeftPanel() && isScenePanelOpen() && propertiesPanelVisible() ? `${rightPanelWidth()}px` : '0px';
-    const right = !isLeftPanel() && isScenePanelOpen() && propertiesPanelVisible() ? `${rightPanelWidth()}px` : '0px';
-    const footerHeight = footerVisible() ? '24px' : '0px'; // 6 * 4 = 24px (h-6 in Tailwind)
-    const bottomAdjustment = '-1px';
-    const bottom = `calc(${footerHeight} + ${bottomAdjustment})`;
-    
-    return { top, left, right, bottom };
-  };
+  // Viewport now fills its flex container - no positioning calculations needed
   
   const activeTab = createMemo(() => {
     const tab = viewportStore.tabs.find(tab => tab.id === viewportStore.activeTabId);
@@ -96,20 +71,16 @@ const Viewport = () => {
   };
 
   return (
-    <div 
-      class="absolute pointer-events-auto viewport-container"
-      style={getViewportPositioning()}
+    <div
+      class="relative w-full h-full pointer-events-auto viewport-container"
     >
       <div className="w-full h-full flex flex-col gap-0">
-        <Show when={viewportTabsVisible()}>
-          <ViewportTabs />
-        </Show>
         <div className="flex-1 relative overflow-hidden">
           <div className="w-full bg-base-100 h-full overflow-hidden">
             <div class="relative w-full h-full">
               <PersistentRenderViewport />
             </div>
-            
+
             <Show when={isOverlayActive()}>
               {renderOverlayPanel(activeTab())}
             </Show>

@@ -16,6 +16,7 @@ use crate::modules::memory_cache::{MemoryCache};
 use crate::modules::twitch::{TwitchManager, SimpleCommand, PermissionLevel};
 use crate::modules::withings_api::WithingsAPI;
 use crate::modules::discord::DiscordManager;
+use crate::modules::alexa::AlexaManager;
 use crate::commands::database::Database;
 use crate::commands::hue::HueClient;
 
@@ -44,6 +45,10 @@ static TWITCH_MANAGER: OnceLock<Arc<TwitchManager>> = OnceLock::new();
 static DATABASE: OnceLock<Arc<Database>> = OnceLock::new();
 static WITHINGS_API: OnceLock<Arc<WithingsAPI>> = OnceLock::new();
 static DISCORD_MANAGER: OnceLock<Arc<DiscordManager>> = OnceLock::new();
+static ALEXA_MANAGER: OnceLock<Arc<AlexaManager>> = OnceLock::new();
+// Voice support disabled - requires songbird dependency
+// static MUSIC_PLAYER: OnceLock<Arc<crate::modules::discord::MusicPlayer>> = OnceLock::new();
+// static SONGBIRD: OnceLock<Arc<songbird::Songbird>> = OnceLock::new();
 
 pub fn set_startup_time(timestamp: u64) {
     STARTUP_TIME.set(timestamp).ok();
@@ -84,6 +89,33 @@ pub fn set_discord_manager(manager: Arc<DiscordManager>) {
 fn get_discord_manager() -> Option<&'static Arc<DiscordManager>> {
     DISCORD_MANAGER.get()
 }
+
+pub fn set_alexa_manager(manager: Arc<AlexaManager>) {
+    ALEXA_MANAGER.set(manager).ok();
+}
+
+fn get_alexa_manager() -> Option<&'static Arc<AlexaManager>> {
+    ALEXA_MANAGER.get()
+}
+
+// Voice support disabled - requires songbird dependency
+/*
+pub fn set_music_player(player: Arc<crate::modules::discord::MusicPlayer>) {
+    MUSIC_PLAYER.set(player).ok();
+}
+
+pub fn get_music_player() -> Option<&'static Arc<crate::modules::discord::MusicPlayer>> {
+    MUSIC_PLAYER.get()
+}
+
+pub fn set_songbird(songbird: Arc<songbird::Songbird>) {
+    SONGBIRD.set(songbird).ok();
+}
+
+pub fn get_songbird() -> Option<&'static Arc<songbird::Songbird>> {
+    SONGBIRD.get()
+}
+*/
 
 pub async fn handle_http_request(req: Request<hyper::body::Incoming>) -> Result<Response<BoxBody<Bytes, Infallible>>, Infallible> {
     let start_time = Instant::now();
@@ -469,6 +501,95 @@ pub async fn handle_http_request(req: Request<hyper::body::Incoming>) -> Result<
         (&Method::GET, "/database/watchtime/search") => return Ok(handle_search_watchtime(&query).await),
         (&Method::GET, "/database/watchtime/by-period") => return Ok(handle_get_viewers_by_period(&query).await),
 
+        // Confessions endpoints
+        (&Method::GET, "/api/confessions") => return Ok(handle_get_confessions(&query).await),
+        (&Method::DELETE, path) if path.starts_with("/api/confessions/") => {
+            let id = path.trim_start_matches("/api/confessions/").parse::<i64>().ok();
+            match id {
+                Some(id) => return Ok(handle_delete_confession(id).await),
+                None => error_response(StatusCode::BAD_REQUEST, "Invalid confession ID"),
+            }
+        }
+
+        // Alexa endpoints
+        (&Method::POST, "/api/alexa/request") => {
+            match &body {
+                Some(body_content) => return Ok(handle_alexa_request(body_content).await),
+                None => error_response(StatusCode::BAD_REQUEST, "Missing request body"),
+            }
+        }
+        (&Method::GET, "/api/alexa/commands") => return Ok(handle_get_alexa_commands().await),
+        (&Method::POST, "/api/alexa/commands") => {
+            match &body {
+                Some(body_content) => return Ok(handle_save_alexa_command(body_content).await),
+                None => error_response(StatusCode::BAD_REQUEST, "Missing request body"),
+            }
+        }
+        (&Method::DELETE, path) if path.starts_with("/api/alexa/commands/") => {
+            let id = path.trim_start_matches("/api/alexa/commands/").parse::<i64>().ok();
+            match id {
+                Some(id) => return Ok(handle_delete_alexa_command(id).await),
+                None => error_response(StatusCode::BAD_REQUEST, "Invalid command ID"),
+            }
+        }
+        (&Method::GET, "/api/alexa/config") => return Ok(handle_get_alexa_config().await),
+        (&Method::POST, "/api/alexa/config") => {
+            match &body {
+                Some(body_content) => return Ok(handle_save_alexa_config(body_content).await),
+                None => error_response(StatusCode::BAD_REQUEST, "Missing request body"),
+            }
+        }
+        (&Method::POST, "/api/alexa/obs/connect") => return Ok(handle_alexa_obs_connect().await),
+        (&Method::POST, "/api/alexa/obs/disconnect") => return Ok(handle_alexa_obs_disconnect().await),
+        (&Method::GET, "/api/alexa/obs/scenes") => return Ok(handle_get_obs_scenes().await),
+        (&Method::GET, "/api/alexa/obs/status") => return Ok(handle_alexa_obs_status().await),
+
+        // Ticker endpoints
+        (&Method::GET, "/api/ticker/messages") => return Ok(handle_get_ticker_messages().await),
+        (&Method::GET, "/api/ticker/messages/enabled") => return Ok(handle_get_enabled_ticker_messages().await),
+        (&Method::POST, "/api/ticker/messages") => {
+            match &body {
+                Some(body_content) => return Ok(handle_add_ticker_message(body_content.clone()).await),
+                None => error_response(StatusCode::BAD_REQUEST, "Missing request body"),
+            }
+        }
+        (&Method::PUT, "/api/ticker/messages") => {
+            match &body {
+                Some(body_content) => return Ok(handle_update_ticker_message(body_content.clone()).await),
+                None => error_response(StatusCode::BAD_REQUEST, "Missing request body"),
+            }
+        }
+        (&Method::DELETE, "/api/ticker/messages") => {
+            match &body {
+                Some(body_content) => return Ok(handle_delete_ticker_message(body_content.clone()).await),
+                None => error_response(StatusCode::BAD_REQUEST, "Missing request body"),
+            }
+        }
+        (&Method::POST, "/api/ticker/messages/toggle") => {
+            match &body {
+                Some(body_content) => return Ok(handle_toggle_ticker_message(body_content.clone()).await),
+                None => error_response(StatusCode::BAD_REQUEST, "Missing request body"),
+            }
+        }
+
+        // Status config endpoints
+        (&Method::GET, "/api/status/config") => return Ok(handle_get_status_config().await),
+        (&Method::POST, "/api/status/days") => {
+            match &body {
+                Some(body_content) => return Ok(handle_update_stream_start_days(body_content.clone()).await),
+                None => error_response(StatusCode::BAD_REQUEST, "Missing request body"),
+            }
+        }
+
+        // Ticker events config endpoints
+        (&Method::GET, "/api/ticker/events/config") => return Ok(handle_get_ticker_events_config().await),
+        (&Method::PUT, "/api/ticker/events/config") => {
+            match &body {
+                Some(body_content) => return Ok(handle_update_ticker_events_config(body_content.clone()).await),
+                None => error_response(StatusCode::BAD_REQUEST, "Missing request body"),
+            }
+        }
+
         // Database management endpoints
         (&Method::GET, "/database/tables") => return Ok(handle_get_tables().await),
         (&Method::GET, "/database/schema") => return Ok(handle_get_table_schema(&query).await),
@@ -608,6 +729,35 @@ pub async fn handle_http_request(req: Request<hyper::body::Incoming>) -> Result<
         (&Method::POST, "/discord/start") => return Ok(handle_discord_start().await),
         (&Method::POST, "/discord/stop") => return Ok(handle_discord_stop().await),
         (&Method::POST, "/discord/restart") => return Ok(handle_discord_restart().await),
+
+        // Discord command management endpoints
+        (&Method::GET, "/discord/commands") => return Ok(handle_discord_get_commands().await),
+        (&Method::GET, "/discord/commands/get") => return Ok(handle_discord_get_command(&query).await),
+        (&Method::POST, "/discord/commands") => {
+            match &body {
+                Some(body_content) => return Ok(handle_discord_create_command(body_content).await),
+                None => error_response(StatusCode::BAD_REQUEST, "Missing request body"),
+            }
+        }
+        (&Method::PUT, "/discord/commands/update") => {
+            match &body {
+                Some(body_content) => return Ok(handle_discord_update_command(body_content).await),
+                None => error_response(StatusCode::BAD_REQUEST, "Missing request body"),
+            }
+        }
+        (&Method::DELETE, "/discord/commands/delete") => {
+            match &body {
+                Some(body_content) => return Ok(handle_discord_delete_command(body_content).await),
+                None => error_response(StatusCode::BAD_REQUEST, "Missing request body"),
+            }
+        }
+        (&Method::POST, "/discord/commands/toggle") => {
+            match &body {
+                Some(body_content) => return Ok(handle_discord_toggle_command(body_content).await),
+                None => error_response(StatusCode::BAD_REQUEST, "Missing request body"),
+            }
+        }
+        (&Method::POST, "/discord/commands/reload") => return Ok(handle_discord_reload_commands().await),
 
         // Song request endpoints
         (&Method::GET, "/song-requests/pending") => return Ok(handle_song_requests_get_pending().await),
@@ -1372,8 +1522,9 @@ async fn handle_twitch_get_config() -> Response<BoxBody<Bytes, Infallible>> {
         Some(manager) => {
             let config_manager = manager.get_config_manager();
 
-            match config_manager.load() {
-                Ok(config) => {
+            // Run blocking database operation in a separate thread pool
+            match tokio::task::spawn_blocking(move || config_manager.load()).await {
+                Ok(Ok(config)) => {
                     // Don't send sensitive data
                     let safe_config = serde_json::json!({
                         "client_id": config.client_id,
@@ -1383,9 +1534,13 @@ async fn handle_twitch_get_config() -> Response<BoxBody<Bytes, Infallible>> {
                     });
                     json_response(&safe_config)
                 }
-                Err(e) => {
+                Ok(Err(e)) => {
                     error!("Failed to load config: {}", e);
                     error_response(StatusCode::INTERNAL_SERVER_ERROR, &format!("Failed to load config: {}", e))
+                }
+                Err(e) => {
+                    error!("Task join error: {}", e);
+                    error_response(StatusCode::INTERNAL_SERVER_ERROR, "Internal server error")
                 }
             }
         }
@@ -1408,39 +1563,41 @@ async fn handle_twitch_save_config(body: &str) -> Response<BoxBody<Bytes, Infall
 
             match serde_json::from_str::<SaveConfigRequest>(body) {
                 Ok(req) => {
-                    match config_manager.load() {
-                        Ok(mut config) => {
-                            if let Some(client_id) = req.client_id {
-                                config.client_id = client_id;
-                            }
-                            if let Some(client_secret) = req.client_secret {
-                                config.client_secret = client_secret;
-                            }
-                            if let Some(bot_username) = req.bot_username {
-                                config.bot_username = bot_username;
-                            }
-                            if let Some(channels) = req.channels {
-                                config.channels = channels;
-                            }
+                    // Run blocking database operations in a separate thread pool
+                    match tokio::task::spawn_blocking(move || {
+                        let mut config = config_manager.load()?;
 
-                            match config_manager.save(&config) {
-                                Ok(_) => {
-                                    let response = ApiResponse {
-                                        success: true,
-                                        content: Some("Config saved successfully".to_string()),
-                                        error: None,
-                                    };
-                                    json_response(&response)
-                                }
-                                Err(e) => {
-                                    error!("Failed to save config: {}", e);
-                                    error_response(StatusCode::INTERNAL_SERVER_ERROR, &format!("Failed to save config: {}", e))
-                                }
-                            }
+                        if let Some(client_id) = req.client_id {
+                            config.client_id = client_id;
+                        }
+                        if let Some(client_secret) = req.client_secret {
+                            config.client_secret = client_secret;
+                        }
+                        if let Some(bot_username) = req.bot_username {
+                            config.bot_username = bot_username;
+                        }
+                        if let Some(channels) = req.channels {
+                            config.channels = channels;
+                        }
+
+                        config_manager.save(&config)?;
+                        Ok::<(), anyhow::Error>(())
+                    }).await {
+                        Ok(Ok(_)) => {
+                            let response = ApiResponse {
+                                success: true,
+                                content: Some("Config saved successfully".to_string()),
+                                error: None,
+                            };
+                            json_response(&response)
+                        }
+                        Ok(Err(e)) => {
+                            error!("Failed to save config: {}", e);
+                            error_response(StatusCode::INTERNAL_SERVER_ERROR, &format!("Failed to save config: {}", e))
                         }
                         Err(e) => {
-                            error!("Failed to load config: {}", e);
-                            error_response(StatusCode::INTERNAL_SERVER_ERROR, &format!("Failed to load config: {}", e))
+                            error!("Task join error: {}", e);
+                            error_response(StatusCode::INTERNAL_SERVER_ERROR, "Internal server error")
                         }
                     }
                 }
@@ -2431,6 +2588,69 @@ async fn handle_get_viewers_by_period(query: &str) -> Response<BoxBody<Bytes, In
                 (Err(e), _) | (_, Err(e)) => {
                     error!("Failed to get viewers by period: {}", e);
                     error_response(StatusCode::INTERNAL_SERVER_ERROR, &format!("Failed to get viewers by period: {}", e))
+                }
+            }
+        }
+        None => error_response(StatusCode::SERVICE_UNAVAILABLE, "Database not initialized"),
+    }
+}
+
+// ========== Confessions Handlers ==========
+
+async fn handle_get_confessions(query: &str) -> Response<BoxBody<Bytes, Infallible>> {
+    match get_database() {
+        Some(db) => {
+            // Parse query parameters
+            let params: std::collections::HashMap<String, String> = query
+                .split('&')
+                .filter_map(|param| {
+                    let mut parts = param.split('=');
+                    Some((parts.next()?.to_string(), parts.next()?.to_string()))
+                })
+                .collect();
+
+            let channel = params.get("channel").map(|s| s.as_str()).unwrap_or("wenarcade");
+
+            match db.get_confessions(channel) {
+                Ok(confessions) => {
+                    let confession_list: Vec<serde_json::Value> = confessions
+                        .iter()
+                        .map(|(id, username, message, created_at)| {
+                            serde_json::json!({
+                                "id": id,
+                                "username": username,
+                                "message": message,
+                                "created_at": created_at
+                            })
+                        })
+                        .collect();
+
+                    json_response(&confession_list)
+                }
+                Err(e) => {
+                    error!("Failed to get confessions: {}", e);
+                    error_response(StatusCode::INTERNAL_SERVER_ERROR, &format!("Failed to get confessions: {}", e))
+                }
+            }
+        }
+        None => error_response(StatusCode::SERVICE_UNAVAILABLE, "Database not initialized"),
+    }
+}
+
+async fn handle_delete_confession(id: i64) -> Response<BoxBody<Bytes, Infallible>> {
+    match get_database() {
+        Some(db) => {
+            match db.delete_confession(id) {
+                Ok(_) => {
+                    let response = serde_json::json!({
+                        "success": true,
+                        "message": "Confession deleted successfully"
+                    });
+                    json_response(&response)
+                }
+                Err(e) => {
+                    error!("Failed to delete confession: {}", e);
+                    error_response(StatusCode::INTERNAL_SERVER_ERROR, &format!("Failed to delete confession: {}", e))
                 }
             }
         }
@@ -4204,6 +4424,224 @@ async fn handle_discord_restart() -> Response<BoxBody<Bytes, Infallible>> {
     }
 }
 
+// === DISCORD COMMAND HANDLERS ===
+
+async fn handle_discord_get_commands() -> Response<BoxBody<Bytes, Infallible>> {
+    match get_database() {
+        Some(db) => {
+            match db.get_discord_custom_commands() {
+                Ok(commands) => {
+                    let response = serde_json::json!({
+                        "success": true,
+                        "data": commands
+                    });
+                    json_response(&response)
+                }
+                Err(e) => error_response(StatusCode::INTERNAL_SERVER_ERROR, &format!("Failed to get commands: {}", e))
+            }
+        }
+        None => error_response(StatusCode::SERVICE_UNAVAILABLE, "Database not initialized"),
+    }
+}
+
+async fn handle_discord_get_command(query: &str) -> Response<BoxBody<Bytes, Infallible>> {
+    // Parse query string to get id parameter
+    let params: std::collections::HashMap<_, _> = url::form_urlencoded::parse(query.as_bytes()).collect();
+
+    match params.get("id") {
+        Some(id_str) => {
+            match id_str.parse::<i64>() {
+                Ok(id) => {
+                    match get_database() {
+                        Some(db) => {
+                            match db.get_discord_custom_command(id) {
+                                Ok(Some(command)) => {
+                                    let response = serde_json::json!({
+                                        "success": true,
+                                        "data": command
+                                    });
+                                    json_response(&response)
+                                }
+                                Ok(None) => error_response(StatusCode::NOT_FOUND, "Command not found"),
+                                Err(e) => error_response(StatusCode::INTERNAL_SERVER_ERROR, &format!("Failed to get command: {}", e))
+                            }
+                        }
+                        None => error_response(StatusCode::SERVICE_UNAVAILABLE, "Database not initialized"),
+                    }
+                }
+                Err(_) => error_response(StatusCode::BAD_REQUEST, "Invalid command ID"),
+            }
+        }
+        None => error_response(StatusCode::BAD_REQUEST, "Missing id parameter"),
+    }
+}
+
+async fn handle_discord_create_command(body: &str) -> Response<BoxBody<Bytes, Infallible>> {
+    #[derive(serde::Deserialize)]
+    struct CreateCommandRequest {
+        name: String,
+        aliases: Vec<String>,
+        response: String,
+        description: String,
+        permission: String,
+        cooldown: i64,
+        enabled: bool,
+    }
+
+    match get_database() {
+        Some(db) => {
+            match serde_json::from_str::<CreateCommandRequest>(body) {
+                Ok(req) => {
+                    match db.create_discord_custom_command(
+                        &req.name,
+                        &req.aliases,
+                        &req.response,
+                        &req.description,
+                        &req.permission,
+                        req.cooldown,
+                        req.enabled,
+                    ) {
+                        Ok(id) => {
+                            let response = serde_json::json!({
+                                "success": true,
+                                "data": { "id": id },
+                                "message": "Command created successfully"
+                            });
+                            json_response(&response)
+                        }
+                        Err(e) => error_response(StatusCode::INTERNAL_SERVER_ERROR, &format!("Failed to create command: {}", e))
+                    }
+                }
+                Err(e) => error_response(StatusCode::BAD_REQUEST, &format!("Invalid request: {}", e))
+            }
+        }
+        None => error_response(StatusCode::SERVICE_UNAVAILABLE, "Database not initialized"),
+    }
+}
+
+async fn handle_discord_update_command(body: &str) -> Response<BoxBody<Bytes, Infallible>> {
+    #[derive(serde::Deserialize)]
+    struct UpdateCommandRequest {
+        id: i64,
+        name: String,
+        aliases: Vec<String>,
+        response: String,
+        description: String,
+        permission: String,
+        cooldown: i64,
+        enabled: bool,
+    }
+
+    match get_database() {
+        Some(db) => {
+            match serde_json::from_str::<UpdateCommandRequest>(body) {
+                Ok(req) => {
+                    match db.update_discord_custom_command(
+                        req.id,
+                        &req.name,
+                        &req.aliases,
+                        &req.response,
+                        &req.description,
+                        &req.permission,
+                        req.cooldown,
+                        req.enabled,
+                    ) {
+                        Ok(()) => {
+                            let response = ApiResponse {
+                                success: true,
+                                content: Some("Command updated successfully".to_string()),
+                                error: None,
+                            };
+                            json_response(&response)
+                        }
+                        Err(e) => error_response(StatusCode::INTERNAL_SERVER_ERROR, &format!("Failed to update command: {}", e))
+                    }
+                }
+                Err(e) => error_response(StatusCode::BAD_REQUEST, &format!("Invalid request: {}", e))
+            }
+        }
+        None => error_response(StatusCode::SERVICE_UNAVAILABLE, "Database not initialized"),
+    }
+}
+
+async fn handle_discord_delete_command(body: &str) -> Response<BoxBody<Bytes, Infallible>> {
+    #[derive(serde::Deserialize)]
+    struct DeleteCommandRequest {
+        id: i64,
+    }
+
+    match get_database() {
+        Some(db) => {
+            match serde_json::from_str::<DeleteCommandRequest>(body) {
+                Ok(req) => {
+                    match db.delete_discord_custom_command(req.id) {
+                        Ok(()) => {
+                            let response = ApiResponse {
+                                success: true,
+                                content: Some("Command deleted successfully".to_string()),
+                                error: None,
+                            };
+                            json_response(&response)
+                        }
+                        Err(e) => error_response(StatusCode::INTERNAL_SERVER_ERROR, &format!("Failed to delete command: {}", e))
+                    }
+                }
+                Err(e) => error_response(StatusCode::BAD_REQUEST, &format!("Invalid request: {}", e))
+            }
+        }
+        None => error_response(StatusCode::SERVICE_UNAVAILABLE, "Database not initialized"),
+    }
+}
+
+async fn handle_discord_toggle_command(body: &str) -> Response<BoxBody<Bytes, Infallible>> {
+    #[derive(serde::Deserialize)]
+    struct ToggleCommandRequest {
+        id: i64,
+        enabled: bool,
+    }
+
+    match get_database() {
+        Some(db) => {
+            match serde_json::from_str::<ToggleCommandRequest>(body) {
+                Ok(req) => {
+                    match db.toggle_discord_custom_command(req.id, req.enabled) {
+                        Ok(()) => {
+                            let response = ApiResponse {
+                                success: true,
+                                content: Some("Command toggled successfully".to_string()),
+                                error: None,
+                            };
+                            json_response(&response)
+                        }
+                        Err(e) => error_response(StatusCode::INTERNAL_SERVER_ERROR, &format!("Failed to toggle command: {}", e))
+                    }
+                }
+                Err(e) => error_response(StatusCode::BAD_REQUEST, &format!("Invalid request: {}", e))
+            }
+        }
+        None => error_response(StatusCode::SERVICE_UNAVAILABLE, "Database not initialized"),
+    }
+}
+
+async fn handle_discord_reload_commands() -> Response<BoxBody<Bytes, Infallible>> {
+    match get_discord_manager() {
+        Some(manager) => {
+            match manager.reload_commands().await {
+                Ok(()) => {
+                    let response = ApiResponse {
+                        success: true,
+                        content: Some("Commands reloaded successfully".to_string()),
+                        error: None,
+                    };
+                    json_response(&response)
+                }
+                Err(e) => error_response(StatusCode::INTERNAL_SERVER_ERROR, &format!("Failed to reload commands: {}", e))
+            }
+        }
+        None => error_response(StatusCode::SERVICE_UNAVAILABLE, "Discord manager not initialized"),
+    }
+}
+
 // === SONG REQUEST HANDLERS ===
 
 async fn handle_song_requests_get_pending() -> Response<BoxBody<Bytes, Infallible>> {
@@ -4334,5 +4772,433 @@ async fn handle_song_requests_clear(body: &str) -> Response<BoxBody<Bytes, Infal
             }
         }
         None => error_response(StatusCode::SERVICE_UNAVAILABLE, "Database not initialized"),
+    }
+}
+
+// === ALEXA HANDLERS ===
+
+async fn handle_alexa_request(body: &str) -> Response<BoxBody<Bytes, Infallible>> {
+    match get_alexa_manager() {
+        Some(alexa) => {
+            match serde_json::from_str::<crate::modules::alexa::AlexaRequest>(body) {
+                Ok(request) => {
+                    match alexa.handle_request(request).await {
+                        Ok(response) => json_response(&response),
+                        Err(e) => error_response(StatusCode::INTERNAL_SERVER_ERROR, &format!("Failed to process request: {}", e))
+                    }
+                }
+                Err(e) => error_response(StatusCode::BAD_REQUEST, &format!("Invalid Alexa request: {}", e))
+            }
+        }
+        None => error_response(StatusCode::SERVICE_UNAVAILABLE, "Alexa manager not initialized"),
+    }
+}
+
+async fn handle_get_alexa_commands() -> Response<BoxBody<Bytes, Infallible>> {
+    match get_alexa_manager() {
+        Some(alexa) => {
+            match alexa.get_all_commands() {
+                Ok(commands) => {
+                    let response = ApiResponse {
+                        success: true,
+                        content: Some(serde_json::to_string(&commands).unwrap()),
+                        error: None,
+                    };
+                    json_response(&response)
+                }
+                Err(e) => error_response(StatusCode::INTERNAL_SERVER_ERROR, &format!("Failed to get commands: {}", e))
+            }
+        }
+        None => error_response(StatusCode::SERVICE_UNAVAILABLE, "Alexa manager not initialized"),
+    }
+}
+
+async fn handle_save_alexa_command(body: &str) -> Response<BoxBody<Bytes, Infallible>> {
+    match get_alexa_manager() {
+        Some(alexa) => {
+            match serde_json::from_str::<crate::modules::alexa::AlexaCommand>(body) {
+                Ok(command) => {
+                    match alexa.save_command(&command) {
+                        Ok(()) => {
+                            let response = ApiResponse {
+                                success: true,
+                                content: Some("Command saved successfully".into()),
+                                error: None,
+                            };
+                            json_response(&response)
+                        }
+                        Err(e) => error_response(StatusCode::INTERNAL_SERVER_ERROR, &format!("Failed to save command: {}", e))
+                    }
+                }
+                Err(e) => error_response(StatusCode::BAD_REQUEST, &format!("Invalid command: {}", e))
+            }
+        }
+        None => error_response(StatusCode::SERVICE_UNAVAILABLE, "Alexa manager not initialized"),
+    }
+}
+
+async fn handle_delete_alexa_command(id: i64) -> Response<BoxBody<Bytes, Infallible>> {
+    match get_alexa_manager() {
+        Some(alexa) => {
+            match alexa.delete_command(id) {
+                Ok(()) => {
+                    let response = ApiResponse {
+                        success: true,
+                        content: Some("Command deleted successfully".into()),
+                        error: None,
+                    };
+                    json_response(&response)
+                }
+                Err(e) => error_response(StatusCode::INTERNAL_SERVER_ERROR, &format!("Failed to delete command: {}", e))
+            }
+        }
+        None => error_response(StatusCode::SERVICE_UNAVAILABLE, "Alexa manager not initialized"),
+    }
+}
+
+async fn handle_get_alexa_config() -> Response<BoxBody<Bytes, Infallible>> {
+    match get_database() {
+        Some(db) => {
+            match db.get_alexa_config() {
+                Ok(config) => {
+                    let config_json = serde_json::json!({
+                        "obs_host": config.as_ref().map(|c| &c.0).unwrap_or(&"localhost".to_string()),
+                        "obs_port": config.as_ref().map(|c| c.1).unwrap_or(4455),
+                        "obs_password": config.as_ref().and_then(|c| c.2.clone()),
+                        "skill_id": config.as_ref().and_then(|c| c.3.clone()),
+                        "enabled": config.as_ref().map(|c| c.4).unwrap_or(false),
+                    });
+                    let response = ApiResponse {
+                        success: true,
+                        content: Some(serde_json::to_string(&config_json).unwrap()),
+                        error: None,
+                    };
+                    json_response(&response)
+                }
+                Err(e) => error_response(StatusCode::INTERNAL_SERVER_ERROR, &format!("Failed to get config: {}", e))
+            }
+        }
+        None => error_response(StatusCode::SERVICE_UNAVAILABLE, "Database not initialized"),
+    }
+}
+
+async fn handle_save_alexa_config(body: &str) -> Response<BoxBody<Bytes, Infallible>> {
+    #[derive(serde::Deserialize)]
+    struct AlexaConfig {
+        obs_host: String,
+        obs_port: u16,
+        obs_password: Option<String>,
+        skill_id: Option<String>,
+        enabled: bool,
+    }
+
+    match get_database() {
+        Some(db) => {
+            match serde_json::from_str::<AlexaConfig>(body) {
+                Ok(config) => {
+                    match db.save_alexa_config(&config.obs_host, config.obs_port, config.obs_password.clone(), config.skill_id, config.enabled) {
+                        Ok(()) => {
+                            // If enabled, connect to OBS
+                            if config.enabled {
+                                if let Some(alexa) = get_alexa_manager() {
+                                    let _ = alexa.connect_obs(&config.obs_host, config.obs_port, config.obs_password).await;
+                                }
+                            }
+
+                            let response = ApiResponse {
+                                success: true,
+                                content: Some("Config saved successfully".into()),
+                                error: None,
+                            };
+                            json_response(&response)
+                        }
+                        Err(e) => error_response(StatusCode::INTERNAL_SERVER_ERROR, &format!("Failed to save config: {}", e))
+                    }
+                }
+                Err(e) => error_response(StatusCode::BAD_REQUEST, &format!("Invalid config: {}", e))
+            }
+        }
+        None => error_response(StatusCode::SERVICE_UNAVAILABLE, "Database not initialized"),
+    }
+}
+
+async fn handle_alexa_obs_connect() -> Response<BoxBody<Bytes, Infallible>> {
+    match get_database() {
+        Some(db) => {
+            match db.get_alexa_config() {
+                Ok(Some((host, port, password, _, _))) => {
+                    match get_alexa_manager() {
+                        Some(alexa) => {
+                            match alexa.connect_obs(&host, port, password).await {
+                                Ok(()) => {
+                                    let response = ApiResponse {
+                                        success: true,
+                                        content: Some("Connected to OBS successfully".into()),
+                                        error: None,
+                                    };
+                                    json_response(&response)
+                                }
+                                Err(e) => error_response(StatusCode::INTERNAL_SERVER_ERROR, &e)
+                            }
+                        }
+                        None => error_response(StatusCode::SERVICE_UNAVAILABLE, "Alexa manager not initialized"),
+                    }
+                }
+                Ok(None) => error_response(StatusCode::BAD_REQUEST, "OBS config not found"),
+                Err(e) => error_response(StatusCode::INTERNAL_SERVER_ERROR, &format!("Failed to get config: {}", e))
+            }
+        }
+        None => error_response(StatusCode::SERVICE_UNAVAILABLE, "Database not initialized"),
+    }
+}
+
+async fn handle_alexa_obs_disconnect() -> Response<BoxBody<Bytes, Infallible>> {
+    match get_alexa_manager() {
+        Some(alexa) => {
+            alexa.disconnect_obs().await;
+            let response = ApiResponse {
+                success: true,
+                content: Some("Disconnected from OBS".into()),
+                error: None,
+            };
+            json_response(&response)
+        }
+        None => error_response(StatusCode::SERVICE_UNAVAILABLE, "Alexa manager not initialized"),
+    }
+}
+
+async fn handle_get_obs_scenes() -> Response<BoxBody<Bytes, Infallible>> {
+    match get_alexa_manager() {
+        Some(alexa) => {
+            match alexa.get_obs_scenes().await {
+                Ok(scenes) => {
+                    let response = ApiResponse {
+                        success: true,
+                        content: Some(serde_json::to_string(&scenes).unwrap()),
+                        error: None,
+                    };
+                    json_response(&response)
+                }
+                Err(e) => error_response(StatusCode::INTERNAL_SERVER_ERROR, &e)
+            }
+        }
+        None => error_response(StatusCode::SERVICE_UNAVAILABLE, "Alexa manager not initialized"),
+    }
+}
+
+async fn handle_alexa_obs_status() -> Response<BoxBody<Bytes, Infallible>> {
+    match get_alexa_manager() {
+        Some(alexa) => {
+            let connected = alexa.is_obs_connected().await;
+            let status_json = serde_json::json!({ "connected": connected });
+            let response = ApiResponse {
+                success: true,
+                content: Some(serde_json::to_string(&status_json).unwrap()),
+                error: None,
+            };
+            json_response(&response)
+        }
+        None => error_response(StatusCode::SERVICE_UNAVAILABLE, "Alexa manager not initialized"),
+    }
+}
+
+// ========== Ticker Handlers ==========
+
+async fn handle_get_ticker_messages() -> Response<BoxBody<Bytes, Infallible>> {
+    match Database::new() {
+        Ok(db) => {
+            match db.get_ticker_messages() {
+                Ok(messages) => json_response(&messages),
+                Err(e) => error_response(StatusCode::INTERNAL_SERVER_ERROR, &format!("Failed to get messages: {}", e))
+            }
+        }
+        Err(e) => error_response(StatusCode::INTERNAL_SERVER_ERROR, &format!("Database error: {}", e))
+    }
+}
+
+async fn handle_get_enabled_ticker_messages() -> Response<BoxBody<Bytes, Infallible>> {
+    match Database::new() {
+        Ok(db) => {
+            match db.get_enabled_ticker_messages() {
+                Ok(messages) => json_response(&messages),
+                Err(e) => error_response(StatusCode::INTERNAL_SERVER_ERROR, &format!("Failed to get messages: {}", e))
+            }
+        }
+        Err(e) => error_response(StatusCode::INTERNAL_SERVER_ERROR, &format!("Database error: {}", e))
+    }
+}
+
+async fn handle_add_ticker_message(body: String) -> Response<BoxBody<Bytes, Infallible>> {
+    #[derive(Deserialize)]
+    struct AddMessageRequest {
+        message: String,
+    }
+
+    match serde_json::from_str::<AddMessageRequest>(&body) {
+        Ok(req) => {
+            match Database::new() {
+                Ok(db) => {
+                    match db.add_ticker_message(&req.message) {
+                        Ok(id) => {
+                            let response = serde_json::json!({ "id": id });
+                            json_response(&response)
+                        }
+                        Err(e) => error_response(StatusCode::INTERNAL_SERVER_ERROR, &format!("Failed to add message: {}", e))
+                    }
+                }
+                Err(e) => error_response(StatusCode::INTERNAL_SERVER_ERROR, &format!("Database error: {}", e))
+            }
+        }
+        Err(e) => error_response(StatusCode::BAD_REQUEST, &format!("Invalid request: {}", e))
+    }
+}
+
+async fn handle_update_ticker_message(body: String) -> Response<BoxBody<Bytes, Infallible>> {
+    #[derive(Deserialize)]
+    struct UpdateMessageRequest {
+        id: i64,
+        message: String,
+        enabled: bool,
+    }
+
+    match serde_json::from_str::<UpdateMessageRequest>(&body) {
+        Ok(req) => {
+            match Database::new() {
+                Ok(db) => {
+                    match db.update_ticker_message(req.id, &req.message, req.enabled) {
+                        Ok(()) => {
+                            let response = serde_json::json!({ "success": true });
+                            json_response(&response)
+                        }
+                        Err(e) => error_response(StatusCode::INTERNAL_SERVER_ERROR, &format!("Failed to update message: {}", e))
+                    }
+                }
+                Err(e) => error_response(StatusCode::INTERNAL_SERVER_ERROR, &format!("Database error: {}", e))
+            }
+        }
+        Err(e) => error_response(StatusCode::BAD_REQUEST, &format!("Invalid request: {}", e))
+    }
+}
+
+async fn handle_delete_ticker_message(body: String) -> Response<BoxBody<Bytes, Infallible>> {
+    #[derive(Deserialize)]
+    struct DeleteMessageRequest {
+        id: i64,
+    }
+
+    match serde_json::from_str::<DeleteMessageRequest>(&body) {
+        Ok(req) => {
+            match Database::new() {
+                Ok(db) => {
+                    match db.delete_ticker_message(req.id) {
+                        Ok(()) => {
+                            let response = serde_json::json!({ "success": true });
+                            json_response(&response)
+                        }
+                        Err(e) => error_response(StatusCode::INTERNAL_SERVER_ERROR, &format!("Failed to delete message: {}", e))
+                    }
+                }
+                Err(e) => error_response(StatusCode::INTERNAL_SERVER_ERROR, &format!("Database error: {}", e))
+            }
+        }
+        Err(e) => error_response(StatusCode::BAD_REQUEST, &format!("Invalid request: {}", e))
+    }
+}
+
+async fn handle_toggle_ticker_message(body: String) -> Response<BoxBody<Bytes, Infallible>> {
+    #[derive(Deserialize)]
+    struct ToggleMessageRequest {
+        id: i64,
+    }
+
+    match serde_json::from_str::<ToggleMessageRequest>(&body) {
+        Ok(req) => {
+            match Database::new() {
+                Ok(db) => {
+                    match db.toggle_ticker_message(req.id) {
+                        Ok(()) => {
+                            let response = serde_json::json!({ "success": true });
+                            json_response(&response)
+                        }
+                        Err(e) => error_response(StatusCode::INTERNAL_SERVER_ERROR, &format!("Failed to toggle message: {}", e))
+                    }
+                }
+                Err(e) => error_response(StatusCode::INTERNAL_SERVER_ERROR, &format!("Database error: {}", e))
+            }
+        }
+        Err(e) => error_response(StatusCode::BAD_REQUEST, &format!("Invalid request: {}", e))
+    }
+}
+
+// ========== Status Config Handlers ==========
+
+async fn handle_get_status_config() -> Response<BoxBody<Bytes, Infallible>> {
+    match Database::new() {
+        Ok(db) => {
+            match db.get_status_config() {
+                Ok(config) => json_response(&config),
+                Err(e) => error_response(StatusCode::INTERNAL_SERVER_ERROR, &format!("Failed to get config: {}", e))
+            }
+        }
+        Err(e) => error_response(StatusCode::INTERNAL_SERVER_ERROR, &format!("Database error: {}", e))
+    }
+}
+
+async fn handle_update_stream_start_days(body: String) -> Response<BoxBody<Bytes, Infallible>> {
+    #[derive(Deserialize)]
+    struct UpdateDaysRequest {
+        days: i64,
+    }
+
+    match serde_json::from_str::<UpdateDaysRequest>(&body) {
+        Ok(req) => {
+            match Database::new() {
+                Ok(db) => {
+                    match db.update_stream_start_days(req.days) {
+                        Ok(()) => {
+                            let response = serde_json::json!({ "success": true });
+                            json_response(&response)
+                        }
+                        Err(e) => error_response(StatusCode::INTERNAL_SERVER_ERROR, &format!("Failed to update days: {}", e))
+                    }
+                }
+                Err(e) => error_response(StatusCode::INTERNAL_SERVER_ERROR, &format!("Database error: {}", e))
+            }
+        }
+        Err(e) => error_response(StatusCode::BAD_REQUEST, &format!("Invalid request: {}", e))
+    }
+}
+
+async fn handle_get_ticker_events_config() -> Response<BoxBody<Bytes, Infallible>> {
+    match Database::new() {
+        Ok(db) => {
+            match db.get_ticker_events_config() {
+                Ok(config) => json_response(&config),
+                Err(e) => error_response(StatusCode::INTERNAL_SERVER_ERROR, &format!("Failed to get ticker events config: {}", e))
+            }
+        }
+        Err(e) => error_response(StatusCode::INTERNAL_SERVER_ERROR, &format!("Database error: {}", e))
+    }
+}
+
+async fn handle_update_ticker_events_config(body: String) -> Response<BoxBody<Bytes, Infallible>> {
+    use crate::commands::database::TickerEventsConfig;
+
+    match serde_json::from_str::<TickerEventsConfig>(&body) {
+        Ok(config) => {
+            match Database::new() {
+                Ok(db) => {
+                    match db.update_ticker_events_config(&config) {
+                        Ok(()) => {
+                            let response = serde_json::json!({ "success": true });
+                            json_response(&response)
+                        }
+                        Err(e) => error_response(StatusCode::INTERNAL_SERVER_ERROR, &format!("Failed to update ticker events config: {}", e))
+                    }
+                }
+                Err(e) => error_response(StatusCode::INTERNAL_SERVER_ERROR, &format!("Database error: {}", e))
+            }
+        }
+        Err(e) => error_response(StatusCode::BAD_REQUEST, &format!("Invalid request: {}", e))
     }
 }

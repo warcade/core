@@ -1,9 +1,10 @@
 import { createPlugin } from '@/api/plugin';
-import { createSignal } from 'solid-js';
+import { createSignal, createEffect, onCleanup } from 'solid-js';
 import { IconRefresh, IconVideo, IconEdit, IconArrowLeft, IconArrowRight, IconPlus, IconFolder, IconFile, IconArrowDown, IconScissors, IconCopy, IconClipboard, IconTrash, IconCube, IconWorld, IconBox, IconCircle, IconCylinder, IconSquare, IconChairDirector, IconLink, IconHelp, IconHeadphones, IconBrandYoutube, IconBrandDiscord, IconBook, IconInfoCircle, IconDeviceFloppy, IconMountain, IconSun, IconBulb, IconSphere, IconPackage, IconSettings, IconEye, IconRobot, IconBrain, IconMessage, IconX
 } from '@tabler/icons-solidjs';
 import AboutOverlay from './AboutOverlay.jsx';
 import { editorActions } from '@/layout/stores/EditorStore';
+import { viewportTypes } from '@/api/plugin';
 
 const [showAbout, setShowAbout] = createSignal(false);
 const [showOpenProject, setShowOpenProject] = createSignal(false);
@@ -38,13 +39,89 @@ export default createPlugin({
 
     api.registerLayoutComponent('about-overlay', () => {
       return (
-        <AboutOverlay 
-          isOpen={showAbout} 
-          onClose={() => setShowAbout(false)} 
+        <AboutOverlay
+          isOpen={showAbout}
+          onClose={() => setShowAbout(false)}
         />
       );
     });
-    
-    
+
+    // Register built-in 3D viewport
+    api.registerLeftPanelMenuItem('viewport-3d', {
+      label: 'New Scene',
+      icon: IconChairDirector,
+      description: 'Create a new 3D scene viewport',
+      category: 'Viewports',
+      order: 1,
+      onClick: () => {
+        api.createSceneViewport({ name: 'Scene' });
+      }
+    });
+
+    // Dynamically register all plugin viewport types
+    const registeredViewportItems = new Set();
+
+    createEffect(() => {
+      const types = viewportTypes();
+
+      // Register each viewport type as a left panel menu item
+      types.forEach((viewportType, typeId) => {
+        const menuId = `viewport-${typeId}`;
+
+        // Skip if already registered
+        if (registeredViewportItems.has(menuId)) {
+          return;
+        }
+
+        api.registerLeftPanelMenuItem(menuId, {
+          label: viewportType.label || viewportType.name || typeId,
+          icon: viewportType.icon || IconVideo,
+          description: viewportType.description || `Create a new ${viewportType.label || typeId} viewport`,
+          category: 'Viewports',
+          order: 10,
+          onClick: () => {
+            api.createViewportTab(typeId, {
+              label: viewportType.label || viewportType.name || 'New Viewport'
+            });
+          }
+        });
+
+        registeredViewportItems.add(menuId);
+      });
+    });
+
+    // Register utility menu items
+    api.registerLeftPanelMenuItem('settings', {
+      label: 'Settings',
+      icon: IconSettings,
+      description: 'Open application settings',
+      category: 'Tools',
+      order: 100,
+      onClick: () => {
+        console.log('Settings clicked');
+      }
+    });
+
+    api.registerLeftPanelMenuItem('help', {
+      label: 'Help',
+      icon: IconHelp,
+      description: 'View help documentation',
+      category: 'Help',
+      order: 200,
+      onClick: () => {
+        console.log('Help clicked');
+      }
+    });
+
+    api.registerLeftPanelMenuItem('about', {
+      label: 'About',
+      icon: IconInfoCircle,
+      description: 'About this application',
+      category: 'Help',
+      order: 201,
+      onClick: () => {
+        setShowAbout(true);
+      }
+    });
   }
 });

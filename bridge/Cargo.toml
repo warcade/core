@@ -52,6 +52,11 @@ rusqlite = { version = "0.32", features = ["bundled"] }
 rodio = "0.17"
 # Discord integration
 serenity = { version = "0.12", default-features = false, features = ["client", "gateway", "rustls_backend", "model", "cache"] }
+# Note: Voice support disabled on Windows due to build requirements (CMake + Visual Studio Build Tools)
+# To enable: uncomment songbird and install build tools
+# songbird = { version = "0.4", features = ["builtin-queue"] }
+# OBS WebSocket integration
+obws = "0.11"
 
 [features]
 default = []

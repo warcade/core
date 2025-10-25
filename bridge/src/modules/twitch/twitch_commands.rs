@@ -357,6 +357,8 @@ mod tests {
             channel: "test".to_string(),
             username: "user".to_string(),
             user_id: "123".to_string(),
+            display_name: None,
+            profile_image_url: None,
             message: "test".to_string(),
             timestamp: 0,
             badges: vec![],
@@ -365,6 +367,11 @@ mod tests {
             is_vip: false,
             color: None,
             emotes: vec![],
+            location_flag: None,
+            is_birthday: false,
+            level: None,
+            current_xp: None,
+            xp_for_next_level: None,
         };
 
         // Everyone permission

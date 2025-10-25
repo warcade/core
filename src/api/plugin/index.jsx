@@ -9,8 +9,10 @@ const [topMenuItems, setTopMenuItems] = createSignal(new Map());
 const [propertyTabs, setPropertyTabs] = createSignal(new Map());
 const [viewportTypes, setViewportTypes] = createSignal(new Map());
 const [footerButtons, setFooterButtons] = createSignal(new Map());
+const [leftPanelMenuItems, setLeftPanelMenuItems] = createSignal(new Map());
 const [registeredPlugins, setRegisteredPlugins] = createSignal(new Map());
 const [propertiesPanelVisible, setPropertiesPanelVisible] = createSignal(true);
+const [leftPanelVisible, setLeftPanelVisible] = createSignal(true);
 const [horizontalMenuButtonsEnabled, setHorizontalMenuButtonsEnabled] = createSignal(true);
 const [footerVisible, setFooterVisible] = createSignal(true);
 const [viewportTabsVisible, setViewportTabsVisible] = createSignal(true);
@@ -702,7 +704,18 @@ export class PluginAPI {
         }
         return newMap;
       });
-      
+
+      // Remove left panel menu items
+      setLeftPanelMenuItems(prev => {
+        const newMap = new Map(prev);
+        for (const [key, item] of newMap) {
+          if (item.plugin === pluginId) {
+            newMap.delete(key);
+          }
+        }
+        return newMap;
+      });
+
       // Remove layout components
       setLayoutComponents(prev => {
         const newMap = new Map(prev);
@@ -832,6 +845,22 @@ export class PluginAPI {
     return true;
   }
 
+  registerLeftPanelMenuItem(id, config) {
+    const menuItem = {
+      id,
+      label: config.label,
+      icon: config.icon,
+      description: config.description || '',
+      onClick: config.onClick,
+      order: config.order || 100,
+      category: config.category || 'General',
+      plugin: config.plugin || this.getCurrentPluginId() || 'unknown'
+    };
+
+    setLeftPanelMenuItems(prev => new Map(prev.set(id, menuItem)));
+    return true;
+  }
+
 
   registerLayoutComponent(region, component) {
     const layoutComponent = {
@@ -953,9 +982,17 @@ export class PluginAPI {
     setPropertiesPanelVisible(visible);
     // Properties panel visibility changed
   }
-  
+
   showProps(visible = true) { return this.setPropertiesPanelVisible(visible); }
   hideProps() { return this.setPropertiesPanelVisible(false); }
+
+  setLeftPanelVisible(visible) {
+    setLeftPanelVisible(visible);
+    // Left panel visibility changed
+  }
+
+  showLeftPanel(visible = true) { return this.setLeftPanelVisible(visible); }
+  hideLeftPanel() { return this.setLeftPanelVisible(false); }
 
 
   setHorizontalMenuButtonsEnabled(enabled) {
@@ -1002,6 +1039,9 @@ export class PluginAPI {
     return Array.from(footerButtons().values()).sort((a, b) => a.order - b.order);
   }
 
+  getLeftPanelMenuItems() {
+    return Array.from(leftPanelMenuItems().values()).sort((a, b) => a.order - b.order);
+  }
 
   getPlugins() {
     return Array.from(registeredPlugins().values());
@@ -1137,8 +1177,10 @@ export {
   propertyTabs,
   viewportTypes,
   footerButtons,
+  leftPanelMenuItems,
   registeredPlugins,
   propertiesPanelVisible,
+  leftPanelVisible,
   horizontalMenuButtonsEnabled,
   footerVisible,
   viewportTabsVisible,

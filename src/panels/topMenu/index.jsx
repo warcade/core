@@ -4,6 +4,7 @@ import { editorStore, editorActions } from '@/layout/stores/EditorStore';
 import { topMenuItems, horizontalMenuButtonsEnabled } from '@/api/plugin';
 import ThemeSwitcher from '@/ui/ThemeSwitcher';
 import { getCurrentWindow } from '@tauri-apps/api/window';
+import ViewportTabs from '@/panels/viewport/ViewportTabs.jsx';
 
 function TopMenu() {
   const [activeMenu, setActiveMenu] = createSignal(null);
@@ -258,12 +259,21 @@ function TopMenu() {
 
   return (
     <>
-      <div 
+      <div
         class="relative w-full h-8 bg-base-300/60 backdrop-blur-md shadow-sm border-b border-black/30 flex items-center px-2"
         data-tauri-drag-region
       >
+        {/* Viewport Tabs */}
+        <div class="flex items-center overflow-hidden">
+          <ViewportTabs />
+        </div>
+
+        {/* Draggable spacer - provides area to drag window */}
+        <div class="flex-1 min-w-16" data-tauri-drag-region />
+
+        {/* Show old menu buttons if horizontalMenuButtonsEnabled */}
         <Show when={horizontalMenuButtonsEnabled()}>
-          <div 
+          <div
             style={{
               '-webkit-app-region': 'no-drag'
             }}
@@ -276,7 +286,7 @@ function TopMenu() {
                     onClick={(e) => handleMenuClick(menuName, e)}
                     onMouseEnter={(e) => {
                       if (activeMenu()) {
-                        
+
                         const rect = e.currentTarget.getBoundingClientRect();
                         const position = calculateDropdownPosition(rect, 224);
                         setMenuPosition({
@@ -298,8 +308,6 @@ function TopMenu() {
             </For>
           </div>
         </Show>
-        
-        <div class="flex-1" />
         
         {/* Theme Switcher */}
         <div class="flex items-center mr-2" style={{ '-webkit-app-region': 'no-drag' }}>

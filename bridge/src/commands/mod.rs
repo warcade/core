@@ -17,6 +17,7 @@ pub mod debug_user;
 pub mod wheel_command;
 pub mod voice_commands;
 pub mod effect_command;
+pub mod confession_command;
 
 use crate::modules::twitch::CommandSystem;
 use database::Database;
@@ -82,6 +83,9 @@ pub async fn register_all_commands(command_system: &CommandSystem) {
 
     // Register effect command
     effect_command::register(command_system).await;
+
+    // Register confession command
+    confession_command::register(command_system, db.clone()).await;
 
     log::info!("✅ All custom commands registered");
 }

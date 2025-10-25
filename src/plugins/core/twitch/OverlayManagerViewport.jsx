@@ -366,7 +366,7 @@ export default function OverlayManagerViewport() {
                       console.log('🟡 Monaco onChange called with length:', value.length);
                       setFileContent(value);
                     }}
-                    language="javascriptreact"
+                    language="javascript"
                     theme="vs-dark"
                     height="100%"
                     width="100%"

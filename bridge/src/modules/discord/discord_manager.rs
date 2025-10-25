@@ -4,6 +4,8 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 
 use super::discord_bot::{DiscordBot, DiscordBotConfig};
+use super::discord_commands::DiscordCommandSystem;
+use super::builtin_commands::{register_builtin_commands, init_uptime, load_custom_commands};
 use crate::commands::database::Database;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -24,17 +26,39 @@ pub struct DiscordStats {
 pub struct DiscordManager {
     database: Arc<Database>,
     bot: Arc<DiscordBot>,
+    command_system: Arc<DiscordCommandSystem>,
     status: Arc<RwLock<DiscordStatus>>,
     bot_handle: Arc<RwLock<Option<tokio::task::JoinHandle<()>>>>,
 }
 
 impl DiscordManager {
     pub fn new(database: Arc<Database>) -> Self {
-        let bot = Arc::new(DiscordBot::new(database.clone()));
+        // Initialize uptime tracking
+        init_uptime();
+
+        // Create command system with default prefix
+        let command_system = Arc::new(DiscordCommandSystem::new(
+            "!".to_string(),
+            database.clone(),
+        ));
+
+        // Create bot with command system
+        let bot = Arc::new(DiscordBot::new(command_system.clone()));
+
+        // Register built-in commands and load custom commands asynchronously
+        let cmd_system = command_system.clone();
+        let db_clone = database.clone();
+        tokio::spawn(async move {
+            register_builtin_commands(&cmd_system).await;
+            log::info!("Discord built-in commands registered");
+
+            load_custom_commands(&cmd_system, db_clone).await;
+        });
 
         Self {
             database,
             bot,
+            command_system,
             status: Arc::new(RwLock::new(DiscordStatus::Disconnected)),
             bot_handle: Arc::new(RwLock::new(None)),
         }
@@ -58,12 +82,11 @@ impl DiscordManager {
 
         // Load config from database
         let config = self.database.get_discord_config()?;
-        if config.bot_token.is_none() || config.channel_id.is_none() {
-            anyhow::bail!("Discord bot not configured");
+        if config.bot_token.is_none() {
+            anyhow::bail!("Discord bot token not configured");
         }
 
         let bot_token = config.bot_token.unwrap();
-        let channel_id = config.channel_id.unwrap();
 
         // Update status
         {
@@ -75,11 +98,14 @@ impl DiscordManager {
         self.bot
             .set_config(DiscordBotConfig {
                 bot_token: bot_token.clone(),
-                channel_id,
-                command_prefix: config.command_prefix,
+                channel_id: config.channel_id, // None = listen to all channels
+                command_prefix: config.command_prefix.clone(),
                 max_queue_size: config.max_queue_size,
             })
             .await;
+
+        // Note: Command system prefix is set during initialization
+        // In future: Add method to dynamically update prefix if needed
 
         // Start bot
         let bot = self.bot.clone();
@@ -139,6 +165,13 @@ impl DiscordManager {
         self.stop().await?;
         tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
         self.start().await?;
+        Ok(())
+    }
+
+    pub async fn reload_commands(&self) -> Result<()> {
+        use super::builtin_commands::reload_custom_commands;
+        reload_custom_commands(&self.command_system, self.database.clone()).await;
+        log::info!("Discord custom commands reloaded");
         Ok(())
     }
 }

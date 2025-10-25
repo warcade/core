@@ -78,6 +78,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     info!("Initializing Discord integration");
     let discord_manager = Arc::new(DiscordManager::new(database.clone()));
 
+    // Initialize Alexa manager
+    info!("Initializing Alexa integration");
+    let alexa_manager = Arc::new(AlexaManager::new((*database).clone()));
+
     // Register custom commands
     info!("🎮 Registering custom Twitch commands");
     let command_system = twitch_manager.get_command_system();
@@ -106,6 +110,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     set_twitch_manager(twitch_manager.clone());
     set_withings_api(withings_api.clone());
     set_discord_manager(discord_manager.clone());
+    set_alexa_manager(alexa_manager.clone());
 
     // Set Twitch manager for WebSocket server
     modules::websocket_server::set_twitch_manager(Some(twitch_manager)).await;

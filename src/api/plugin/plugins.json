@@ -41,6 +41,13 @@
       "main": "index.jsx",
       "path": "/src/plugins/core/twitch",
       "priority": 1
+    },
+    {
+      "enabled": true,
+      "id": "ticker-plugin",
+      "main": "index.jsx",
+      "path": "/src/plugins/core/ticker",
+      "priority": 1
     }
   ]
 }

@@ -90,10 +90,13 @@ export function createPlugin(config) {
       button: (buttonId, config) => 
         api.registerToolbarButton(buttonId, { ...config, plugin: id }),
       
-      footer: (buttonId, config) => 
+      footer: (buttonId, config) =>
         api.registerFooterButton(buttonId, { ...config, plugin: id }),
-      
-      open: (typeId, options = {}) => 
+
+      leftMenuItem: (itemId, config) =>
+        api.registerLeftPanelMenuItem(itemId, { ...config, plugin: id }),
+
+      open: (typeId, options = {}) =>
         api.createViewportTab(typeId, options),
 
       emit: (eventType, data) => 
@@ -155,6 +158,10 @@ export class Plugin {
 
   registerBottomPanelTab(id, config) {
     return this.engineAPI.registerBottomPanelTab(id, { ...config, plugin: this.id });
+  }
+
+  registerLeftPanelMenuItem(id, config) {
+    return this.engineAPI.registerLeftPanelMenuItem(id, { ...config, plugin: this.id });
   }
 
   createViewportTab(typeId, options = {}) {

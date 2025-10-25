@@ -29,6 +29,8 @@ pub struct ChatMessage {
     pub location_flag: Option<String>,
     pub is_birthday: bool,
     pub level: Option<i64>,
+    pub current_xp: Option<i64>,
+    pub xp_for_next_level: Option<i64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -90,6 +92,15 @@ pub enum TwitchEvent {
     Error { message: String },
 }
 
+/// Bot user info for emitting own messages
+#[derive(Debug, Clone)]
+pub struct BotUserInfo {
+    pub user_id: String,
+    pub username: String,
+    pub display_name: String,
+    pub profile_image_url: String,
+}
+
 /// Twitch IRC client manager
 pub struct TwitchIRCManager {
     config_manager: Arc<TwitchConfigManager>,
@@ -97,6 +108,7 @@ pub struct TwitchIRCManager {
     client: Arc<RwLock<Option<TwitchIRCClient<SecureTCPTransport, StaticLoginCredentials>>>>,
     event_sender: broadcast::Sender<TwitchEvent>,
     is_running: Arc<RwLock<bool>>,
+    bot_user_info: Arc<RwLock<Option<BotUserInfo>>>,
 }
 
 impl TwitchIRCManager {
@@ -113,9 +125,16 @@ impl TwitchIRCManager {
             client: Arc::new(RwLock::new(None)),
             event_sender,
             is_running: Arc::new(RwLock::new(false)),
+            bot_user_info: Arc::new(RwLock::new(None)),
         };
 
         (manager, event_receiver)
+    }
+
+    /// Set bot user info for emitting own messages
+    pub async fn set_bot_user_info(&self, info: BotUserInfo) {
+        let mut bot_info = self.bot_user_info.write().await;
+        *bot_info = Some(info);
     }
 
     /// Start the IRC client and connect to Twitch
@@ -240,6 +259,33 @@ impl TwitchIRCManager {
                 .context("Failed to send message")?;
 
             log::debug!("Sent message to {}: {}", channel, message);
+
+            // Emit chat message event for the bot's own message
+            if let Some(bot_info) = self.bot_user_info.read().await.as_ref() {
+                let chat_message = ChatMessage {
+                    channel: channel.to_string(),
+                    username: bot_info.username.clone(),
+                    user_id: bot_info.user_id.clone(),
+                    display_name: Some(bot_info.display_name.clone()),
+                    profile_image_url: Some(bot_info.profile_image_url.clone()),
+                    message: message.to_string(),
+                    timestamp: chrono::Utc::now().timestamp(),
+                    badges: vec!["broadcaster/1".to_string()], // Bot is usually broadcaster
+                    is_moderator: false,
+                    is_subscriber: false,
+                    is_vip: false,
+                    color: Some("#9146FF".to_string()), // Default purple
+                    emotes: vec![],
+                    location_flag: None,
+                    is_birthday: false,
+                    level: None,
+                    current_xp: None,
+                    xp_for_next_level: None,
+                };
+
+                let _ = self.event_sender.send(TwitchEvent::ChatMessage(chat_message));
+            }
+
             Ok(())
         } else {
             anyhow::bail!("IRC client not connected")
@@ -372,6 +418,8 @@ impl TwitchIRCManager {
             location_flag: None, // Will be populated by message enrichment
             is_birthday: false,  // Will be populated by message enrichment
             level: None,         // Will be populated by message enrichment
+            current_xp: None,    // Will be populated by message enrichment
+            xp_for_next_level: None, // Will be populated by message enrichment
         }
     }
 
@@ -530,6 +578,8 @@ mod tests {
             location_flag: Some("🇺🇸".to_string()),
             is_birthday: false,
             level: Some(5),
+            current_xp: Some(450),
+            xp_for_next_level: Some(100),
         };
 
         let json = serde_json::to_string(&msg).unwrap();
@@ -558,6 +608,8 @@ mod tests {
             location_flag: None,
             is_birthday: false,
             level: None,
+            current_xp: None,
+            xp_for_next_level: None,
         });
 
         let json = serde_json::to_string(&event).unwrap();

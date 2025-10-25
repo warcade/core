@@ -156,9 +156,26 @@ impl TwitchManager {
                             msg.is_birthday = TwitchIRCManager::is_birthday_today(&birthday);
                         }
 
-                        // Get level
-                        if let Ok(Some((level, _, _, _))) = database.get_user_level(&msg.channel, &msg.username) {
+                        // Get level and XP
+                        if let Ok(Some((level, total_xp, _, _))) = database.get_user_level(&msg.channel, &msg.username) {
                             msg.level = Some(level);
+
+                            // Calculate XP within current level
+                            let current_level = crate::commands::database::Database::calculate_level_from_xp(total_xp);
+
+                            // Calculate total XP needed to reach current level
+                            let mut xp_at_current_level_start = 0;
+                            for lvl in 1..current_level {
+                                xp_at_current_level_start += crate::commands::database::Database::xp_for_level(lvl);
+                            }
+
+                            // XP within the current level
+                            let xp_in_current_level = total_xp - xp_at_current_level_start;
+                            msg.current_xp = Some(xp_in_current_level);
+
+                            // XP needed for current level (to reach next level from current level start)
+                            let xp_needed_for_current_level = crate::commands::database::Database::xp_for_level(current_level);
+                            msg.xp_for_next_level = Some(xp_needed_for_current_level);
                         }
                     }
                 }
@@ -276,8 +293,18 @@ impl TwitchManager {
 
         {
             let mut stats = self.stats.write().await;
-            stats.authenticated_user = Some(user.display_name);
+            stats.authenticated_user = Some(user.display_name.clone());
         }
+
+        // Set bot user info for IRC manager to emit own messages
+        self.irc_manager
+            .set_bot_user_info(super::twitch_irc_client::BotUserInfo {
+                user_id: user.id.clone(),
+                username: user.login.clone(),
+                display_name: user.display_name.clone(),
+                profile_image_url: user.profile_image_url.clone(),
+            })
+            .await;
 
         // Start IRC client
         self.irc_manager

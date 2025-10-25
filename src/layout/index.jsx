@@ -3,10 +3,11 @@ import TopMenu from '@/panels/topMenu';
 import Viewport from '@/panels/viewport';
 import Footer from '@/panels/footer';
 import RightPanel from '@/panels/rightPanel';
+import LeftPanel from '@/panels/leftPanel';
 import { ViewportContextMenuProvider } from '@/ui/ViewportContextMenu.jsx';
 import { keyboardShortcuts } from '@/components/KeyboardShortcuts';
 import { editorActions } from './stores/EditorStore.jsx';
-import { propertiesPanelVisible, footerVisible } from '@/api/plugin';
+import { propertiesPanelVisible, leftPanelVisible, footerVisible } from '@/api/plugin';
 
 const Layout = () => {
   const [globalTooltip, setGlobalTooltip] = createSignal(null);
@@ -78,15 +79,25 @@ const Layout = () => {
         <div class="flex-shrink-0 pointer-events-auto z-50">
           <TopMenu />
         </div>
-      
-        
-        <div class="flex-1 relative overflow-hidden pointer-events-auto">
-          <Viewport />
+
+
+        <div
+          class="flex-1 flex overflow-hidden pointer-events-auto"
+          style={{
+            'padding-bottom': footerVisible() ? '24px' : '0px'
+          }}
+        >
+          <Show when={leftPanelVisible()}>
+            <LeftPanel />
+          </Show>
+          <div class="flex-1 relative overflow-hidden min-w-0">
+            <Viewport />
+          </div>
           <Show when={propertiesPanelVisible()}>
             <RightPanel />
           </Show>
         </div>
-        
+
         <Show when={footerVisible()}>
           <Footer />
         </Show>

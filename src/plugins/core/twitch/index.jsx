@@ -1,5 +1,5 @@
 import { createPlugin } from '@/api/plugin';
-import { IconBrandTwitch, IconMessage, IconSettings, IconDeviceTv, IconList, IconChecklist, IconVolume, IconBulb, IconSparkles, IconTerminal2, IconClock, IconUsers, IconDatabase, IconWheel, IconScale, IconBrandDiscord, IconMusic } from '@tabler/icons-solidjs';
+import { IconBrandTwitch, IconMessage, IconSettings, IconDeviceTv, IconList, IconChecklist, IconVolume, IconBulb, IconSparkles, IconTerminal2, IconClock, IconUsers, IconDatabase, IconWheel, IconScale, IconBrandDiscord, IconMusic, IconMessageCircle, IconBrandAmazon, IconRobot } from '@tabler/icons-solidjs';
 import TwitchSettingsViewport from './TwitchSettingsViewport.jsx';
 import TwitchChatViewport from './TwitchChatViewport.jsx';
 import OverlayManagerViewport from './OverlayManagerViewport.jsx';
@@ -17,7 +17,10 @@ import DatabaseViewport from './DatabaseViewport.jsx';
 import WheelViewport from './WheelViewport.jsx';
 import WithingsViewport from './WithingsViewport.jsx';
 import DiscordViewport from './DiscordViewport.jsx';
+import DiscordCommandsViewport from './DiscordCommandsViewport.jsx';
 import SongRequestsViewport from './SongRequestsViewport.jsx';
+import ConfessionsViewport from './ConfessionsViewport.jsx';
+import AlexaViewport from './AlexaViewport.jsx';
 import twitchStore from './TwitchStore.jsx';
 
 export default createPlugin({
@@ -179,12 +182,36 @@ export default createPlugin({
       description: 'Configure Discord bot for song requests'
     });
 
+    // Register Discord Commands viewport
+    api.viewport('twitch-discord-commands', {
+      label: 'Discord Commands',
+      component: DiscordCommandsViewport,
+      icon: IconRobot,
+      description: 'Manage custom Discord bot commands'
+    });
+
     // Register Song Requests viewport
     api.viewport('twitch-song-requests', {
       label: 'Song Requests',
       component: SongRequestsViewport,
       icon: IconMusic,
       description: 'Manage Discord song request queue for YouTube Music'
+    });
+
+    // Register Confessions viewport
+    api.viewport('twitch-confessions', {
+      label: 'Confessions',
+      component: ConfessionsViewport,
+      icon: IconMessageCircle,
+      description: 'View anonymous confessions sent via whispers'
+    });
+
+    // Register Alexa viewport
+    api.viewport('twitch-alexa', {
+      label: 'Alexa Control',
+      component: AlexaViewport,
+      icon: IconBrandAmazon,
+      description: 'Control OBS scenes and stream settings with Amazon Alexa voice commands'
     });
 
     console.log('[Twitch Plugin] Started successfully');

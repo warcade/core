@@ -1,11 +1,9 @@
 import { createSignal, createMemo, For, Show } from 'solid-js';
-import { IconFileText, IconX, IconStar, IconCopy, IconPlayerPlay, IconPlayerPause, IconPlus, IconChairDirector } from '@tabler/icons-solidjs';
+import { IconFileText, IconX, IconStar, IconCopy, IconPlayerPlay, IconPlayerPause, IconChairDirector } from '@tabler/icons-solidjs';
 import { viewportStore, viewportActions } from "./store";
 import { viewportTypes } from "@/api/plugin";
 
 const ViewportTabs = () => {
-  const [isAddDropdownOpen, setIsAddDropdownOpen] = createSignal(false);
-  const [dropdownPosition, setDropdownPosition] = createSignal({ x: 0, y: 0 });
   const [contextMenu, setContextMenu] = createSignal(null);
   const [editingTab, setEditingTab] = createSignal(null);
   const [editingName, setEditingName] = createSignal('');
@@ -21,7 +19,7 @@ const ViewportTabs = () => {
         description: 'Create a new 3D scene viewport'
       }
     ];
-    
+
     const pluginTypes = Array.from(viewportTypes().values());
     return [...builtInTypes, ...pluginTypes];
   });
@@ -40,22 +38,6 @@ const ViewportTabs = () => {
     } catch (error) {
       return IconFileText;
     }
-  };
-
-  const handleAddViewport = (type) => {
-    const newTabId = `viewport-${Date.now()}`;
-    const viewportType = availableViewportTypes().find(v => v.id === type);
-    const newTab = {
-      id: newTabId,
-      type: type,
-      name: viewportType ? (viewportType.label || viewportType.name || 'New Viewport') : 'New Viewport',
-      isPinned: false,
-      hasUnsavedChanges: false
-    };
-
-    viewportActions.addViewportTab(newTab);
-    viewportActions.setActiveViewportTab(newTabId);
-    setIsAddDropdownOpen(false);
   };
 
   const handleTabClick = (tabId) => {
@@ -129,7 +111,19 @@ const ViewportTabs = () => {
         {
           label: `New ${tab.type === '3d-viewport' ? 'Scene' : tab.type.replace('-', ' ').replace(/\b\w/g, l => l.toUpperCase())}`,
           iconComponent: getViewportIcon(tab.type),
-          action: () => handleAddViewport(tab.type)
+          action: () => {
+            const newTabId = `viewport-${Date.now()}`;
+            const viewportType = availableViewportTypes().find(v => v.id === tab.type);
+            const newTab = {
+              id: newTabId,
+              type: tab.type,
+              name: viewportType ? (viewportType.label || viewportType.name || 'New Viewport') : 'New Viewport',
+              isPinned: false,
+              hasUnsavedChanges: false
+            };
+            viewportActions.addViewportTab(newTab);
+            viewportActions.setActiveViewportTab(newTabId);
+          }
         },
         { divider: true },
         {
@@ -181,7 +175,7 @@ const ViewportTabs = () => {
             {(tab) => {
               const Icon = getViewportIcon(tab.type);
               const isActive = () => tab.id === activeTabId();
-              
+
               return (
                 <div
                   classList={{
@@ -196,8 +190,8 @@ const ViewportTabs = () => {
                 >
                   <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-base-content/15 to-transparent"></div>
                   <Icon className="w-4 h-4 flex-shrink-0" />
-                  
-                  <Show 
+
+                  <Show
                     when={editingTab() === tab.id}
                     fallback={
                       <span className="text-sm font-medium truncate min-w-0">
@@ -242,64 +236,6 @@ const ViewportTabs = () => {
               );
             }}
           </For>
-
-          <div className="relative flex-shrink-0 h-full bg-neutral">
-            <button
-              onClick={(e) => {
-                const rect = e.currentTarget.getBoundingClientRect();
-                setDropdownPosition({
-                  x: Math.min(rect.left, window.innerWidth - 280),
-                  y: rect.bottom + 4
-                });
-                setIsAddDropdownOpen(!isAddDropdownOpen());
-              }}
-              className="flex items-center px-3 text-base-content hover:text-base-content/60 bg-base-300/80 hover:bg-base-300/83 border-t border-r border-b border-neutral transition-colors h-full cursor-pointer"
-              title="Add Viewport"
-            >
-              <IconPlus className="w-4 h-4" />
-            </button>
-
-            <Show when={isAddDropdownOpen()}>
-              <>
-                <div 
-                  className="fixed inset-0 z-40"
-                  onClick={() => setIsAddDropdownOpen(false)}
-                />
-                
-                <div 
-                  className="fixed w-64 bg-base-200 backdrop-blur-sm border border-base-300 rounded-lg shadow-xl z-50"
-                  style={{
-                    left: dropdownPosition().x + 'px',
-                    top: dropdownPosition().y + 'px'
-                  }}
-                >
-                  <div className="p-2">
-                    <div className="text-xs text-base-content/40 uppercase tracking-wide px-2 py-1 mb-1">
-                      Add Viewport
-                    </div>
-                    <For each={availableViewportTypes()}>
-                      {(viewportType) => (
-                        <button
-                          onClick={() => handleAddViewport(viewportType.id)}
-                          className="w-full flex items-start px-3 py-2 text-sm text-base-content hover:bg-base-300 hover:text-base-content rounded-md transition-colors group cursor-pointer"
-                        >
-                          <div className="w-4 h-4 mr-3 mt-0.5 text-base-content/60 group-hover:text-base-content flex-shrink-0">
-                            <viewportType.icon className="w-4 h-4" />
-                          </div>
-                          <div className="text-left min-w-0">
-                            <div className="font-medium">{viewportType.label || viewportType.name || 'Unknown Viewport'}</div>
-                            <div className="text-xs text-base-content/40 group-hover:text-base-content/60">
-                              {viewportType.description || 'No description available'}
-                            </div>
-                          </div>
-                        </button>
-                      )}
-                    </For>
-                  </div>
-                </div>
-              </>
-            </Show>
-          </div>
         </div>
 
 
