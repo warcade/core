@@ -1,8 +1,9 @@
 import { createPlugin } from '@/api/plugin';
-import { IconBrandTwitch, IconMessage, IconSettings, IconDeviceTv, IconList, IconChecklist, IconVolume, IconBulb, IconSparkles, IconTerminal2, IconClock, IconUsers, IconDatabase, IconWheel, IconScale, IconBrandDiscord, IconMusic, IconMessageCircle, IconBrandAmazon, IconRobot, IconTarget } from '@tabler/icons-solidjs';
+import { IconBrandTwitch, IconMessage, IconSettings, IconDeviceTv, IconList, IconChecklist, IconVolume, IconBulb, IconSparkles, IconTerminal2, IconClock, IconUsers, IconDatabase, IconWheel, IconScale, IconBrandDiscord, IconMusic, IconMessageCircle, IconBrandAmazon, IconRobot, IconTarget, IconAlertCircle } from '@tabler/icons-solidjs';
 import TwitchSettingsViewport from './TwitchSettingsViewport.jsx';
 import TwitchChatViewport from './TwitchChatViewport.jsx';
 import OverlayManagerViewport from './OverlayManagerViewport.jsx';
+import AlertsViewport from './AlertsViewport.jsx';
 import CountersViewport from './CountersViewport.jsx';
 import TasksViewport from './TasksViewport.jsx';
 import TTSWhitelistViewport from './TTSWhitelistViewport.jsx';
@@ -77,6 +78,14 @@ export default createPlugin({
       component: OverlayManagerViewport,
       icon: IconDeviceTv,
       description: 'Create and manage OBS browser source overlays'
+    });
+
+    // Alerts Overlay viewport
+    api.viewport('alerts-overlay', {
+      label: 'Stream Alerts',
+      component: AlertsViewport,
+      icon: IconAlertCircle,
+      description: 'Test and configure stream alerts with 3D Babylon.js animations'
     });
 
     // Register Counters viewport

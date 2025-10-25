@@ -74,6 +74,112 @@ pub struct EffectTriggerEvent {
     pub triggered_by: String,
 }
 
+/// Follow event data
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FollowEvent {
+    pub user_id: String,
+    pub user_login: String,
+    pub user_name: String,
+    pub broadcaster_user_id: String,
+    pub broadcaster_user_login: String,
+    pub broadcaster_user_name: String,
+    pub followed_at: String,
+}
+
+/// Subscription event data
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SubscriptionEvent {
+    pub user_id: String,
+    pub user_login: String,
+    pub user_name: String,
+    pub broadcaster_user_id: String,
+    pub broadcaster_user_login: String,
+    pub broadcaster_user_name: String,
+    pub tier: String,
+    pub is_gift: bool,
+}
+
+/// Resubscription event data
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ResubscriptionEvent {
+    pub user_id: String,
+    pub user_login: String,
+    pub user_name: String,
+    pub broadcaster_user_id: String,
+    pub broadcaster_user_login: String,
+    pub broadcaster_user_name: String,
+    pub tier: String,
+    pub message: Option<String>,
+    pub cumulative_months: i32,
+    pub streak_months: Option<i32>,
+    pub duration_months: i32,
+}
+
+/// Gift subscription event data
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GiftSubscriptionEvent {
+    pub user_id: Option<String>,
+    pub user_login: Option<String>,
+    pub user_name: Option<String>,
+    pub broadcaster_user_id: String,
+    pub broadcaster_user_login: String,
+    pub broadcaster_user_name: String,
+    pub total: i32,
+    pub tier: String,
+    pub cumulative_total: Option<i32>,
+    pub is_anonymous: bool,
+}
+
+/// Raid event data
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RaidEvent {
+    pub from_broadcaster_user_id: String,
+    pub from_broadcaster_user_login: String,
+    pub from_broadcaster_user_name: String,
+    pub to_broadcaster_user_id: String,
+    pub to_broadcaster_user_login: String,
+    pub to_broadcaster_user_name: String,
+    pub viewers: i32,
+}
+
+/// Cheer/Bits event data
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CheerEvent {
+    pub user_id: Option<String>,
+    pub user_login: Option<String>,
+    pub user_name: Option<String>,
+    pub broadcaster_user_id: String,
+    pub broadcaster_user_login: String,
+    pub broadcaster_user_name: String,
+    pub is_anonymous: bool,
+    pub message: String,
+    pub bits: i32,
+}
+
+/// Channel Points Redemption event data
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ChannelPointsRedemptionEvent {
+    pub id: String,
+    pub user_id: String,
+    pub user_login: String,
+    pub user_name: String,
+    pub broadcaster_user_id: String,
+    pub broadcaster_user_login: String,
+    pub broadcaster_user_name: String,
+    pub user_input: Option<String>,
+    pub status: String,
+    pub reward: RewardInfo,
+    pub redeemed_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RewardInfo {
+    pub id: String,
+    pub title: String,
+    pub cost: i32,
+    pub prompt: Option<String>,
+}
+
 /// Twitch event types
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
@@ -82,6 +188,13 @@ pub enum TwitchEvent {
     LevelUp(LevelUpEvent),
     WheelSpin(WheelSpinEvent),
     EffectTrigger(EffectTriggerEvent),
+    Follow(FollowEvent),
+    Subscription(SubscriptionEvent),
+    Resubscription(ResubscriptionEvent),
+    GiftSubscription(GiftSubscriptionEvent),
+    Raid(RaidEvent),
+    Cheer(CheerEvent),
+    ChannelPointsRedemption(ChannelPointsRedemptionEvent),
     Connected { channels: Vec<String> },
     Disconnected { reason: String },
     UserJoined { channel: String, username: String },

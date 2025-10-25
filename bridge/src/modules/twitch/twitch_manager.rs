@@ -432,6 +432,11 @@ impl TwitchManager {
         self.event_sender.clone()
     }
 
+    /// Broadcast an event to all subscribers
+    pub fn broadcast_event(&self, event: TwitchEvent) {
+        let _ = self.event_sender.send(event);
+    }
+
     /// Send a message to a channel
     pub async fn send_message(&self, channel: &str, message: &str) -> Result<()> {
         self.irc_manager.send_message(channel, message).await

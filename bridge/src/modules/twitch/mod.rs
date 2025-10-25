@@ -7,6 +7,7 @@ pub mod twitch_commands;
 pub mod twitch_manager;
 pub mod stream_tracker;
 pub mod text_command_timer;
+pub mod eventsub;
 
 // Re-export commonly used types
 pub use twitch_config::{TwitchConfig, TwitchConfigManager};

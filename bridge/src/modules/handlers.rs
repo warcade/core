@@ -318,6 +318,14 @@ pub async fn handle_http_request(req: Request<hyper::body::Incoming>) -> Result<
         }
         (&Method::POST, "/twitch/revoke") => return Ok(handle_twitch_revoke().await),
 
+        // Alert endpoints
+        (&Method::POST, "/twitch/alert/test") => {
+            match &body {
+                Some(body_content) => return Ok(handle_twitch_test_alert(body_content).await),
+                None => error_response(StatusCode::BAD_REQUEST, "Missing request body"),
+            }
+        }
+
         // Text Commands endpoints
         (&Method::GET, "/twitch/text-commands") => return Ok(handle_get_text_commands(&query).await),
         (&Method::POST, "/twitch/text-commands/add") => {
@@ -1738,6 +1746,151 @@ async fn handle_twitch_revoke() -> Response<BoxBody<Bytes, Infallible>> {
             }
         }
         None => error_response(StatusCode::SERVICE_UNAVAILABLE, "Twitch manager not initialized"),
+    }
+}
+
+async fn handle_twitch_test_alert(body: &str) -> Response<BoxBody<Bytes, Infallible>> {
+    #[derive(Deserialize)]
+    struct TestAlertRequest {
+        alert_type: String,
+    }
+
+    match serde_json::from_str::<TestAlertRequest>(body) {
+        Ok(request) => {
+            match get_twitch_manager() {
+                Some(manager) => {
+                    use crate::modules::twitch::twitch_irc_client::*;
+
+                    // Create test event based on alert type
+                    let event = match request.alert_type.as_str() {
+                        "follow" => {
+                            let follow = FollowEvent {
+                                user_id: "123456".to_string(),
+                                user_login: "testfollower".to_string(),
+                                user_name: "TestFollower".to_string(),
+                                broadcaster_user_id: "999999".to_string(),
+                                broadcaster_user_login: "streamer".to_string(),
+                                broadcaster_user_name: "Streamer".to_string(),
+                                followed_at: chrono::Utc::now().to_rfc3339(),
+                            };
+                            TwitchEvent::Follow(follow)
+                        }
+                        "sub" | "subscription" => {
+                            let sub = SubscriptionEvent {
+                                user_id: "123456".to_string(),
+                                user_login: "testsubber".to_string(),
+                                user_name: "TestSubber".to_string(),
+                                broadcaster_user_id: "999999".to_string(),
+                                broadcaster_user_login: "streamer".to_string(),
+                                broadcaster_user_name: "Streamer".to_string(),
+                                tier: "1000".to_string(),
+                                is_gift: false,
+                            };
+                            TwitchEvent::Subscription(sub)
+                        }
+                        "resub" | "resubscription" => {
+                            let resub = ResubscriptionEvent {
+                                user_id: "123456".to_string(),
+                                user_login: "testsubber".to_string(),
+                                user_name: "TestSubber".to_string(),
+                                broadcaster_user_id: "999999".to_string(),
+                                broadcaster_user_login: "streamer".to_string(),
+                                broadcaster_user_name: "Streamer".to_string(),
+                                tier: "2000".to_string(),
+                                message: Some("Love this stream!".to_string()),
+                                cumulative_months: 12,
+                                streak_months: Some(6),
+                                duration_months: 1,
+                            };
+                            TwitchEvent::Resubscription(resub)
+                        }
+                        "gift_sub" | "gift" => {
+                            let gift = GiftSubscriptionEvent {
+                                user_id: Some("123456".to_string()),
+                                user_login: Some("testgifter".to_string()),
+                                user_name: Some("TestGifter".to_string()),
+                                broadcaster_user_id: "999999".to_string(),
+                                broadcaster_user_login: "streamer".to_string(),
+                                broadcaster_user_name: "Streamer".to_string(),
+                                total: 5,
+                                tier: "1000".to_string(),
+                                cumulative_total: Some(25),
+                                is_anonymous: false,
+                            };
+                            TwitchEvent::GiftSubscription(gift)
+                        }
+                        "raid" => {
+                            let raid = RaidEvent {
+                                from_broadcaster_user_id: "123456".to_string(),
+                                from_broadcaster_user_login: "coolraider".to_string(),
+                                from_broadcaster_user_name: "CoolRaider".to_string(),
+                                to_broadcaster_user_id: "999999".to_string(),
+                                to_broadcaster_user_login: "streamer".to_string(),
+                                to_broadcaster_user_name: "Streamer".to_string(),
+                                viewers: 42,
+                            };
+                            TwitchEvent::Raid(raid)
+                        }
+                        "bits" | "cheer" => {
+                            let cheer = CheerEvent {
+                                user_id: Some("123456".to_string()),
+                                user_login: Some("testcheerer".to_string()),
+                                user_name: Some("TestCheerer".to_string()),
+                                broadcaster_user_id: "999999".to_string(),
+                                broadcaster_user_login: "streamer".to_string(),
+                                broadcaster_user_name: "Streamer".to_string(),
+                                is_anonymous: false,
+                                message: "Cheer100 Great stream!".to_string(),
+                                bits: 100,
+                            };
+                            TwitchEvent::Cheer(cheer)
+                        }
+                        "channel_points" => {
+                            let cp = ChannelPointsRedemptionEvent {
+                                id: "abc123".to_string(),
+                                user_id: "123456".to_string(),
+                                user_login: "testredeemer".to_string(),
+                                user_name: "TestRedeemer".to_string(),
+                                broadcaster_user_id: "999999".to_string(),
+                                broadcaster_user_login: "streamer".to_string(),
+                                broadcaster_user_name: "Streamer".to_string(),
+                                user_input: Some("Hello!".to_string()),
+                                status: "fulfilled".to_string(),
+                                reward: RewardInfo {
+                                    id: "reward123".to_string(),
+                                    title: "Hydrate!".to_string(),
+                                    cost: 100,
+                                    prompt: Some("Remind the streamer to drink water".to_string()),
+                                },
+                                redeemed_at: chrono::Utc::now().to_rfc3339(),
+                            };
+                            TwitchEvent::ChannelPointsRedemption(cp)
+                        }
+                        _ => {
+                            return error_response(
+                                StatusCode::BAD_REQUEST,
+                                &format!("Unknown alert type: {}. Valid types: follow, sub, resub, gift_sub, raid, bits, channel_points", request.alert_type)
+                            );
+                        }
+                    };
+
+                    // Broadcast the test event
+                    manager.broadcast_event(event);
+
+                    let response = ApiResponse {
+                        success: true,
+                        content: Some(format!("Test {} alert triggered successfully", request.alert_type)),
+                        error: None,
+                    };
+                    json_response(&response)
+                }
+                None => error_response(StatusCode::SERVICE_UNAVAILABLE, "Twitch manager not initialized"),
+            }
+        }
+        Err(e) => {
+            error!("Failed to parse test alert request: {}", e);
+            error_response(StatusCode::BAD_REQUEST, &format!("Invalid request body: {}", e))
+        }
     }
 }
 

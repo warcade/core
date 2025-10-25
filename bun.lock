@@ -5,6 +5,7 @@
       "name": "vite-solid-starter",
       "dependencies": {
         "@babylonjs/core": "^8.32.2",
+        "@babylonjs/gui": "^8.33.2",
         "@babylonjs/loaders": "^8.32.2",
         "@monaco-editor/loader": "^1.5.0",
         "@tabler/icons": "^3.34.1",
@@ -81,6 +82,8 @@
     "@babel/types": ["@babel/types@7.28.2", "", { "dependencies": { "@babel/helper-string-parser": "^7.27.1", "@babel/helper-validator-identifier": "^7.27.1" } }, "sha512-ruv7Ae4J5dUYULmeXw1gmb7rYRz57OWCPM57pHojnLq/3Z1CK2lNSLTCVjxVk1F/TZHwOZZrOWi0ur95BbLxNQ=="],
 
     "@babylonjs/core": ["@babylonjs/core@8.32.2", "", {}, "sha512-3LyyhiWA85Z2B211WsX328OZdgHGucF0MDJrYTnFXcwFdjaTdjnhphdrPQdfLm2PMOEE3UE0wgLM1gb4hX/h0Q=="],
+
+    "@babylonjs/gui": ["@babylonjs/gui@8.33.2", "", { "peerDependencies": { "@babylonjs/core": "^8.0.0" } }, "sha512-b6XJQX4c0u5xV8er4CsbJgSMkqkxFUke558xkowLps5ZhGyFXxUyVUFncvMV+Tt8CeaBEy/VbuwVxrTWrQECwg=="],
 
     "@babylonjs/loaders": ["@babylonjs/loaders@8.32.2", "", { "peerDependencies": { "@babylonjs/core": "^8.0.0", "babylonjs-gltf2interface": "^8.0.0" } }, "sha512-makAGYDYweY0+m+/ntJBXbmrP5oOh2RGbQNC7H5WO09FSMCJjfKMvNMlQLtEwBNf40eQnylF3nPZLbsQSxueVA=="],
 
