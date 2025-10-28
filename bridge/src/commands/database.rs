@@ -1,6 +1,7 @@
 use rusqlite::{Connection, Result, OptionalExtension, params};
 use std::sync::{Arc, Mutex};
 use std::path::PathBuf;
+use std::time::{SystemTime, UNIX_EPOCH};
 use serde::{Deserialize, Serialize};
 
 /// Wheel option data
@@ -399,6 +400,16 @@ impl Database {
                 width INTEGER DEFAULT 1920,
                 height INTEGER DEFAULT 1080,
                 created_at INTEGER NOT NULL,
+                updated_at INTEGER NOT NULL
+            )",
+            [],
+        )?;
+
+        // Create app settings table
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS app_settings (
+                key TEXT PRIMARY KEY,
+                value TEXT NOT NULL,
                 updated_at INTEGER NOT NULL
             )",
             [],
@@ -4316,6 +4327,32 @@ impl Database {
     pub fn delete_twitch_account(&self, account_id: i64) -> Result<()> {
         let conn = self.conn.lock().unwrap();
         conn.execute("DELETE FROM twitch_accounts WHERE id = ?1", params![account_id])?;
+        Ok(())
+    }
+
+    /// Get app setting
+    pub fn get_app_setting(&self, key: &str) -> Result<Option<String>> {
+        let conn = self.conn.lock().unwrap();
+        let result = conn.query_row(
+            "SELECT value FROM app_settings WHERE key = ?1",
+            params![key],
+            |row| row.get(0),
+        ).optional()?;
+        Ok(result)
+    }
+
+    /// Set app setting
+    pub fn set_app_setting(&self, key: &str, value: &str) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_secs() as i64;
+
+        conn.execute(
+            "INSERT OR REPLACE INTO app_settings (key, value, updated_at) VALUES (?1, ?2, ?3)",
+            params![key, value, now],
+        )?;
         Ok(())
     }
 }

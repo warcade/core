@@ -331,6 +331,43 @@ impl CommandSystem {
         })
         .await;
 
+        // !highlight - Display a highlighted message on stream
+        self.register_command(Command {
+            name: "highlight".to_string(),
+            aliases: vec![],
+            description: "Display a highlighted message on the stream overlay".to_string(),
+            usage: "!highlight [message]".to_string(),
+            permission: PermissionLevel::Everyone,
+            cooldown_seconds: 30, // 30 second cooldown to prevent spam
+            enabled: true,
+            handler: Arc::new(|ctx, _irc, _api| {
+                // Get the message text (everything after the command)
+                let highlight_text = if ctx.args.is_empty() {
+                    "Check out this highlight!".to_string()
+                } else {
+                    ctx.args.join(" ")
+                };
+
+                // Broadcast the highlight via WebSocket
+                let highlight_data = serde_json::json!({
+                    "type": "chat_highlight",
+                    "username": ctx.message.username,
+                    "display_name": ctx.message.display_name.as_ref().unwrap_or(&ctx.message.username),
+                    "message": highlight_text,
+                    "color": ctx.message.color.as_ref().unwrap_or(&"#9147ff".to_string()),
+                    "profile_image_url": ctx.message.profile_image_url,
+                    "badges": ctx.message.badges,
+                });
+
+                // Use the websocket broadcast function
+                crate::modules::websocket_server::broadcast_chat_highlight(highlight_data);
+
+                // No chat response needed (the overlay will show it)
+                Ok(None)
+            }),
+        })
+        .await;
+
         log::info!("Built-in commands registered");
     }
 }

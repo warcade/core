@@ -8,7 +8,7 @@ const { spawn } = require('child_process');
 const http = require('http');
 
 const BRIDGE_URL = 'http://localhost:3001';
-const MAX_RETRIES = 60;
+const MAX_RETRIES = 180; // 3 minutes
 const RETRY_INTERVAL = 1000;
 
 let retries = 0;
@@ -24,16 +24,35 @@ if (!nextCommand) {
 
 console.log('🚀 Starting bridge server...');
 
-// Start the bridge server
+// Check if release binary exists
+const fs = require('fs');
+const path = require('path');
 const isWindows = process.platform === 'win32';
-bridgeProcess = spawn(
-  isWindows ? 'cargo.exe' : 'cargo',
-  ['run', '--manifest-path', 'bridge/Cargo.toml', '--bin', 'webarcade-bridge', '--features', 'nvidia'],
-  {
-    stdio: 'inherit',
-    shell: isWindows,
-  }
-);
+const releaseBinary = path.join('bridge', 'target', 'release', isWindows ? 'webarcade-bridge.exe' : 'webarcade-bridge');
+
+// Start the bridge server
+if (fs.existsSync(releaseBinary)) {
+  console.log('✅ Using pre-built release binary (faster startup)');
+  bridgeProcess = spawn(
+    releaseBinary,
+    [],
+    {
+      stdio: 'inherit',
+      shell: isWindows,
+    }
+  );
+} else {
+  console.log('⚠️  No release binary found, compiling from source (slower)...');
+  console.log('💡 Tip: Run "bun run build:bridge" once to speed up future startups');
+  bridgeProcess = spawn(
+    isWindows ? 'cargo.exe' : 'cargo',
+    ['run', '--manifest-path', 'bridge/Cargo.toml', '--bin', 'webarcade-bridge', '--features', 'nvidia'],
+    {
+      stdio: 'inherit',
+      shell: isWindows,
+    }
+  );
+}
 
 bridgeProcess.on('error', (error) => {
   console.error('❌ Failed to start bridge:', error.message);
@@ -90,7 +109,7 @@ async function waitForBridge() {
 
     retries++;
 
-    if (retries % 5 === 0) {
+    if (retries % 10 === 0) {
       console.log(`⏳ Still waiting for bridge... (${retries}s elapsed)`);
     }
 

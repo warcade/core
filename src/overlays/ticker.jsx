@@ -7,6 +7,7 @@ const WEBSOCKET_URL = 'ws://localhost:3002';
 
 function TickerOverlay() {
   const [messages, setMessages] = createSignal([]);
+  const [events, setEvents] = createSignal([]);
   const [tickerText, setTickerText] = createSignal('');
   const [currentTime, setCurrentTime] = createSignal('');
   const [streamDays, setStreamDays] = createSignal(0);
@@ -14,22 +15,52 @@ function TickerOverlay() {
 
   let ws = null;
 
-  // Load enabled ticker messages
+  // Load enabled ticker messages and events
   const loadMessages = async () => {
     try {
-      const response = await fetch(`${WEBARCADE_API}/api/ticker/messages/enabled`);
-      const data = await response.json();
-      setMessages(data);
+      console.log('🔄 Loading ticker data...');
 
-      // Create scrolling text from messages
-      if (data.length > 0) {
-        const text = '💎          ' + data.map(m => m.message).join('          💎          ');
+      // Fetch both messages and events in parallel
+      const [messagesResponse, eventsResponse] = await Promise.all([
+        fetch(`${WEBARCADE_API}/api/ticker/messages/enabled`),
+        fetch(`${WEBARCADE_API}/api/ticker/events`)
+      ]);
+
+      const messagesData = await messagesResponse.json();
+      const eventsData = await eventsResponse.json();
+
+      console.log('📝 Ticker messages:', messagesData.length, messagesData);
+      console.log('🎉 Ticker events:', eventsData.length, eventsData);
+
+      setMessages(messagesData);
+      setEvents(eventsData);
+
+      // Create scrolling text by combining messages and events
+      const allItems = [];
+
+      // Add enabled messages
+      messagesData.forEach(m => {
+        allItems.push(m.message);
+      });
+
+      // Add event display texts
+      eventsData.forEach(e => {
+        allItems.push(e.display_text);
+      });
+
+      console.log('✨ Total ticker items:', allItems.length, allItems);
+
+      // Create scrolling text from combined items
+      if (allItems.length > 0) {
+        const text = '💎          ' + allItems.join('          💎          ');
         setTickerText(text);
+        console.log('📺 Ticker text set:', text.substring(0, 100) + '...');
       } else {
         setTickerText('');
+        console.log('⚠️ No ticker items to display');
       }
     } catch (error) {
-      console.error('Failed to load ticker messages:', error);
+      console.error('❌ Failed to load ticker data:', error);
     }
   };
 
@@ -78,6 +109,7 @@ function TickerOverlay() {
     ws.onmessage = (event) => {
       try {
         const data = JSON.parse(event.data);
+        console.log('📨 WebSocket message received:', data);
 
         // Handle status config updates
         if (data.type === 'status_config_update' && data.config) {
@@ -99,13 +131,13 @@ function TickerOverlay() {
           }
         }
 
-        // Handle ticker messages updates
+        // Handle ticker messages updates (includes events!)
         if (data.type === 'ticker_messages_update') {
-          console.log('📡 Received ticker messages update - reloading messages');
+          console.log('📡 Received ticker messages update - reloading all ticker data');
           loadMessages();
         }
       } catch (err) {
-        console.error('Failed to parse WebSocket message:', err);
+        console.error('❌ Failed to parse WebSocket message:', err);
       }
     };
 
@@ -139,30 +171,30 @@ function TickerOverlay() {
   return (
     <div class="fixed inset-0 pointer-events-none overflow-hidden">
       {/* Ticker Bar at Bottom */}
-      <div class="ticker-bar absolute bottom-0 left-0 right-0 bg-gradient-to-r from-purple-900/95 via-blue-900/95 to-purple-900/95 backdrop-blur-sm border-t-4 border-black/20 shadow-lg h-12 flex items-center overflow-hidden">
+      <div class="ticker-bar absolute bottom-0 left-0 right-0 bg-gradient-to-r from-purple-900/95 via-blue-900/95 to-purple-900/95 backdrop-blur-sm border-t-4 border-black/20 shadow-lg h-16 flex items-center overflow-hidden">
         {/* Status Elements - Left Side */}
-        <div class="flex items-center gap-2 px-3 flex-shrink-0">
+        <div class="flex items-center gap-2.5 px-4 flex-shrink-0">
           {/* LIVE 24/7 Indicator */}
-          <div class="bg-gradient-to-r from-red-600 to-red-700 px-2 py-1 rounded shadow-xl border border-red-400 flex items-center gap-1.5">
+          <div class="bg-gradient-to-r from-red-600 to-red-700 px-2.5 py-1.5 rounded shadow-xl border border-red-400 flex items-center gap-2">
             <div class="relative">
-              <div class="w-2 h-2 bg-red-500 rounded-full animate-pulse shadow-lg"></div>
-              <div class="absolute inset-0 w-2 h-2 bg-red-400 rounded-full animate-ping"></div>
+              <div class="w-2.5 h-2.5 bg-red-500 rounded-full animate-pulse shadow-lg"></div>
+              <div class="absolute inset-0 w-2.5 h-2.5 bg-red-400 rounded-full animate-ping"></div>
             </div>
-            <span class="text-white font-bold text-sm tracking-wide drop-shadow-lg">
+            <span class="text-white font-bold text-base tracking-wide drop-shadow-lg">
               LIVE 24/7
             </span>
           </div>
 
           {/* Days Since Stream Started */}
-          <div class="bg-gradient-to-r from-cyan-900/95 to-teal-900/95 px-2 py-1 rounded shadow-lg border border-cyan-500">
-            <div class="text-sm font-bold text-white drop-shadow-lg">
+          <div class="bg-gradient-to-r from-cyan-900/95 to-teal-900/95 px-2.5 py-1.5 rounded shadow-lg border border-cyan-500">
+            <div class="text-base font-bold text-white drop-shadow-lg">
               Day {streamDays()}
             </div>
           </div>
 
           {/* Current Time with UK Flag */}
-          <div class="bg-gradient-to-r from-indigo-900/95 to-blue-900/95 px-2 py-1 rounded shadow-lg border border-indigo-500 flex items-center gap-1.5">
-            <svg width="20" height="15" viewBox="0 0 60 30" xmlns="http://www.w3.org/2000/svg">
+          <div class="bg-gradient-to-r from-indigo-900/95 to-blue-900/95 px-2.5 py-1.5 rounded shadow-lg border border-indigo-500 flex items-center gap-2">
+            <svg width="24" height="18" viewBox="0 0 60 30" xmlns="http://www.w3.org/2000/svg">
               <clipPath id="s"><path d="M0,0 v30 h60 v-30 z"/></clipPath>
               <clipPath id="t"><path d="M30,15 h30 v15 z v-15 h-30 z h-30 v15 z v-15 h30 z"/></clipPath>
               <g clip-path="url(#s)">
@@ -173,23 +205,23 @@ function TickerOverlay() {
                 <path d="M30,0 v30 M0,15 h60" stroke="#C8102E" stroke-width="6"/>
               </g>
             </svg>
-            <span class="text-sm font-mono font-bold text-white tracking-wide drop-shadow-lg">
+            <span class="text-base font-mono font-bold text-white tracking-wide drop-shadow-lg">
               {currentTime()}
             </span>
           </div>
 
           {/* Separator */}
-          <div class="w-px h-6 bg-purple-400/50"></div>
+          <div class="w-px h-8 bg-purple-400/50"></div>
         </div>
 
         {/* Scrolling Ticker Text - Right Side */}
         <Show when={tickerText()}>
           <div class="flex-1 overflow-hidden relative">
             <div class="ticker-scroll">
-              <span class="ticker-text text-white font-bold text-lg whitespace-nowrap px-3">
+              <span class="ticker-text text-white font-bold text-xl whitespace-nowrap px-4">
                 {tickerText()}
               </span>
-              <span class="ticker-text text-white font-bold text-lg whitespace-nowrap px-3">
+              <span class="ticker-text text-white font-bold text-xl whitespace-nowrap px-4">
                 {tickerText()}
               </span>
             </div>

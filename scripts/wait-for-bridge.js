@@ -7,7 +7,7 @@
 const http = require('http');
 
 const BRIDGE_URL = 'http://localhost:3001';
-const MAX_RETRIES = 60; // 60 seconds total
+const MAX_RETRIES = 180; // 180 seconds total (3 minutes)
 const RETRY_INTERVAL = 1000; // 1 second
 
 let retries = 0;
@@ -47,7 +47,7 @@ async function waitForBridge() {
 
     retries++;
 
-    if (retries % 5 === 0) {
+    if (retries % 10 === 0) {
       console.log(`⏳ Still waiting for bridge... (${retries}s elapsed)`);
     }
 

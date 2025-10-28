@@ -167,6 +167,34 @@
       "main": "index.jsx",
       "path": "/src/plugins/core/alexa",
       "priority": 2
+    },
+    {
+      "enabled": true,
+      "id": "stream-viewport-plugin",
+      "main": "index.jsx",
+      "path": "/src/plugins/core/stream-viewport",
+      "priority": 2
+    },
+    {
+      "enabled": true,
+      "id": "emoji-wall-plugin",
+      "main": "index.jsx",
+      "path": "/src/plugins/core/emoji-wall",
+      "priority": 2
+    },
+    {
+      "enabled": true,
+      "id": "snow-plugin",
+      "main": "index.jsx",
+      "path": "/src/plugins/core/snow",
+      "priority": 2
+    },
+    {
+      "enabled": true,
+      "id": "chat-highlight-plugin",
+      "main": "index.jsx",
+      "path": "/src/plugins/core/chat-highlight",
+      "priority": 2
     }
   ]
 }

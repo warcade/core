@@ -105,6 +105,40 @@ pub fn broadcast_layout_update(layout_name: String, layout_data: serde_json::Val
     let _ = sender.send(message);
 }
 
+// Community Tasks broadcast channel
+static COMMUNITY_TASKS_BROADCAST: std::sync::OnceLock<broadcast::Sender<serde_json::Value>> = std::sync::OnceLock::new();
+
+pub fn get_community_tasks_broadcast_sender() -> broadcast::Sender<serde_json::Value> {
+    COMMUNITY_TASKS_BROADCAST.get_or_init(|| {
+        let (sender, _) = broadcast::channel(100);
+        sender
+    }).clone()
+}
+
+pub fn broadcast_community_tasks_toggle(enabled: bool) {
+    let sender = get_community_tasks_broadcast_sender();
+    let message = serde_json::json!({
+        "type": "community_tasks_toggle",
+        "enabled": enabled
+    });
+    let _ = sender.send(message);
+}
+
+// Chat Highlight broadcast channel
+static CHAT_HIGHLIGHT_BROADCAST: std::sync::OnceLock<broadcast::Sender<serde_json::Value>> = std::sync::OnceLock::new();
+
+pub fn get_chat_highlight_broadcast_sender() -> broadcast::Sender<serde_json::Value> {
+    CHAT_HIGHLIGHT_BROADCAST.get_or_init(|| {
+        let (sender, _) = broadcast::channel(100);
+        sender
+    }).clone()
+}
+
+pub fn broadcast_chat_highlight(highlight_data: serde_json::Value) {
+    let sender = get_chat_highlight_broadcast_sender();
+    let _ = sender.send(highlight_data);
+}
+
 pub async fn set_twitch_manager(manager: Option<Arc<TwitchManager>>) {
     let _ = TWITCH_MANAGER.set(manager);
 }
@@ -198,6 +232,14 @@ async fn handle_websocket_connection(stream: TcpStream, client_addr: SocketAddr)
     // Get layout event receiver
     let mut layout_receiver = get_layout_broadcast_sender().subscribe();
     info!("📡 WebSocket client {} subscribed to layout events", client_addr);
+
+    // Get community tasks event receiver
+    let mut community_tasks_receiver = get_community_tasks_broadcast_sender().subscribe();
+    info!("📡 WebSocket client {} subscribed to community tasks events", client_addr);
+
+    // Get chat highlight event receiver
+    let mut chat_highlight_receiver = get_chat_highlight_broadcast_sender().subscribe();
+    info!("📡 WebSocket client {} subscribed to chat highlight events", client_addr);
 
     info!("📡 WebSocket client {} subscribed to file changes", client_addr);
 
@@ -423,6 +465,52 @@ async fn handle_websocket_connection(stream: TcpStream, client_addr: SocketAddr)
                     }
                     Err(broadcast::error::RecvError::Closed) => {
                         info!("📡 Layout broadcaster closed for {}", client_addr);
+                        break;
+                    }
+                }
+            }
+
+            // Handle community tasks events
+            community_tasks_event = community_tasks_receiver.recv() => {
+                match community_tasks_event {
+                    Ok(message) => {
+                        debug!("📡 Broadcasting community tasks toggle to {}", client_addr);
+
+                        if let Ok(message_text) = serde_json::to_string(&message) {
+                            if let Err(e) = ws_sender.send(Message::Text(message_text)).await {
+                                error!("Failed to send community tasks toggle to {}: {}", client_addr, e);
+                                break;
+                            }
+                        }
+                    }
+                    Err(broadcast::error::RecvError::Lagged(count)) => {
+                        warn!("📡 WebSocket client {} lagged {} community tasks messages", client_addr, count);
+                    }
+                    Err(broadcast::error::RecvError::Closed) => {
+                        info!("📡 Community tasks broadcaster closed for {}", client_addr);
+                        break;
+                    }
+                }
+            }
+
+            // Handle chat highlight events
+            chat_highlight_event = chat_highlight_receiver.recv() => {
+                match chat_highlight_event {
+                    Ok(message) => {
+                        debug!("📡 Broadcasting chat highlight to {}", client_addr);
+
+                        if let Ok(message_text) = serde_json::to_string(&message) {
+                            if let Err(e) = ws_sender.send(Message::Text(message_text)).await {
+                                error!("Failed to send chat highlight to {}: {}", client_addr, e);
+                                break;
+                            }
+                        }
+                    }
+                    Err(broadcast::error::RecvError::Lagged(count)) => {
+                        warn!("📡 WebSocket client {} lagged {} chat highlight messages", client_addr, count);
+                    }
+                    Err(broadcast::error::RecvError::Closed) => {
+                        info!("📡 Chat highlight broadcaster closed for {}", client_addr);
                         break;
                     }
                 }

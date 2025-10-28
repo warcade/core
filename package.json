@@ -36,7 +36,8 @@
     "kill-port": "^2.0.1",
     "monaco-editor": "^0.52.2",
     "solid-js": "^1.9.7",
-    "solid-refresh": "^0.7.5"
+    "solid-refresh": "^0.7.5",
+    "vite-solid-starter": "."
   },
   "devDependencies": {
     "@rspack/cli": "^1.4.11",

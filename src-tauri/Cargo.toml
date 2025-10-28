@@ -15,6 +15,11 @@ tauri-build = { version = "2.0", features = [] }
 serde_json = "1.0"
 serde = { version = "1.0", features = ["derive"] }
 tauri = { version = "2.0", features = [] }
+image = "0.24"
+rusttype = "0.9"
+rayon = "1.8"
+screenshots = "0.8"
+base64 = "0.22"
 
 [features]
 default = ["custom-protocol"]

@@ -127,11 +127,17 @@ pub fn get_songbird() -> Option<&'static Arc<songbird::Songbird>> {
 
 /// Handle saving a Twitch event to the database for ticker display
 pub async fn handle_twitch_event_for_ticker(event_type: &str, event_json: &serde_json::Value, display_text: &str) {
+    info!("🎯 Twitch event received for ticker: {} - {}", event_type, display_text);
+
     match Database::new() {
         Ok(db) => {
             // Check if this event type should be shown
             match db.get_ticker_events_config() {
                 Ok(config) => {
+                    info!("📋 Ticker events config: followers={}, subs={}, raids={}, donations={}, gifted_subs={}, cheers={}",
+                        config.show_followers, config.show_subscribers, config.show_raids,
+                        config.show_donations, config.show_gifted_subs, config.show_cheers);
+
                     let should_save = match event_type {
                         "follow" => config.show_followers,
                         "subscription" | "resubscription" => config.show_subscribers,
@@ -141,22 +147,26 @@ pub async fn handle_twitch_event_for_ticker(event_type: &str, event_json: &serde
                         _ => false,
                     };
 
+                    info!("🔍 Event type '{}' should_save: {}", event_type, should_save);
+
                     if should_save {
                         let event_data = serde_json::to_string(event_json).unwrap_or_default();
                         match db.add_ticker_event(event_type, &event_data, display_text) {
                             Ok(_) => {
-                                info!("💾 Saved ticker event: {}", display_text);
+                                info!("✅ Successfully saved ticker event: {}", display_text);
                                 // Broadcast ticker messages update via WebSocket
                                 crate::modules::websocket_server::broadcast_ticker_messages_update();
                             }
-                            Err(e) => error!("Failed to save ticker event: {}", e),
+                            Err(e) => error!("❌ Failed to save ticker event: {}", e),
                         }
+                    } else {
+                        info!("⏭️ Skipping ticker event (disabled in config): {}", display_text);
                     }
                 }
-                Err(e) => error!("Failed to get ticker events config: {}", e),
+                Err(e) => error!("❌ Failed to get ticker events config: {}", e),
             }
         }
-        Err(e) => error!("Failed to create database connection: {}", e),
+        Err(e) => error!("❌ Failed to create database connection: {}", e),
     }
 }
 
@@ -626,6 +636,13 @@ pub async fn handle_http_request(req: Request<hyper::body::Incoming>) -> Result<
                 None => error_response(StatusCode::BAD_REQUEST, "Missing request body"),
             }
         }
+        (&Method::GET, "/database/todos/toggle") => return Ok(handle_get_community_tasks_toggle().await),
+        (&Method::POST, "/database/todos/toggle") => {
+            match &body {
+                Some(body_content) => return Ok(handle_toggle_community_tasks(body_content).await),
+                None => error_response(StatusCode::BAD_REQUEST, "Missing request body"),
+            }
+        }
         (&Method::GET, "/database/tts/users") => return Ok(handle_get_tts_users(&query).await),
         (&Method::POST, "/database/tts/users/add") => {
             match &body {
@@ -729,6 +746,12 @@ pub async fn handle_http_request(req: Request<hyper::body::Incoming>) -> Result<
             }
         }
         (&Method::GET, "/api/ticker/events") => return Ok(handle_get_ticker_events().await),
+        (&Method::POST, "/api/ticker/events") => {
+            match &body {
+                Some(body_content) => return Ok(handle_add_ticker_event(body_content.clone()).await),
+                None => error_response(StatusCode::BAD_REQUEST, "Missing request body"),
+            }
+        }
         (&Method::DELETE, "/api/ticker/events") => return Ok(handle_clear_ticker_events().await),
         (&Method::POST, "/api/ticker/events/toggle-sticky") => {
             match &body {
@@ -3385,6 +3408,65 @@ async fn handle_delete_todo(body: &str) -> Response<BoxBody<Bytes, Infallible>> 
                         Err(e) => {
                             error!("Failed to delete todo: {}", e);
                             error_response(StatusCode::INTERNAL_SERVER_ERROR, &format!("Failed to delete todo: {}", e))
+                        }
+                    }
+                }
+                Err(e) => error_response(StatusCode::BAD_REQUEST, &format!("Invalid request: {}", e)),
+            }
+        }
+        None => error_response(StatusCode::SERVICE_UNAVAILABLE, "Database not initialized"),
+    }
+}
+
+async fn handle_get_community_tasks_toggle() -> Response<BoxBody<Bytes, Infallible>> {
+    match get_database() {
+        Some(db) => {
+            match db.get_app_setting("community_tasks_enabled") {
+                Ok(value) => {
+                    // Default to true if not set
+                    let enabled = value.as_deref() != Some("false");
+                    let response = serde_json::json!({
+                        "success": true,
+                        "enabled": enabled
+                    });
+                    json_response(&response)
+                }
+                Err(e) => {
+                    error!("Failed to get toggle state: {}", e);
+                    error_response(StatusCode::INTERNAL_SERVER_ERROR, &format!("Failed to get setting: {}", e))
+                }
+            }
+        }
+        None => error_response(StatusCode::SERVICE_UNAVAILABLE, "Database not initialized"),
+    }
+}
+
+async fn handle_toggle_community_tasks(body: &str) -> Response<BoxBody<Bytes, Infallible>> {
+    #[derive(serde::Deserialize)]
+    struct ToggleRequest {
+        enabled: bool,
+    }
+
+    match get_database() {
+        Some(db) => {
+            match serde_json::from_str::<ToggleRequest>(body) {
+                Ok(req) => {
+                    // Save to database
+                    let value = if req.enabled { "true" } else { "false" };
+                    match db.set_app_setting("community_tasks_enabled", value) {
+                        Ok(_) => {
+                            // Broadcast the toggle state via WebSocket
+                            crate::modules::websocket_server::broadcast_community_tasks_toggle(req.enabled);
+
+                            let response = serde_json::json!({
+                                "success": true,
+                                "enabled": req.enabled
+                            });
+                            json_response(&response)
+                        }
+                        Err(e) => {
+                            error!("Failed to save toggle state: {}", e);
+                            error_response(StatusCode::INTERNAL_SERVER_ERROR, &format!("Failed to save setting: {}", e))
                         }
                     }
                 }
@@ -6656,6 +6738,37 @@ async fn handle_clear_ticker_events() -> Response<BoxBody<Bytes, Infallible>> {
             }
         }
         Err(e) => error_response(StatusCode::INTERNAL_SERVER_ERROR, &format!("Database error: {}", e))
+    }
+}
+
+async fn handle_add_ticker_event(body: String) -> Response<BoxBody<Bytes, Infallible>> {
+    #[derive(Deserialize)]
+    struct AddEventRequest {
+        event_type: String,
+        display_text: String,
+        event_data: Option<String>,
+    }
+
+    match serde_json::from_str::<AddEventRequest>(&body) {
+        Ok(req) => {
+            match Database::new() {
+                Ok(db) => {
+                    let event_data = req.event_data.unwrap_or_else(|| "{}".to_string());
+                    match db.add_ticker_event(&req.event_type, &event_data, &req.display_text) {
+                        Ok(id) => {
+                            // Broadcast ticker messages update via WebSocket
+                            crate::modules::websocket_server::broadcast_ticker_messages_update();
+
+                            let response = serde_json::json!({ "success": true, "id": id });
+                            json_response(&response)
+                        }
+                        Err(e) => error_response(StatusCode::INTERNAL_SERVER_ERROR, &format!("Failed to add ticker event: {}", e))
+                    }
+                }
+                Err(e) => error_response(StatusCode::INTERNAL_SERVER_ERROR, &format!("Database error: {}", e))
+            }
+        }
+        Err(e) => error_response(StatusCode::BAD_REQUEST, &format!("Invalid request: {}", e))
     }
 }
 

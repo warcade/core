@@ -1,21 +1,6 @@
 import { For, onMount, createSignal, Show } from 'solid-js';
-import { IconPlus, IconTrash, IconGripVertical } from '@tabler/icons-solidjs';
-import { layoutManagerStore } from './LayoutManagerStore';
-
-const OVERLAY_DEFAULTS = {
-  alerts: { width: 1920, height: 1080, name: 'Alerts' },
-  goals: { width: 1920, height: 200, name: 'Goals' },
-  status: { width: 400, height: 100, name: 'Status' },
-  ticker: { width: 1920, height: 48, name: 'Ticker' },
-  chat: { width: 420, height: 800, name: 'Chat' },
-  timer: { width: 300, height: 200, name: 'Timer' },
-  'watchtime-leaderboard': { width: 400, height: 600, name: 'Leaderboard' },
-  todos: { width: 400, height: 500, name: 'Todos' },
-  weight: { width: 300, height: 200, name: 'Weight' },
-  wheel: { width: 600, height: 600, name: 'Wheel' },
-  effect: { width: 1920, height: 1080, name: 'Effect' },
-  levelup: { width: 1920, height: 1080, name: 'Level Up' },
-};
+import { IconPlus, IconTrash, IconGripVertical, IconLetterT, IconPhoto } from '@tabler/icons-solidjs';
+import { layoutManagerStore, OVERLAY_DEFAULTS } from './LayoutManagerStore';
 
 export default function LayoutManagerPanel() {
   const [draggedIndex, setDraggedIndex] = createSignal(null);
@@ -61,6 +46,39 @@ export default function LayoutManagerPanel() {
 
   return (
     <div class="h-full bg-base-200 p-4 overflow-y-auto">
+      {/* Custom Layers */}
+      <h3 class="font-bold text-lg mb-4">Custom Layers</h3>
+      <div class="grid grid-cols-2 gap-2 mb-6">
+        <button
+          class="btn btn-sm btn-outline flex-col h-auto py-3 px-2 border-base-content/20 hover:border-blue-500"
+          onClick={() => layoutManagerStore.addOverlay('text')}
+          title="Add Text Layer"
+        >
+          <IconLetterT size={14} class="mb-1" />
+          <div class="text-xs font-semibold leading-tight text-center">
+            Text
+          </div>
+          <div class="text-[10px] opacity-60 mt-1">
+            400×100
+          </div>
+        </button>
+        <button
+          class="btn btn-sm btn-outline flex-col h-auto py-3 px-2 border-base-content/20 hover:border-purple-500"
+          onClick={() => layoutManagerStore.addOverlay('image')}
+          title="Add Image Layer"
+        >
+          <IconPhoto size={14} class="mb-1" />
+          <div class="text-xs font-semibold leading-tight text-center">
+            Image
+          </div>
+          <div class="text-[10px] opacity-60 mt-1">
+            400×400
+          </div>
+        </button>
+      </div>
+
+      <div class="divider"></div>
+
       {/* Overlay Library */}
       <h3 class="font-bold text-lg mb-4">Available Overlays</h3>
       <div class="grid grid-cols-3 gap-2 mb-6">

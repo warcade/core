@@ -924,7 +924,17 @@ export class PluginAPI {
     }
 
     try {
-      import('@/panels/viewport/store').then(({ viewportActions }) => {
+      import('@/panels/viewport/store').then(({ viewportActions, viewportStore }) => {
+        // Check if a tab with this type already exists
+        const existingTab = viewportStore.tabs.find(tab => tab.type === typeId);
+
+        if (existingTab) {
+          // Tab already exists, just activate it
+          viewportActions.setActiveViewportTab(existingTab.id);
+          return;
+        }
+
+        // No existing tab found, create a new one
         const newTabId = `${typeId}_${Date.now()}`;
         const newTab = {
           id: newTabId,
@@ -938,13 +948,13 @@ export class PluginAPI {
 
         // Creating viewport tab with new ID
         viewportActions.addViewportTab(newTab);
-        
+
         if (options.setActive !== false) {
           viewportActions.setActiveViewportTab(newTabId);
         }
       }).catch(err => {
       });
-      
+
       return true;
     } catch (error) {
       return false;

@@ -16,6 +16,8 @@ const OVERLAY_DEFAULTS = {
   wheel: { width: 600, height: 600, name: 'Wheel' },
   effect: { width: 1920, height: 1080, name: 'Effect' },
   levelup: { width: 1920, height: 1080, name: 'Level Up' },
+  text: { width: 400, height: 100, name: 'Text' },
+  image: { width: 400, height: 400, name: 'Image' },
 };
 
 // Shared state
@@ -54,19 +56,33 @@ const addOverlay = (overlayType) => {
   const defaults = OVERLAY_DEFAULTS[overlayType] || { width: 400, height: 300, name: overlayType };
   const id = Date.now();
 
-  setOverlaysInLayout([
-    ...overlaysInLayout(),
-    {
-      id,
-      type: overlayType,
-      x: 100,
-      y: 100,
-      width: defaults.width,
-      height: defaults.height,
-      zIndex: overlaysInLayout().length + 1,
-      fitMode: 'contain', // 'contain', 'cover', or 'fill'
-    },
-  ]);
+  const baseOverlay = {
+    id,
+    type: overlayType,
+    x: 100,
+    y: 100,
+    width: defaults.width,
+    height: defaults.height,
+    zIndex: overlaysInLayout().length + 1,
+    fitMode: 'contain', // 'contain', 'cover', or 'fill'
+  };
+
+  // Add type-specific properties
+  if (overlayType === 'text') {
+    baseOverlay.text = 'Text Layer';
+    baseOverlay.fontSize = 48;
+    baseOverlay.fontFamily = 'Arial';
+    baseOverlay.color = '#ffffff';
+    baseOverlay.backgroundColor = 'transparent';
+    baseOverlay.textAlign = 'center';
+    baseOverlay.fontWeight = 'normal';
+    baseOverlay.fontStyle = 'normal';
+  } else if (overlayType === 'image') {
+    baseOverlay.imageUrl = '';
+    baseOverlay.opacity = 1;
+  }
+
+  setOverlaysInLayout([...overlaysInLayout(), baseOverlay]);
 };
 
 // Load layout
@@ -220,3 +236,5 @@ export const layoutManagerStore = {
   removeOverlayById,
   broadcastLayoutUpdate,
 };
+
+export { OVERLAY_DEFAULTS };

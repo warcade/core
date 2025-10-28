@@ -572,6 +572,7 @@ const TickerViewport = () => {
           <p><strong>💡 Tip:</strong> Enabled events will automatically appear in the ticker when they occur on your stream.</p>
         </div>
       </div>
+
     </div>
   );
 };

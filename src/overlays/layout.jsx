@@ -117,6 +117,9 @@ function LayoutOverlay() {
         iframe.src = `${BRIDGE_URL}/overlay/${overlay.type}`;
         iframe.className = 'absolute border-none pointer-events-auto';
         iframe.style.display = 'block';
+        iframe.style.border = 'none';
+        iframe.style.margin = '0';
+        iframe.style.padding = '0';
         iframe.title = overlay.type;
         containerRef.appendChild(iframe);
         iframeMap.set(overlay.id, iframe);

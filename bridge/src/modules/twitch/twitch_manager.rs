@@ -1,4 +1,5 @@
 use anyhow::{Context, Result};
+use log::info;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -434,6 +435,8 @@ impl TwitchManager {
 
     /// Broadcast an event to all subscribers
     pub fn broadcast_event(&self, event: TwitchEvent) {
+        info!("📢 Broadcasting Twitch event: {:?}", event);
+
         // Save ticker-relevant events to database
         let (event_type, event_json, display_text) = match &event {
             TwitchEvent::Follow(e) => (

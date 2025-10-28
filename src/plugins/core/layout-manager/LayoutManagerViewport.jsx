@@ -10,22 +10,10 @@ const BRIDGE_URL = 'http://localhost:3001';
 const CANVAS_WIDTH = 1920;
 const CANVAS_HEIGHT = 1080;
 const SNAP_THRESHOLD = 10; // Pixels to snap
+const EDGE_MARGIN = 5; // Pixels of margin around the edge
 
-// Default overlay sizes (for display purposes)
-const OVERLAY_DEFAULTS = {
-  alerts: { width: 1920, height: 1080, name: 'Alerts' },
-  goals: { width: 1920, height: 200, name: 'Goals' },
-  status: { width: 400, height: 100, name: 'Status' },
-  ticker: { width: 1920, height: 48, name: 'Ticker' },
-  chat: { width: 420, height: 800, name: 'Chat' },
-  timer: { width: 300, height: 200, name: 'Timer' },
-  'watchtime-leaderboard': { width: 400, height: 600, name: 'Leaderboard' },
-  todos: { width: 400, height: 500, name: 'Todos' },
-  weight: { width: 300, height: 200, name: 'Weight' },
-  wheel: { width: 600, height: 600, name: 'Wheel' },
-  effect: { width: 1920, height: 1080, name: 'Effect' },
-  levelup: { width: 1920, height: 1080, name: 'Level Up' },
-};
+// Import OVERLAY_DEFAULTS from store
+import { OVERLAY_DEFAULTS } from './LayoutManagerStore';
 
 export default function LayoutManagerViewport() {
   const [isDragging, setIsDragging] = createSignal(false);
@@ -130,11 +118,48 @@ export default function LayoutManagerViewport() {
     }
   });
 
-  // Keyboard event listeners for shift key
+  // Keyboard event listeners for shift key and arrow keys
   createEffect(() => {
     const handleKeyDown = (e) => {
-      if (e.key === 'Shift') setIsShiftPressed(true);
+      if (e.key === 'Shift') {
+        setIsShiftPressed(true);
+      }
+
+      // Arrow key movement for selected overlay
+      if (selectedOverlay() && ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key)) {
+        e.preventDefault();
+
+        const step = e.shiftKey ? 10 : 1; // Hold shift for 10px steps
+        let newX = selectedOverlay().x;
+        let newY = selectedOverlay().y;
+
+        switch (e.key) {
+          case 'ArrowUp':
+            newY = selectedOverlay().y - step;
+            break;
+          case 'ArrowDown':
+            newY = selectedOverlay().y + step;
+            break;
+          case 'ArrowLeft':
+            newX = selectedOverlay().x - step;
+            break;
+          case 'ArrowRight':
+            newX = selectedOverlay().x + step;
+            break;
+        }
+
+        // Apply snapping if enabled
+        const snapped = snapPosition(newX, newY, selectedOverlay());
+
+        layoutManagerStore.setOverlaysInLayout(
+          layoutManagerStore.overlaysInLayout().map(o =>
+            o.id === selectedOverlay().id ? { ...o, x: Math.round(snapped.x), y: Math.round(snapped.y) } : o
+          )
+        );
+        setSelectedOverlay({ ...selectedOverlay(), x: Math.round(snapped.x), y: Math.round(snapped.y) });
+      }
     };
+
     const handleKeyUp = (e) => {
       if (e.key === 'Shift') setIsShiftPressed(false);
     };
@@ -313,12 +338,8 @@ export default function LayoutManagerViewport() {
       const rawX = (e.clientX - dragStart().x) / zoom();
       const rawY = (e.clientY - dragStart().y) / zoom();
 
-      // Apply bounds
-      const boundedX = Math.max(0, Math.min(CANVAS_WIDTH - selectedOverlay().width, rawX));
-      const boundedY = Math.max(0, Math.min(CANVAS_HEIGHT - selectedOverlay().height, rawY));
-
-      // Apply snapping
-      const snapped = snapPosition(boundedX, boundedY, selectedOverlay());
+      // Apply snapping (no bounds, allow positioning outside canvas)
+      const snapped = snapPosition(rawX, rawY, selectedOverlay());
 
       layoutManagerStore.setOverlaysInLayout(
         layoutManagerStore.overlaysInLayout().map(o =>
@@ -389,9 +410,7 @@ export default function LayoutManagerViewport() {
         newHeight = snapValue(newHeight, snapAmount());
       }
 
-      // Apply bounds
-      newX = Math.max(0, Math.min(CANVAS_WIDTH - newWidth, newX));
-      newY = Math.max(0, Math.min(CANVAS_HEIGHT - newHeight, newY));
+      // No bounds - allow positioning outside canvas
 
       layoutManagerStore.setOverlaysInLayout(
         layoutManagerStore.overlaysInLayout().map(o =>
@@ -440,14 +459,14 @@ export default function LayoutManagerViewport() {
   // Get overlay color
   const getOverlayColor = (type) => {
     const colors = {
-      alerts: 'bg-red-500/30 border-red-500',
-      goals: 'bg-purple-500/30 border-purple-500',
-      status: 'bg-blue-500/30 border-blue-500',
-      ticker: 'bg-yellow-500/30 border-yellow-500',
-      chat: 'bg-green-500/30 border-green-500',
-      timer: 'bg-pink-500/30 border-pink-500',
+      alerts: 'bg-red-500/30',
+      goals: 'bg-purple-500/30',
+      status: 'bg-blue-500/30',
+      ticker: 'bg-yellow-500/30',
+      chat: 'bg-green-500/30',
+      timer: 'bg-pink-500/30',
     };
-    return colors[type] || 'bg-gray-500/30 border-gray-500';
+    return colors[type] || 'bg-gray-500/30';
   };
 
   return (
@@ -458,6 +477,9 @@ export default function LayoutManagerViewport() {
           <h2 class="text-2xl font-bold">Layout Manager</h2>
           <Show when={isShiftPressed()}>
             <div class="badge badge-info ml-4">Shift: Aspect Ratio Lock</div>
+          </Show>
+          <Show when={selectedOverlay()}>
+            <div class="badge badge-ghost ml-4">Arrow Keys: Move (Shift: 10px)</div>
           </Show>
         </div>
         <div class="flex-none gap-2">
@@ -665,7 +687,7 @@ export default function LayoutManagerViewport() {
             onMouseLeave={() => setIsPanning(false)}
           >
             <div
-              class="relative bg-black border border-primary shadow-2xl"
+              class="relative bg-black ring-2 ring-primary shadow-2xl"
               style={{
                 width: `${CANVAS_WIDTH * zoom()}px`,
                 height: `${CANVAS_HEIGHT * zoom()}px`,
@@ -691,12 +713,12 @@ export default function LayoutManagerViewport() {
               <For each={layoutManagerStore.overlaysInLayout()}>
                 {(overlay) => (
                   <div
-                    class={`absolute border ${
+                    class={`absolute ${
                       selectedOverlay()?.id === overlay.id
                         ? 'ring-2 ring-white cursor-move pointer-events-auto'
                         : selectedOverlay()
                         ? 'cursor-not-allowed pointer-events-auto opacity-60'
-                        : 'cursor-pointer pointer-events-auto'
+                        : 'ring-1 ring-white/20 cursor-pointer pointer-events-auto'
                     } ${!previewMode() ? `flex items-center justify-center font-bold text-white ${getOverlayColor(overlay.type)}` : ''}`}
                     style={{
                       left: `${overlay.x * zoom()}px`,

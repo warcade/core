@@ -5,6 +5,9 @@ use std::process::{Command, Stdio};
 use std::sync::{Arc, Mutex};
 use tauri::{Emitter, Listener, Manager};
 
+mod renderer;
+mod screen_capture;
+
 fn start_bridge_server(app: &tauri::AppHandle) {
     if cfg!(debug_assertions) {
         // Development mode - bridge is already started by beforeDevCommand
@@ -65,6 +68,8 @@ fn main() {
     let close_approved_clone = close_approved.clone();
     
     tauri::Builder::default()
+        .manage(Mutex::new(None::<renderer::RendererState>))
+        .manage(screen_capture::CaptureState::new())
         .setup(move |app| {
             let handle = app.handle().clone();
             let close_approved = close_approved.clone();
@@ -117,6 +122,15 @@ fn main() {
                 _ => {}
             }
         })
+        .invoke_handler(tauri::generate_handler![
+            renderer::init_renderer,
+            renderer::render_frame,
+            renderer::cleanup_renderer,
+            screen_capture::list_displays,
+            screen_capture::start_display_capture,
+            screen_capture::get_display_frame,
+            screen_capture::stop_display_capture
+        ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

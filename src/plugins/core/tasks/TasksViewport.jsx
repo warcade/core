@@ -1,6 +1,6 @@
-import { createSignal, onMount, For, Show } from 'solid-js';
+import { createSignal, onMount, onCleanup, For, Show } from 'solid-js';
 import twitchStore from '../twitch/TwitchStore.jsx';
-import { bridgeFetch } from '@/api/bridge.js';
+import { bridgeFetch, WEBARCADE_WS } from '@/api/bridge.js';
 import { IconChecklist, IconTrash, IconCheck, IconAlertCircle, IconPlus } from '@tabler/icons-solidjs';
 
 // Helper function to format "time ago"
@@ -39,6 +39,11 @@ export default function TasksViewport() {
   const [status, setStatus] = createSignal({ status: 'disconnected', connected_channels: [] });
   const [currentTime, setCurrentTime] = createSignal(Math.floor(Date.now() / 1000));
   const [visibleCount, setVisibleCount] = createSignal(10);
+  // Default to true, will be fetched from database
+  const [isEnabled, setIsEnabled] = createSignal(true);
+  const [isConnected, setIsConnected] = createSignal(false);
+
+  let ws;
 
   // Update current time every 30 seconds to refresh "time ago" display
   onMount(() => {
@@ -59,6 +64,9 @@ export default function TasksViewport() {
       }
     }
     setLoading(false);
+
+    // Fetch toggle state from database
+    await fetchToggleState();
   });
 
   const loadTasks = async (channel) => {
@@ -163,6 +171,81 @@ export default function TasksViewport() {
     }
   };
 
+  const fetchToggleState = async () => {
+    try {
+      const response = await bridgeFetch('/database/todos/toggle');
+      if (response.ok) {
+        const data = await response.json();
+        console.log('Fetched toggle state from database:', data.enabled);
+        setIsEnabled(data.enabled);
+      }
+    } catch (e) {
+      console.error('Failed to fetch toggle state:', e);
+    }
+  };
+
+  const toggleCommunityTasks = async () => {
+    const newState = !isEnabled();
+    try {
+      const response = await bridgeFetch('/database/todos/toggle', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ enabled: newState }),
+      });
+
+      if (response.ok) {
+        console.log('Toggle successful, setting state to:', newState);
+        setIsEnabled(newState);
+      }
+    } catch (e) {
+      console.error('Failed to toggle community tasks:', e);
+    }
+  };
+
+  const connectWebSocket = () => {
+    ws = new WebSocket(WEBARCADE_WS);
+
+    ws.onopen = () => {
+      console.log('Tasks WebSocket connected');
+      setIsConnected(true);
+    };
+
+    ws.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data);
+
+        if (data.type === 'community_tasks_toggle') {
+          console.log('Viewport received toggle message:', data.enabled);
+          setIsEnabled(data.enabled);
+        }
+      } catch (error) {
+        console.error('WebSocket message error:', error);
+      }
+    };
+
+    ws.onclose = () => {
+      console.log('Tasks WebSocket disconnected');
+      setIsConnected(false);
+      setTimeout(connectWebSocket, 3000);
+    };
+
+    ws.onerror = (error) => {
+      console.error('WebSocket error:', error);
+    };
+  };
+
+  // Initialize WebSocket on mount
+  onMount(() => {
+    connectWebSocket();
+  });
+
+  // Cleanup WebSocket on unmount
+  onCleanup(() => {
+    if (ws) {
+      ws.close();
+    }
+  });
+
   return (
     <div class="h-full flex flex-col bg-base-200">
       {/* Header */}
@@ -182,8 +265,32 @@ export default function TasksViewport() {
           </select>
         </Show>
 
-        <div class="badge badge-neutral ml-auto">
+        <div class="badge badge-neutral">
           {tasks().length} {tasks().length === 1 ? 'task' : 'tasks'}
+        </div>
+
+        <Show when={isConnected()}>
+          <div class="badge badge-success badge-sm gap-1">
+            <div class="w-1.5 h-1.5 bg-success-content rounded-full animate-pulse" />
+            Live
+          </div>
+        </Show>
+
+        {/* Toggle Switch */}
+        <div class="ml-auto flex items-center gap-2">
+          <span class="text-xs text-base-content/70">Overlay</span>
+          <button
+            onClick={toggleCommunityTasks}
+            class={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+              isEnabled() ? 'bg-success' : 'bg-base-300'
+            }`}
+          >
+            <span
+              class={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                isEnabled() ? 'translate-x-6' : 'translate-x-1'
+              }`}
+            />
+          </button>
         </div>
       </div>
 
