@@ -12,8 +12,17 @@ function TickerOverlay() {
   const [currentTime, setCurrentTime] = createSignal('');
   const [streamDays, setStreamDays] = createSignal(0);
   const [tickerSpeed, setTickerSpeed] = createSignal(30);
+  const [currentDate, setCurrentDate] = createSignal(new Date().toDateString());
+  const [breakingNews, setBreakingNews] = createSignal({ active: false, message: '' });
+
+  // Segment system
+  const [segments, setSegments] = createSignal([]);
+  const [currentSegmentIndex, setCurrentSegmentIndex] = createSignal(0);
+  const [segmentTransitioning, setSegmentTransitioning] = createSignal(false);
+  const [segmentDuration, setSegmentDuration] = createSignal(15); // seconds per segment
 
   let ws = null;
+  let segmentInterval = null;
 
   // Load enabled ticker messages and events
   const loadMessages = async () => {
@@ -81,9 +90,72 @@ function TickerOverlay() {
       }
 
       setTickerSpeed(data.ticker_speed || 30);
+      setSegmentDuration(data.segment_duration || 15);
+
+      // Load breaking news state
+      setBreakingNews({
+        active: data.breaking_news_active || false,
+        message: data.breaking_news_message || ''
+      });
     } catch (error) {
       console.error('Failed to load status config:', error);
     }
+  };
+
+  // Load ticker segments
+  const loadSegments = async () => {
+    try {
+      const response = await fetch(`${WEBARCADE_API}/api/ticker/segments`);
+      const data = await response.json();
+      console.log('📺 Ticker segments loaded (all):', data);
+      const enabledSegments = data.filter(s => s.enabled);
+      console.log('📺 Ticker segments (enabled only):', enabledSegments);
+      setSegments(enabledSegments);
+    } catch (error) {
+      console.error('❌ Failed to load ticker segments:', error);
+    }
+  };
+
+  // Cycle to next segment with transition
+  const nextSegment = () => {
+    if (segments().length <= 1) return;
+
+    const nextIndex = (currentSegmentIndex() + 1) % segments().length;
+    console.log('🔄 Transitioning from segment', currentSegmentIndex(), 'to', nextIndex);
+
+    setSegmentTransitioning(true);
+    setTimeout(() => {
+      setCurrentSegmentIndex(nextIndex);
+      setTimeout(() => {
+        setSegmentTransitioning(false);
+      }, 50);
+    }, 500);
+  };
+
+  // Handle animation complete (called when ticker finishes one loop or one pass)
+  const handleAnimationComplete = (e) => {
+    // Prevent event bubbling
+    if (e) e.stopPropagation();
+
+    if (segments().length > 1) {
+      const currentSeg = currentSegment();
+      const segmentType = currentSeg?.type || 'unknown';
+      console.log(`✅ Animation complete for ${segmentType} segment, moving to next`);
+      nextSegment();
+    }
+  };
+
+  // Start segment cycling (fallback timer in case animation events don't fire)
+  const startSegmentCycling = () => {
+    if (segmentInterval) clearInterval(segmentInterval);
+    if (segments().length <= 1) return;
+
+    // Fallback timer - only triggers if animation doesn't complete within expected time
+    const maxDuration = segmentDuration() * 1000;
+    segmentInterval = setInterval(() => {
+      console.log('⏰ Fallback timer triggered - animation may have stalled');
+      nextSegment();
+    }, maxDuration);
   };
 
   // Update current time every second
@@ -96,6 +168,15 @@ function TickerOverlay() {
     const minutes = now.getMinutes().toString().padStart(2, '0');
     const seconds = now.getSeconds().toString().padStart(2, '0');
     setCurrentTime(`${hours}:${minutes}:${seconds} ${ampm}`);
+
+    // Check if the date has changed (crossed midnight)
+    const newDate = now.toDateString();
+    if (newDate !== currentDate()) {
+      console.log('🌙 Midnight detected! Date changed from', currentDate(), 'to', newDate);
+      setCurrentDate(newDate);
+      // Reload status config to recalculate stream days
+      loadStatusConfig();
+    }
   };
 
   // Connect to WebSocket
@@ -136,6 +217,25 @@ function TickerOverlay() {
           console.log('📡 Received ticker messages update - reloading all ticker data');
           loadMessages();
         }
+
+        // Handle breaking news updates
+        if (data.type === 'breaking_news_update') {
+          console.log('📡 Received breaking news update:', data.breaking_news);
+          setBreakingNews(data.breaking_news || { active: false, message: '' });
+        }
+
+        // Handle ticker segments updates
+        if (data.type === 'ticker_segments_update') {
+          console.log('📡 Received ticker segments update');
+          loadSegments();
+        }
+
+        // Handle segment duration update
+        if (data.type === 'segment_duration_update' && data.duration) {
+          console.log('📡 Received segment duration update:', data.duration);
+          setSegmentDuration(data.duration);
+          startSegmentCycling();
+        }
       } catch (err) {
         console.error('❌ Failed to parse WebSocket message:', err);
       }
@@ -154,6 +254,7 @@ function TickerOverlay() {
   createEffect(() => {
     loadMessages();
     loadStatusConfig();
+    loadSegments();
     updateTime();
     connectWebSocket();
 
@@ -162,16 +263,144 @@ function TickerOverlay() {
 
     onCleanup(() => {
       clearInterval(timeInterval);
+      if (segmentInterval) clearInterval(segmentInterval);
       if (ws) {
         ws.close();
       }
     });
   });
 
+  // Start segment cycling when segments change
+  createEffect(() => {
+    const segCount = segments().length;
+    console.log('🔄 Segments changed, count:', segCount);
+
+    // Clear any existing interval first
+    if (segmentInterval) {
+      clearInterval(segmentInterval);
+      segmentInterval = null;
+    }
+
+    // Reset to first segment when segments change
+    setCurrentSegmentIndex(0);
+
+    // Only start cycling if there are multiple segments
+    if (segCount > 1) {
+      console.log('▶️ Starting segment cycling with', segCount, 'segments, duration:', segmentDuration(), 'seconds');
+      startSegmentCycling();
+    } else if (segCount === 1) {
+      console.log('📍 Single segment mode - no cycling needed');
+    } else {
+      console.log('⚠️ No segments to display');
+    }
+  });
+
+  // Generate ticker text for each segment type
+  const getSegmentText = (segment) => {
+    if (!segment) return '';
+
+    switch (segment.type) {
+      case 'messages':
+        return tickerText();
+
+      case 'schedule':
+        const scheduleItems = segment.content?.schedule?.map(
+          (item) => `${item.day}: ${item.time}`
+        ).join('          ') || '24/7 Live Stream';
+        return `📅 STREAM SCHEDULE          ${scheduleItems}`;
+
+      case 'commands':
+        const commandsList = segment.content?.commands?.map(
+          (cmd) => `!${cmd.name} - ${cmd.description}`
+        ).join('          ') || 'No commands configured';
+        return `💬 CHAT COMMANDS          ${commandsList}`;
+
+      case 'custom':
+        return segment.content?.text || '';
+
+      default:
+        return '';
+    }
+  };
+
+  // Calculate dynamic speed for custom messages based on text length
+  const getCustomMessageSpeed = (text) => {
+    const baseSpeed = 15; // Base duration in seconds
+    const charCount = text.length;
+    let speed;
+
+    // Short messages (< 50 chars): faster
+    if (charCount < 50) {
+      speed = Math.max(8, baseSpeed * 0.5);
+      console.log(`⚡ Short custom message (${charCount} chars) - speed: ${speed}s`);
+    }
+    // Medium messages (50-100 chars): normal
+    else if (charCount < 100) {
+      speed = baseSpeed;
+      console.log(`➡️ Medium custom message (${charCount} chars) - speed: ${speed}s`);
+    }
+    // Long messages (100-200 chars): slower
+    else if (charCount < 200) {
+      speed = baseSpeed * 1.5;
+      console.log(`🐌 Long custom message (${charCount} chars) - speed: ${speed}s`);
+    }
+    // Very long messages (200+ chars): much slower
+    else {
+      speed = Math.min(45, baseSpeed * 2);
+      console.log(`🐢 Very long custom message (${charCount} chars) - speed: ${speed}s`);
+    }
+
+    return speed;
+  };
+
+  // Render segment content (always as scrolling ticker)
+  const renderSegmentContent = (segment) => {
+    if (!segment) return null;
+
+    const text = getSegmentText(segment);
+    const isCustom = segment.type === 'custom';
+
+    if (isCustom) {
+      // Custom messages: single pass, scroll completely off screen
+      const customSpeed = getCustomMessageSpeed(text);
+
+      return (
+        <div
+          class="ticker-scroll-once"
+          style={`animation-duration: ${customSpeed}s`}
+          onAnimationEnd={handleAnimationComplete}
+        >
+          <span class="ticker-text text-white font-bold text-xl whitespace-nowrap px-4">
+            {text}
+          </span>
+        </div>
+      );
+    } else {
+      // Other types: continuous loop with duplication
+      return (
+        <div class="ticker-scroll-continuous" onAnimationIteration={handleAnimationComplete}>
+          <span class="ticker-text text-white font-bold text-xl whitespace-nowrap px-4">
+            💎          {text}
+          </span>
+          <span class="ticker-text text-white font-bold text-xl whitespace-nowrap px-4">
+            💎          {text}
+          </span>
+        </div>
+      );
+    }
+  };
+
+  // Get current segment to display
+  const currentSegment = () => {
+    const segs = segments();
+    if (segs.length === 0) return null;
+    return segs[currentSegmentIndex()];
+  };
+
   return (
     <div class="fixed inset-0 pointer-events-none overflow-hidden">
       {/* Ticker Bar at Bottom */}
-      <div class="ticker-bar absolute bottom-0 left-0 right-0 bg-gradient-to-r from-purple-900/95 via-blue-900/95 to-purple-900/95 backdrop-blur-sm border-t-4 border-black/20 shadow-lg h-16 flex items-center overflow-hidden">
+      <div class={`ticker-bar absolute bottom-0 left-0 right-0 ${breakingNews().active ? 'bg-gradient-to-r from-red-900/95 via-red-800/95 to-red-900/95' : 'bg-gradient-to-r from-purple-900/95 via-blue-900/95 to-purple-900/95'} backdrop-blur-sm border-t-4 border-black/20 shadow-lg h-16 flex items-center overflow-hidden`}>
         {/* Status Elements - Left Side */}
         <div class="flex items-center gap-2.5 px-4 flex-shrink-0">
           {/* LIVE 24/7 Indicator */}
@@ -210,32 +439,66 @@ function TickerOverlay() {
             </span>
           </div>
 
+          {/* Breaking News Badge */}
+          <Show when={breakingNews().active}>
+            <div class="bg-gradient-to-r from-red-600 to-red-700 px-3 py-1.5 rounded shadow-xl border border-red-400 animate-pulse-slow">
+              <span class="text-white font-bold text-2xl tracking-wider drop-shadow-lg">
+                🚨 BREAKING NEWS
+              </span>
+            </div>
+          </Show>
+
           {/* Separator */}
           <div class="w-px h-8 bg-purple-400/50"></div>
         </div>
 
-        {/* Scrolling Ticker Text - Right Side */}
-        <Show when={tickerText()}>
-          <div class="flex-1 overflow-hidden relative">
-            <div class="ticker-scroll">
-              <span class="ticker-text text-white font-bold text-xl whitespace-nowrap px-4">
-                {tickerText()}
-              </span>
-              <span class="ticker-text text-white font-bold text-xl whitespace-nowrap px-4">
-                {tickerText()}
-              </span>
+        {/* Breaking News or Segmented Ticker Content - Right Side */}
+        <Show when={breakingNews().active} fallback={
+          <Show when={segments().length > 0} fallback={
+            <Show when={tickerText()}>
+              <div class="flex-1 overflow-hidden relative">
+                <div class="ticker-scroll-continuous">
+                  <span class="ticker-text text-white font-bold text-xl whitespace-nowrap px-4">
+                    {tickerText()}
+                  </span>
+                  <span class="ticker-text text-white font-bold text-xl whitespace-nowrap px-4">
+                    {tickerText()}
+                  </span>
+                </div>
+              </div>
+            </Show>
+          }>
+            <div class={`flex-1 overflow-hidden relative transition-opacity duration-500 ${segmentTransitioning() ? 'opacity-0' : 'opacity-100'}`}>
+              <div key={currentSegmentIndex()}>
+                {renderSegmentContent(currentSegment())}
+              </div>
             </div>
+          </Show>
+        }>
+          <div class="flex-1 overflow-hidden relative flex items-center px-4">
+            <span class="text-white font-bold text-2xl drop-shadow-lg animate-pulse-slow">
+              {breakingNews().message}
+            </span>
           </div>
         </Show>
       </div>
 
       <style>{`
-        @keyframes ticker-scroll {
+        @keyframes ticker-scroll-continuous {
           0% {
             transform: translateX(0);
           }
           100% {
             transform: translateX(-50%);
+          }
+        }
+
+        @keyframes ticker-scroll-once {
+          0% {
+            transform: translateX(100%);
+          }
+          100% {
+            transform: translateX(-100%);
           }
         }
 
@@ -254,6 +517,15 @@ function TickerOverlay() {
           }
           50% {
             opacity: 0.5;
+          }
+        }
+
+        @keyframes pulse-slow {
+          0%, 100% {
+            opacity: 1;
+          }
+          50% {
+            opacity: 0.7;
           }
         }
 
@@ -285,8 +557,14 @@ function TickerOverlay() {
           pointer-events: none;
         }
 
-        .ticker-scroll {
-          animation: ticker-scroll ${tickerSpeed()}s linear infinite;
+        .ticker-scroll-continuous {
+          animation: ticker-scroll-continuous ${tickerSpeed()}s linear infinite;
+          display: inline-flex;
+          white-space: nowrap;
+        }
+
+        .ticker-scroll-once {
+          animation: ticker-scroll-once ${tickerSpeed()}s linear forwards;
           display: inline-flex;
           white-space: nowrap;
         }
@@ -300,12 +578,17 @@ function TickerOverlay() {
           animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
         }
 
+        .animate-pulse-slow {
+          animation: pulse-slow 3s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+        }
+
         .animate-ping {
           animation: ping 1s cubic-bezier(0, 0, 0.2, 1) infinite;
         }
 
         /* Pause animation on hover */
-        .ticker-scroll:hover {
+        .ticker-scroll-continuous:hover,
+        .ticker-scroll-once:hover {
           animation-play-state: paused;
         }
       `}</style>

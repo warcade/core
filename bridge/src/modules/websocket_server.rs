@@ -85,6 +85,81 @@ pub fn broadcast_ticker_messages_update() {
     let _ = sender.send(message);
 }
 
+// Breaking news broadcast channel
+static BREAKING_NEWS_BROADCAST: std::sync::OnceLock<broadcast::Sender<serde_json::Value>> = std::sync::OnceLock::new();
+
+pub fn get_breaking_news_broadcast_sender() -> broadcast::Sender<serde_json::Value> {
+    BREAKING_NEWS_BROADCAST.get_or_init(|| {
+        let (sender, _) = broadcast::channel(100);
+        sender
+    }).clone()
+}
+
+pub fn broadcast_breaking_news_update(breaking_news: serde_json::Value) {
+    let sender = get_breaking_news_broadcast_sender();
+    let message = serde_json::json!({
+        "type": "breaking_news_update",
+        "breaking_news": breaking_news
+    });
+    let _ = sender.send(message);
+}
+
+// Ticker segments broadcast channel
+static TICKER_SEGMENTS_BROADCAST: std::sync::OnceLock<broadcast::Sender<serde_json::Value>> = std::sync::OnceLock::new();
+
+pub fn get_ticker_segments_broadcast_sender() -> broadcast::Sender<serde_json::Value> {
+    TICKER_SEGMENTS_BROADCAST.get_or_init(|| {
+        let (sender, _) = broadcast::channel(100);
+        sender
+    }).clone()
+}
+
+pub fn broadcast_ticker_segments_update() {
+    let sender = get_ticker_segments_broadcast_sender();
+    let message = serde_json::json!({
+        "type": "ticker_segments_update"
+    });
+    let _ = sender.send(message);
+}
+
+// Segment duration broadcast channel
+static SEGMENT_DURATION_BROADCAST: std::sync::OnceLock<broadcast::Sender<serde_json::Value>> = std::sync::OnceLock::new();
+
+pub fn get_segment_duration_broadcast_sender() -> broadcast::Sender<serde_json::Value> {
+    SEGMENT_DURATION_BROADCAST.get_or_init(|| {
+        let (sender, _) = broadcast::channel(100);
+        sender
+    }).clone()
+}
+
+pub fn broadcast_segment_duration_update(duration: i64) {
+    let sender = get_segment_duration_broadcast_sender();
+    let message = serde_json::json!({
+        "type": "segment_duration_update",
+        "duration": duration
+    });
+    let _ = sender.send(message);
+}
+
+// Mood ticker broadcast channel
+static MOOD_TICKER_BROADCAST: std::sync::OnceLock<broadcast::Sender<serde_json::Value>> = std::sync::OnceLock::new();
+
+pub fn get_mood_ticker_broadcast_sender() -> broadcast::Sender<serde_json::Value> {
+    MOOD_TICKER_BROADCAST.get_or_init(|| {
+        let (sender, _) = broadcast::channel(100);
+        sender
+    }).clone()
+}
+
+pub fn broadcast_mood_ticker_update(data: crate::commands::database::MoodTickerData) {
+    let sender = get_mood_ticker_broadcast_sender();
+    let message = serde_json::json!({
+        "type": "mood_ticker_update",
+        "data": data
+    });
+    let _ = sender.send(message);
+}
+
 // Layout broadcast channel
 static LAYOUT_BROADCAST: std::sync::OnceLock<broadcast::Sender<serde_json::Value>> = std::sync::OnceLock::new();
 
@@ -137,6 +212,36 @@ pub fn get_chat_highlight_broadcast_sender() -> broadcast::Sender<serde_json::Va
 pub fn broadcast_chat_highlight(highlight_data: serde_json::Value) {
     let sender = get_chat_highlight_broadcast_sender();
     let _ = sender.send(highlight_data);
+}
+
+// Pack opening broadcast channel
+static PACK_OPENING_BROADCAST: std::sync::OnceLock<broadcast::Sender<serde_json::Value>> = std::sync::OnceLock::new();
+
+pub fn get_pack_opening_broadcast_sender() -> broadcast::Sender<serde_json::Value> {
+    PACK_OPENING_BROADCAST.get_or_init(|| {
+        let (sender, _) = broadcast::channel(100);
+        sender
+    }).clone()
+}
+
+pub fn broadcast_pack_opening(pack_data: serde_json::Value) {
+    let sender = get_pack_opening_broadcast_sender();
+    let _ = sender.send(pack_data);
+}
+
+// Roulette broadcast channel
+static ROULETTE_BROADCAST: std::sync::OnceLock<broadcast::Sender<serde_json::Value>> = std::sync::OnceLock::new();
+
+pub fn get_roulette_broadcast_sender() -> broadcast::Sender<serde_json::Value> {
+    ROULETTE_BROADCAST.get_or_init(|| {
+        let (sender, _) = broadcast::channel(100);
+        sender
+    }).clone()
+}
+
+pub fn broadcast_roulette_update(roulette_data: serde_json::Value) {
+    let sender = get_roulette_broadcast_sender();
+    let _ = sender.send(roulette_data);
 }
 
 pub async fn set_twitch_manager(manager: Option<Arc<TwitchManager>>) {
@@ -229,6 +334,22 @@ async fn handle_websocket_connection(stream: TcpStream, client_addr: SocketAddr)
     let mut ticker_messages_receiver = get_ticker_messages_broadcast_sender().subscribe();
     info!("📡 WebSocket client {} subscribed to ticker messages events", client_addr);
 
+    // Get breaking news event receiver
+    let mut breaking_news_receiver = get_breaking_news_broadcast_sender().subscribe();
+    info!("📡 WebSocket client {} subscribed to breaking news events", client_addr);
+
+    // Get ticker segments event receiver
+    let mut ticker_segments_receiver = get_ticker_segments_broadcast_sender().subscribe();
+    info!("📡 WebSocket client {} subscribed to ticker segments events", client_addr);
+
+    // Get segment duration event receiver
+    let mut segment_duration_receiver = get_segment_duration_broadcast_sender().subscribe();
+    info!("📡 WebSocket client {} subscribed to segment duration events", client_addr);
+
+    // Get mood ticker event receiver
+    let mut mood_ticker_receiver = get_mood_ticker_broadcast_sender().subscribe();
+    info!("📡 WebSocket client {} subscribed to mood ticker events", client_addr);
+
     // Get layout event receiver
     let mut layout_receiver = get_layout_broadcast_sender().subscribe();
     info!("📡 WebSocket client {} subscribed to layout events", client_addr);
@@ -240,6 +361,14 @@ async fn handle_websocket_connection(stream: TcpStream, client_addr: SocketAddr)
     // Get chat highlight event receiver
     let mut chat_highlight_receiver = get_chat_highlight_broadcast_sender().subscribe();
     info!("📡 WebSocket client {} subscribed to chat highlight events", client_addr);
+
+    // Get pack opening event receiver
+    let mut pack_opening_receiver = get_pack_opening_broadcast_sender().subscribe();
+    info!("📡 WebSocket client {} subscribed to pack opening events", client_addr);
+
+    // Get roulette event receiver
+    let mut roulette_receiver = get_roulette_broadcast_sender().subscribe();
+    info!("📡 WebSocket client {} subscribed to roulette events", client_addr);
 
     info!("📡 WebSocket client {} subscribed to file changes", client_addr);
 
@@ -447,6 +576,98 @@ async fn handle_websocket_connection(stream: TcpStream, client_addr: SocketAddr)
                 }
             }
 
+            // Handle breaking news events
+            breaking_news_event = breaking_news_receiver.recv() => {
+                match breaking_news_event {
+                    Ok(message) => {
+                        debug!("📡 Broadcasting breaking news update to {}", client_addr);
+
+                        if let Ok(message_text) = serde_json::to_string(&message) {
+                            if let Err(e) = ws_sender.send(Message::Text(message_text)).await {
+                                error!("Failed to send breaking news update to {}: {}", client_addr, e);
+                                break;
+                            }
+                        }
+                    }
+                    Err(broadcast::error::RecvError::Lagged(count)) => {
+                        warn!("📡 WebSocket client {} lagged {} breaking news messages", client_addr, count);
+                    }
+                    Err(broadcast::error::RecvError::Closed) => {
+                        info!("📡 Breaking news broadcaster closed for {}", client_addr);
+                        break;
+                    }
+                }
+            }
+
+            // Handle ticker segments events
+            ticker_segments_event = ticker_segments_receiver.recv() => {
+                match ticker_segments_event {
+                    Ok(message) => {
+                        debug!("📡 Broadcasting ticker segments update to {}", client_addr);
+
+                        if let Ok(message_text) = serde_json::to_string(&message) {
+                            if let Err(e) = ws_sender.send(Message::Text(message_text)).await {
+                                error!("Failed to send ticker segments update to {}: {}", client_addr, e);
+                                break;
+                            }
+                        }
+                    }
+                    Err(broadcast::error::RecvError::Lagged(count)) => {
+                        warn!("📡 WebSocket client {} lagged {} ticker segments messages", client_addr, count);
+                    }
+                    Err(broadcast::error::RecvError::Closed) => {
+                        info!("📡 Ticker segments broadcaster closed for {}", client_addr);
+                        break;
+                    }
+                }
+            }
+
+            // Handle segment duration events
+            segment_duration_event = segment_duration_receiver.recv() => {
+                match segment_duration_event {
+                    Ok(message) => {
+                        debug!("📡 Broadcasting segment duration update to {}", client_addr);
+
+                        if let Ok(message_text) = serde_json::to_string(&message) {
+                            if let Err(e) = ws_sender.send(Message::Text(message_text)).await {
+                                error!("Failed to send segment duration update to {}: {}", client_addr, e);
+                                break;
+                            }
+                        }
+                    }
+                    Err(broadcast::error::RecvError::Lagged(count)) => {
+                        warn!("📡 WebSocket client {} lagged {} segment duration messages", client_addr, count);
+                    }
+                    Err(broadcast::error::RecvError::Closed) => {
+                        info!("📡 Segment duration broadcaster closed for {}", client_addr);
+                        break;
+                    }
+                }
+            }
+
+            // Handle mood ticker events
+            mood_ticker_event = mood_ticker_receiver.recv() => {
+                match mood_ticker_event {
+                    Ok(message) => {
+                        debug!("📡 Broadcasting mood ticker update to {}", client_addr);
+
+                        if let Ok(message_text) = serde_json::to_string(&message) {
+                            if let Err(e) = ws_sender.send(Message::Text(message_text)).await {
+                                error!("Failed to send mood ticker update to {}: {}", client_addr, e);
+                                break;
+                            }
+                        }
+                    }
+                    Err(broadcast::error::RecvError::Lagged(count)) => {
+                        warn!("📡 WebSocket client {} lagged {} mood ticker messages", client_addr, count);
+                    }
+                    Err(broadcast::error::RecvError::Closed) => {
+                        info!("📡 Mood ticker broadcaster closed for {}", client_addr);
+                        break;
+                    }
+                }
+            }
+
             // Handle layout events
             layout_event = layout_receiver.recv() => {
                 match layout_event {
@@ -511,6 +732,52 @@ async fn handle_websocket_connection(stream: TcpStream, client_addr: SocketAddr)
                     }
                     Err(broadcast::error::RecvError::Closed) => {
                         info!("📡 Chat highlight broadcaster closed for {}", client_addr);
+                        break;
+                    }
+                }
+            }
+
+            // Handle pack opening events
+            pack_opening_event = pack_opening_receiver.recv() => {
+                match pack_opening_event {
+                    Ok(message) => {
+                        debug!("📡 Broadcasting pack opening to {}", client_addr);
+
+                        if let Ok(message_text) = serde_json::to_string(&message) {
+                            if let Err(e) = ws_sender.send(Message::Text(message_text)).await {
+                                error!("Failed to send pack opening to {}: {}", client_addr, e);
+                                break;
+                            }
+                        }
+                    }
+                    Err(broadcast::error::RecvError::Lagged(count)) => {
+                        warn!("📡 WebSocket client {} lagged {} pack opening messages", client_addr, count);
+                    }
+                    Err(broadcast::error::RecvError::Closed) => {
+                        info!("📡 Pack opening broadcaster closed for {}", client_addr);
+                        break;
+                    }
+                }
+            }
+
+            // Handle roulette events
+            roulette_event = roulette_receiver.recv() => {
+                match roulette_event {
+                    Ok(message) => {
+                        debug!("📡 Broadcasting roulette event to {}", client_addr);
+
+                        if let Ok(message_text) = serde_json::to_string(&message) {
+                            if let Err(e) = ws_sender.send(Message::Text(message_text)).await {
+                                error!("Failed to send roulette event to {}: {}", client_addr, e);
+                                break;
+                            }
+                        }
+                    }
+                    Err(broadcast::error::RecvError::Lagged(count)) => {
+                        warn!("📡 WebSocket client {} lagged {} roulette messages", client_addr, count);
+                    }
+                    Err(broadcast::error::RecvError::Closed) => {
+                        info!("📡 Roulette broadcaster closed for {}", client_addr);
                         break;
                     }
                 }

@@ -8,6 +8,7 @@ const WEBSOCKET_URL = 'ws://localhost:3002';
 function StatusOverlay() {
   const [currentTime, setCurrentTime] = createSignal('');
   const [streamDays, setStreamDays] = createSignal(0);
+  const [currentDate, setCurrentDate] = createSignal(new Date().toDateString());
 
   let ws = null;
 
@@ -41,6 +42,15 @@ function StatusOverlay() {
     const minutes = now.getMinutes().toString().padStart(2, '0');
     const seconds = now.getSeconds().toString().padStart(2, '0');
     setCurrentTime(`${hours}:${minutes}:${seconds} ${ampm}`);
+
+    // Check if the date has changed (crossed midnight)
+    const newDate = now.toDateString();
+    if (newDate !== currentDate()) {
+      console.log('🌙 Midnight detected! Date changed from', currentDate(), 'to', newDate);
+      setCurrentDate(newDate);
+      // Reload stream days to recalculate
+      loadStreamDays();
+    }
   };
 
   // Connect to WebSocket

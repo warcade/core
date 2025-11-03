@@ -67,12 +67,26 @@ pub struct TickerMessage {
     pub updated_at: i64,
 }
 
+/// Ticker segment data
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TickerSegment {
+    pub id: i64,
+    #[serde(rename = "type")]
+    pub segment_type: String, // "messages", "schedule", "commands", "custom"
+    pub enabled: bool,
+    pub content: serde_json::Value, // JSON content specific to segment type
+    pub position: i64, // Display order
+    pub created_at: i64,
+    pub updated_at: i64,
+}
+
 /// Status configuration data
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StatusConfig {
     pub stream_start_date: Option<String>, // ISO 8601 date string (YYYY-MM-DD)
     pub ticker_speed: i64, // Animation duration in seconds (default 30)
     pub max_ticker_items: i64, // Maximum items in ticker (messages + events, default 20)
+    pub segment_duration: i64, // Segment display duration in seconds (default 15)
     pub updated_at: i64,
 }
 
@@ -99,6 +113,17 @@ pub struct TickerEventsConfig {
     pub updated_at: i64,
 }
 
+/// Mood ticker data
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MoodTickerData {
+    pub mood: i64, // 1-10 scale
+    pub weight: Option<f64>,
+    pub sleep: Option<f64>,
+    pub water: i64,
+    pub show_background: bool,
+    pub updated_at: i64,
+}
+
 /// Twitch account data (for multi-account support)
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TwitchAccount {
@@ -116,6 +141,32 @@ pub struct TwitchAccount {
     pub updated_at: i64,
 }
 
+/// Roulette game session
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RouletteGame {
+    pub id: i64,
+    pub channel: String,
+    pub status: String, // "betting", "spinning", "completed"
+    pub winning_number: Option<i64>,
+    pub spin_started_at: Option<i64>,
+    pub created_at: i64,
+    pub completed_at: Option<i64>,
+}
+
+/// Roulette bet
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RouletteBet {
+    pub id: i64,
+    pub game_id: i64,
+    pub user_id: String,
+    pub username: String,
+    pub bet_type: String, // "number", "red", "black", "odd", "even", "low", "high", "dozen1", "dozen2", "dozen3"
+    pub bet_value: String, // The number or type they bet on
+    pub amount: i64,
+    pub payout: Option<i64>,
+    pub created_at: i64,
+}
+
 /// Goal data
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Goal {
@@ -128,6 +179,31 @@ pub struct Goal {
     pub target: i64,
     pub current: i64,
     pub is_sub_goal: bool,
+    pub created_at: i64,
+    pub updated_at: i64,
+}
+
+/// Pack data
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Pack {
+    pub id: i64,
+    pub channel: String,
+    pub name: String,
+    pub price: i64,
+    pub enabled: bool,
+    pub created_at: i64,
+    pub updated_at: i64,
+}
+
+/// Pack item data
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PackItem {
+    pub id: i64,
+    pub channel: String,
+    pub name: String,
+    pub rarity: String,
+    pub value: i64,
+    pub enabled: bool,
     pub created_at: i64,
     pub updated_at: i64,
 }
@@ -722,6 +798,35 @@ impl Database {
             conn.execute("ALTER TABLE status_config ADD COLUMN max_ticker_items INTEGER NOT NULL DEFAULT 20", [])?;
         }
 
+        // Add segment_duration column if it doesn't exist
+        if !columns.contains(&"segment_duration".to_string()) {
+            conn.execute("ALTER TABLE status_config ADD COLUMN segment_duration INTEGER NOT NULL DEFAULT 15", [])?;
+        }
+
+        // Create ticker_segments table
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS ticker_segments (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                type TEXT NOT NULL,
+                enabled INTEGER NOT NULL DEFAULT 1,
+                content TEXT NOT NULL,
+                position INTEGER NOT NULL DEFAULT 0,
+                created_at INTEGER NOT NULL,
+                updated_at INTEGER NOT NULL
+            )",
+            [],
+        )?;
+
+        // Add position column if it doesn't exist (migration)
+        let ticker_segments_columns: Vec<String> = conn
+            .prepare("PRAGMA table_info(ticker_segments)")?
+            .query_map([], |row| row.get::<_, String>(1))?
+            .collect::<Result<Vec<_>, _>>()?;
+
+        if !ticker_segments_columns.contains(&"position".to_string()) {
+            conn.execute("ALTER TABLE ticker_segments ADD COLUMN position INTEGER NOT NULL DEFAULT 0", [])?;
+        }
+
         // Create ticker_events_config table (for enabling/disabling event types in ticker)
         conn.execute(
             "CREATE TABLE IF NOT EXISTS ticker_events_config (
@@ -764,6 +869,73 @@ impl Database {
 
         if !ticker_events_columns.contains(&"is_sticky".to_string()) {
             conn.execute("ALTER TABLE ticker_events ADD COLUMN is_sticky INTEGER NOT NULL DEFAULT 0", [])?;
+        }
+
+        // Create mood_ticker_data table
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS mood_ticker_data (
+                id INTEGER PRIMARY KEY CHECK (id = 1),
+                mood INTEGER NOT NULL DEFAULT 5,
+                weight REAL,
+                sleep REAL,
+                water INTEGER NOT NULL DEFAULT 0,
+                show_background INTEGER NOT NULL DEFAULT 1,
+                updated_at INTEGER NOT NULL
+            )",
+            [],
+        )?;
+
+        // Migrate old mood_ticker_data table if it exists with TEXT mood column
+        let mood_ticker_columns: Vec<(String, String)> = conn
+            .prepare("PRAGMA table_info(mood_ticker_data)")?
+            .query_map([], |row| {
+                let col_name: String = row.get(1)?;
+                let col_type: String = row.get(2)?;
+                Ok((col_name, col_type))
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
+
+        let has_text_mood = mood_ticker_columns.iter()
+            .any(|(name, col_type)| name == "mood" && col_type == "TEXT");
+
+        if has_text_mood {
+            // Need to migrate from TEXT to INTEGER
+            // Create temporary table with new schema
+            conn.execute(
+                "CREATE TABLE IF NOT EXISTS mood_ticker_data_new (
+                    id INTEGER PRIMARY KEY CHECK (id = 1),
+                    mood INTEGER NOT NULL DEFAULT 5,
+                    weight REAL,
+                    sleep REAL,
+                    water INTEGER NOT NULL DEFAULT 0,
+                    show_background INTEGER NOT NULL DEFAULT 1,
+                    updated_at INTEGER NOT NULL
+                )",
+                [],
+            )?;
+
+            // Copy data, converting text mood to numeric (default to 5 for any value)
+            conn.execute(
+                "INSERT OR REPLACE INTO mood_ticker_data_new (id, mood, weight, sleep, water, show_background, updated_at)
+                 SELECT id, 5, weight, sleep, water, 1, updated_at FROM mood_ticker_data",
+                [],
+            )?;
+
+            // Drop old table
+            conn.execute("DROP TABLE mood_ticker_data", [])?;
+
+            // Rename new table
+            conn.execute("ALTER TABLE mood_ticker_data_new RENAME TO mood_ticker_data", [])?;
+        }
+
+        // Add show_background column if it doesn't exist
+        let mood_ticker_columns_names: Vec<String> = conn
+            .prepare("PRAGMA table_info(mood_ticker_data)")?
+            .query_map([], |row| row.get(1))?
+            .collect::<Result<Vec<_>, _>>()?;
+
+        if !mood_ticker_columns_names.contains(&"show_background".to_string()) {
+            conn.execute("ALTER TABLE mood_ticker_data ADD COLUMN show_background INTEGER NOT NULL DEFAULT 1", [])?;
         }
 
         // Create goals table
@@ -862,6 +1034,14 @@ impl Database {
             [timestamp],
         )?;
 
+        // Register mood ticker overlay
+        conn.execute(
+            "INSERT INTO overlays (id, name, file_path, width, height, created_at, updated_at)
+             VALUES ('mood-ticker', 'Mood Ticker', '../dist/overlays/mood-ticker.html', 1920, 64, ?1, ?1)
+             ON CONFLICT(id) DO UPDATE SET file_path = '../dist/overlays/mood-ticker.html', width = 1920, height = 64, updated_at = ?1",
+            [timestamp],
+        )?;
+
         // Register status overlay
         conn.execute(
             "INSERT INTO overlays (id, name, file_path, width, height, created_at, updated_at)
@@ -877,6 +1057,160 @@ impl Database {
         )?;
 
         log::info!("✅ Registered {} overlays", overlay_count);
+
+        // Migrate users table to add coins column if it doesn't exist
+        let coins_exists: Result<i64, _> = conn.query_row(
+            "SELECT COUNT(*) FROM pragma_table_info('users') WHERE name='coins'",
+            [],
+            |row| row.get(0)
+        );
+
+        if let Ok(0) = coins_exists {
+            conn.execute(
+                "ALTER TABLE users ADD COLUMN coins INTEGER NOT NULL DEFAULT 0",
+                [],
+            )?;
+            log::info!("✅ Added coins column to users table");
+        }
+
+        // Migrate users table to add spin_tokens column if it doesn't exist
+        let spin_tokens_exists: Result<i64, _> = conn.query_row(
+            "SELECT COUNT(*) FROM pragma_table_info('users') WHERE name='spin_tokens'",
+            [],
+            |row| row.get(0)
+        );
+
+        if let Ok(0) = spin_tokens_exists {
+            conn.execute(
+                "ALTER TABLE users ADD COLUMN spin_tokens INTEGER NOT NULL DEFAULT 0",
+                [],
+            )?;
+            log::info!("✅ Added spin_tokens column to users table");
+        }
+
+        // Migrate users table to add last_daily_spin column if it doesn't exist
+        let last_daily_spin_exists: Result<i64, _> = conn.query_row(
+            "SELECT COUNT(*) FROM pragma_table_info('users') WHERE name='last_daily_spin'",
+            [],
+            |row| row.get(0)
+        );
+
+        if let Ok(0) = last_daily_spin_exists {
+            conn.execute(
+                "ALTER TABLE users ADD COLUMN last_daily_spin INTEGER",
+                [],
+            )?;
+            log::info!("✅ Added last_daily_spin column to users table");
+        }
+
+        // Create packs table
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS packs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                channel TEXT NOT NULL,
+                name TEXT NOT NULL,
+                price INTEGER NOT NULL,
+                enabled INTEGER NOT NULL DEFAULT 1,
+                created_at INTEGER NOT NULL,
+                updated_at INTEGER NOT NULL,
+                UNIQUE(channel, name)
+            )",
+            [],
+        )?;
+
+        // Create pack_items table
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS pack_items (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                channel TEXT NOT NULL,
+                name TEXT NOT NULL,
+                rarity TEXT NOT NULL,
+                value INTEGER NOT NULL,
+                enabled INTEGER NOT NULL DEFAULT 1,
+                created_at INTEGER NOT NULL,
+                updated_at INTEGER NOT NULL
+            )",
+            [],
+        )?;
+
+        // Create user_packs table (user's pack inventory)
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS user_packs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                channel TEXT NOT NULL,
+                username TEXT NOT NULL,
+                pack_id INTEGER NOT NULL,
+                acquired_at INTEGER NOT NULL,
+                FOREIGN KEY (pack_id) REFERENCES packs(id)
+            )",
+            [],
+        )?;
+
+        // Create user_items table (user's item collection)
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS user_items (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                channel TEXT NOT NULL,
+                username TEXT NOT NULL,
+                item_id INTEGER NOT NULL,
+                acquired_at INTEGER NOT NULL,
+                FOREIGN KEY (item_id) REFERENCES pack_items(id)
+            )",
+            [],
+        )?;
+
+        // Create indexes for pack system
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_user_packs_user ON user_packs(channel, username)",
+            [],
+        )?;
+
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_user_items_user ON user_items(channel, username)",
+            [],
+        )?;
+
+        // Create roulette_games table
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS roulette_games (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                channel TEXT NOT NULL,
+                status TEXT NOT NULL DEFAULT 'betting',
+                winning_number INTEGER,
+                spin_started_at INTEGER,
+                created_at INTEGER NOT NULL,
+                completed_at INTEGER
+            )",
+            [],
+        )?;
+
+        // Create roulette_bets table
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS roulette_bets (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                game_id INTEGER NOT NULL,
+                user_id TEXT NOT NULL,
+                username TEXT NOT NULL,
+                bet_type TEXT NOT NULL,
+                bet_value TEXT NOT NULL,
+                amount INTEGER NOT NULL,
+                payout INTEGER,
+                created_at INTEGER NOT NULL,
+                FOREIGN KEY (game_id) REFERENCES roulette_games(id)
+            )",
+            [],
+        )?;
+
+        // Create indexes for roulette
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_roulette_games_channel ON roulette_games(channel, status)",
+            [],
+        )?;
+
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_roulette_bets_game ON roulette_bets(game_id)",
+            [],
+        )?;
 
         log::info!("✅ Database initialized: data/counters.db");
 
@@ -3593,14 +3927,15 @@ impl Database {
         let conn = self.conn.lock().unwrap();
 
         match conn.query_row(
-            "SELECT stream_start_date, ticker_speed, max_ticker_items, updated_at FROM status_config WHERE id = 1",
+            "SELECT stream_start_date, ticker_speed, max_ticker_items, segment_duration, updated_at FROM status_config WHERE id = 1",
             [],
             |row| {
                 Ok(StatusConfig {
                     stream_start_date: row.get(0)?,
                     ticker_speed: row.get(1)?,
                     max_ticker_items: row.get(2)?,
-                    updated_at: row.get(3)?,
+                    segment_duration: row.get(3)?,
+                    updated_at: row.get(4)?,
                 })
             },
         ).optional()? {
@@ -3609,14 +3944,15 @@ impl Database {
                 // Create default config
                 let now = chrono::Utc::now().timestamp();
                 conn.execute(
-                    "INSERT INTO status_config (id, stream_start_date, ticker_speed, max_ticker_items, updated_at)
-                     VALUES (1, NULL, 30, 20, ?1)",
+                    "INSERT INTO status_config (id, stream_start_date, ticker_speed, max_ticker_items, segment_duration, updated_at)
+                     VALUES (1, NULL, 30, 20, 15, ?1)",
                     params![now],
                 )?;
                 Ok(StatusConfig {
                     stream_start_date: None,
                     ticker_speed: 30,
                     max_ticker_items: 20,
+                    segment_duration: 15,
                     updated_at: now,
                 })
             }
@@ -3663,12 +3999,137 @@ impl Database {
         let now = chrono::Utc::now().timestamp();
 
         conn.execute(
-            "INSERT INTO status_config (id, stream_start_date, ticker_speed, max_ticker_items, updated_at)
-             VALUES (1, NULL, 30, ?1, ?2)
+            "INSERT INTO status_config (id, stream_start_date, ticker_speed, max_ticker_items, segment_duration, updated_at)
+             VALUES (1, NULL, 30, ?1, 15, ?2)
              ON CONFLICT(id) DO UPDATE SET
                 max_ticker_items = ?1,
                 updated_at = ?2",
             params![max_items, now],
+        )?;
+
+        Ok(())
+    }
+
+    /// Update segment duration
+    pub fn update_segment_duration(&self, duration: i64) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        let now = chrono::Utc::now().timestamp();
+
+        conn.execute(
+            "INSERT INTO status_config (id, stream_start_date, ticker_speed, max_ticker_items, segment_duration, updated_at)
+             VALUES (1, NULL, 30, 20, ?1, ?2)
+             ON CONFLICT(id) DO UPDATE SET
+                segment_duration = ?1,
+                updated_at = ?2",
+            params![duration, now],
+        )?;
+
+        Ok(())
+    }
+
+    // ========== Ticker Segment Methods ==========
+
+    /// Get all ticker segments
+    pub fn get_ticker_segments(&self) -> Result<Vec<TickerSegment>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT id, type, enabled, content, position, created_at, updated_at
+             FROM ticker_segments
+             ORDER BY position ASC, id ASC"
+        )?;
+
+        let segments = stmt.query_map([], |row| {
+            let content_str: String = row.get(3)?;
+            Ok(TickerSegment {
+                id: row.get(0)?,
+                segment_type: row.get(1)?,
+                enabled: row.get::<_, i64>(2)? == 1,
+                content: serde_json::from_str(&content_str).unwrap_or(serde_json::json!({})),
+                position: row.get(4)?,
+                created_at: row.get(5)?,
+                updated_at: row.get(6)?,
+            })
+        })?
+        .collect::<Result<Vec<_>>>()?;
+
+        Ok(segments)
+    }
+
+    /// Add a ticker segment
+    pub fn add_ticker_segment(&self, segment_type: &str, content: &serde_json::Value) -> Result<i64> {
+        let conn = self.conn.lock().unwrap();
+        let now = chrono::Utc::now().timestamp();
+        let content_str = serde_json::to_string(content)
+            .map_err(|e| rusqlite::Error::ToSqlConversionFailure(Box::new(e)))?;
+
+        // Get the next position (max position + 1)
+        let next_position: i64 = conn.query_row(
+            "SELECT COALESCE(MAX(position), -1) + 1 FROM ticker_segments",
+            [],
+            |row| row.get(0)
+        )?;
+
+        conn.execute(
+            "INSERT INTO ticker_segments (type, enabled, content, position, created_at, updated_at)
+             VALUES (?1, 1, ?2, ?3, ?4, ?5)",
+            params![segment_type, content_str, next_position, now, now],
+        )?;
+
+        Ok(conn.last_insert_rowid())
+    }
+
+    /// Update a ticker segment
+    pub fn update_ticker_segment(&self, id: i64, segment_type: &str, enabled: bool, content: &serde_json::Value, position: i64) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        let now = chrono::Utc::now().timestamp();
+        let content_str = serde_json::to_string(content)
+            .map_err(|e| rusqlite::Error::ToSqlConversionFailure(Box::new(e)))?;
+
+        conn.execute(
+            "UPDATE ticker_segments
+             SET type = ?1, enabled = ?2, content = ?3, position = ?4, updated_at = ?5
+             WHERE id = ?6",
+            params![segment_type, if enabled { 1 } else { 0 }, content_str, position, now, id],
+        )?;
+
+        Ok(())
+    }
+
+    /// Reorder ticker segments
+    pub fn reorder_ticker_segments(&self, segment_ids: &[i64]) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        let now = chrono::Utc::now().timestamp();
+
+        // Update position for each segment based on its index in the array
+        for (position, &segment_id) in segment_ids.iter().enumerate() {
+            conn.execute(
+                "UPDATE ticker_segments
+                 SET position = ?1, updated_at = ?2
+                 WHERE id = ?3",
+                params![position as i64, now, segment_id],
+            )?;
+        }
+
+        Ok(())
+    }
+
+    /// Delete a ticker segment
+    pub fn delete_ticker_segment(&self, id: i64) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute("DELETE FROM ticker_segments WHERE id = ?1", params![id])?;
+        Ok(())
+    }
+
+    /// Toggle ticker segment enabled state
+    pub fn toggle_ticker_segment(&self, id: i64) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        let now = chrono::Utc::now().timestamp();
+
+        conn.execute(
+            "UPDATE ticker_segments
+             SET enabled = NOT enabled, updated_at = ?1
+             WHERE id = ?2",
+            params![now, id],
         )?;
 
         Ok(())
@@ -4354,6 +4815,1216 @@ impl Database {
             params![key, value, now],
         )?;
         Ok(())
+    }
+
+    // ==================== NOTES SYSTEM METHODS ====================
+
+    /// Get all notes (stub for notes plugin)
+    pub fn get_notes(&self) -> Result<Vec<serde_json::Value>> {
+        Ok(vec![])
+    }
+
+    /// Get favorite notes (stub for notes plugin)
+    pub fn get_favorite_notes(&self) -> Result<Vec<serde_json::Value>> {
+        Ok(vec![])
+    }
+
+    /// Get note categories (stub for notes plugin)
+    pub fn get_note_categories(&self) -> Result<Vec<String>> {
+        Ok(vec![])
+    }
+
+    /// Create note (stub for notes plugin)
+    pub fn create_note(&self, _title: &str, _content: &str, _category: &str, _mood: Option<&str>, _tags: Vec<String>) -> Result<i64> {
+        Ok(0) // Return dummy ID
+    }
+
+    /// Update note (stub for notes plugin)
+    pub fn update_note(&self, _id: i64, _title: &str, _content: &str, _category: &str, _mood: Option<&str>, _tags: Vec<String>) -> Result<()> {
+        Ok(())
+    }
+
+    /// Delete note (stub for notes plugin)
+    pub fn delete_note(&self, _id: i64) -> Result<()> {
+        Ok(())
+    }
+
+    /// Toggle note favorite status (stub for notes plugin)
+    pub fn toggle_note_favorite(&self, _id: i64) -> Result<()> {
+        Ok(())
+    }
+
+    // ==================== SCHEDULE SEGMENT METHODS ====================
+
+    /// Upsert schedule segment (stub for twitch schedule plugin)
+    pub fn upsert_schedule_segment(
+        &self,
+        _segment_id: &str,
+        _broadcaster_id: &str,
+        _broadcaster_name: &str,
+        _start_time: &str,
+        _end_time: &str,
+        _title: &str,
+        _category_id: Option<&str>,
+        _category_name: Option<&str>,
+        _is_recurring: bool,
+        _is_canceled: bool,
+        _is_vacation: bool,
+        _updated_at: i64,
+    ) -> Result<()> {
+        Ok(())
+    }
+
+    /// Delete schedule segment (stub for twitch schedule plugin)
+    pub fn delete_schedule_segment(&self, _segment_id: &str) -> Result<()> {
+        Ok(())
+    }
+
+    // ==================== BREAKING NEWS METHODS ====================
+
+    /// Update breaking news (stub for ticker plugin)
+    pub fn update_breaking_news(&self, _active: bool, _message: Option<String>) -> Result<()> {
+        Ok(())
+    }
+
+    // ==================== MOOD TICKER METHODS ====================
+
+    /// Get mood ticker data
+    pub fn get_mood_ticker_data(&self) -> Result<MoodTickerData> {
+        let conn = self.conn.lock().unwrap();
+
+        match conn.query_row(
+            "SELECT mood, weight, sleep, water, show_background, updated_at FROM mood_ticker_data WHERE id = 1",
+            [],
+            |row| {
+                Ok(MoodTickerData {
+                    mood: row.get(0)?,
+                    weight: row.get(1)?,
+                    sleep: row.get(2)?,
+                    water: row.get(3)?,
+                    show_background: row.get::<_, i64>(4)? != 0,
+                    updated_at: row.get(5)?,
+                })
+            },
+        ) {
+            Ok(data) => Ok(data),
+            Err(rusqlite::Error::QueryReturnedNoRows) => {
+                // Create default data
+                let now = chrono::Utc::now().timestamp();
+                conn.execute(
+                    "INSERT INTO mood_ticker_data (id, mood, weight, sleep, water, show_background, updated_at)
+                     VALUES (1, 5, NULL, NULL, 0, 1, ?1)",
+                    params![now],
+                )?;
+                Ok(MoodTickerData {
+                    mood: 5,
+                    weight: None,
+                    sleep: None,
+                    water: 0,
+                    show_background: true,
+                    updated_at: now,
+                })
+            }
+            Err(e) => Err(e.into()),
+        }
+    }
+
+    /// Update mood ticker data
+    pub fn update_mood_ticker_data(&self, mood: i64, weight: Option<f64>, sleep: Option<f64>, water: i64, show_background: bool) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        let now = chrono::Utc::now().timestamp();
+
+        conn.execute(
+            "INSERT INTO mood_ticker_data (id, mood, weight, sleep, water, show_background, updated_at)
+             VALUES (1, ?1, ?2, ?3, ?4, ?5, ?6)
+             ON CONFLICT(id) DO UPDATE SET
+                mood = ?1,
+                weight = ?2,
+                sleep = ?3,
+                water = ?4,
+                show_background = ?5,
+                updated_at = ?6",
+            params![mood, weight, sleep, water, if show_background { 1 } else { 0 }, now],
+        )?;
+
+        Ok(())
+    }
+
+    // ==================== PACK SYSTEM METHODS ====================
+
+    /// Get a pack by name
+    pub fn get_pack_by_name(&self, channel: &str, name: &str) -> Result<Option<Pack>> {
+        let conn = self.conn.lock().unwrap();
+
+        // First try to get pack for this specific channel
+        let result = conn.query_row(
+            "SELECT id, channel, name, price, enabled, created_at, updated_at
+             FROM packs WHERE channel = ?1 AND LOWER(name) = LOWER(?2)",
+            params![channel, name],
+            |row| Ok(Pack {
+                id: row.get(0)?,
+                channel: row.get(1)?,
+                name: row.get(2)?,
+                price: row.get(3)?,
+                enabled: row.get(4)?,
+                created_at: row.get(5)?,
+                updated_at: row.get(6)?,
+            })
+        ).optional()?;
+
+        // If not found for this channel, try to find it in any channel
+        if result.is_none() {
+            log::warn!("⚠️ Pack '{}' not found for channel '{}', searching all channels", name, channel);
+            let fallback = conn.query_row(
+                "SELECT id, channel, name, price, enabled, created_at, updated_at
+                 FROM packs WHERE LOWER(name) = LOWER(?1)",
+                params![name],
+                |row| Ok(Pack {
+                    id: row.get(0)?,
+                    channel: row.get(1)?,
+                    name: row.get(2)?,
+                    price: row.get(3)?,
+                    enabled: row.get(4)?,
+                    created_at: row.get(5)?,
+                    updated_at: row.get(6)?,
+                })
+            ).optional()?;
+            return Ok(fallback);
+        }
+
+        Ok(result)
+    }
+
+    /// Get all enabled packs for a channel
+    pub fn get_enabled_packs(&self, channel: &str) -> Result<Vec<Pack>> {
+        let conn = self.conn.lock().unwrap();
+
+        log::info!("🔍 Searching for enabled packs for channel: '{}'", channel);
+
+        // First try to get packs for this specific channel
+        let mut stmt = conn.prepare(
+            "SELECT id, channel, name, price, enabled, created_at, updated_at
+             FROM packs WHERE channel = ?1 AND enabled = 1 ORDER BY price ASC"
+        )?;
+        let mut packs: Vec<Pack> = stmt.query_map(params![channel], |row| {
+            Ok(Pack {
+                id: row.get(0)?,
+                channel: row.get(1)?,
+                name: row.get(2)?,
+                price: row.get(3)?,
+                enabled: row.get(4)?,
+                created_at: row.get(5)?,
+                updated_at: row.get(6)?,
+            })
+        })?
+        .collect::<Result<Vec<_>, _>>()?;
+
+        // If no packs found for this channel, get all enabled packs
+        if packs.is_empty() {
+            log::warn!("⚠️ No packs found for channel '{}', fetching all enabled packs", channel);
+            let mut stmt = conn.prepare(
+                "SELECT id, channel, name, price, enabled, created_at, updated_at
+                 FROM packs WHERE enabled = 1 ORDER BY price ASC"
+            )?;
+            packs = stmt.query_map([], |row| {
+                Ok(Pack {
+                    id: row.get(0)?,
+                    channel: row.get(1)?,
+                    name: row.get(2)?,
+                    price: row.get(3)?,
+                    enabled: row.get(4)?,
+                    created_at: row.get(5)?,
+                    updated_at: row.get(6)?,
+                })
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
+
+            log::info!("✅ Found {} enabled packs (across all channels)", packs.len());
+        } else {
+            log::info!("✅ Found {} enabled packs for channel '{}'", packs.len(), channel);
+        }
+
+        Ok(packs)
+    }
+
+    /// Check if user has a pack
+    pub fn user_has_pack(&self, channel: &str, username: &str, pack_id: i64) -> Result<bool> {
+        let conn = self.conn.lock().unwrap();
+        let count: i64 = conn.query_row(
+            "SELECT COUNT(*) FROM user_packs WHERE channel = ?1 AND LOWER(username) = LOWER(?2) AND pack_id = ?3",
+            params![channel, username, pack_id],
+            |row| row.get(0)
+        )?;
+        Ok(count > 0)
+    }
+
+    /// Get all enabled items for a channel
+    pub fn get_enabled_items(&self, channel: &str) -> Result<Vec<PackItem>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT id, channel, name, rarity, value, enabled, created_at, updated_at
+             FROM pack_items WHERE channel = ?1 AND enabled = 1"
+        )?;
+        let items = stmt.query_map(params![channel], |row| {
+            Ok(PackItem {
+                id: row.get(0)?,
+                channel: row.get(1)?,
+                name: row.get(2)?,
+                rarity: row.get(3)?,
+                value: row.get(4)?,
+                enabled: row.get(5)?,
+                created_at: row.get(6)?,
+                updated_at: row.get(7)?,
+            })
+        })?
+        .collect::<Result<Vec<_>, _>>()?;
+        Ok(items)
+    }
+
+    /// Add a pack to user's inventory
+    pub fn add_user_pack(&self, channel: &str, username: &str, pack_id: i64) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_secs() as i64;
+
+        conn.execute(
+            "INSERT INTO user_packs (channel, username, pack_id, acquired_at) VALUES (?1, LOWER(?2), ?3, ?4)",
+            params![channel, username, pack_id, now],
+        )?;
+        Ok(())
+    }
+
+    /// Add an item to user's collection
+    pub fn add_user_item(&self, channel: &str, username: &str, item_id: i64) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_secs() as i64;
+
+        conn.execute(
+            "INSERT INTO user_items (channel, username, item_id, acquired_at) VALUES (?1, LOWER(?2), ?3, ?4)",
+            params![channel, username, item_id, now],
+        )?;
+        Ok(())
+    }
+
+    /// Remove a pack from user's inventory
+    pub fn remove_user_pack(&self, channel: &str, username: &str, pack_id: i64) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "DELETE FROM user_packs WHERE channel = ?1 AND LOWER(username) = LOWER(?2) AND pack_id = ?3 AND id IN (
+                SELECT id FROM user_packs WHERE channel = ?1 AND LOWER(username) = LOWER(?2) AND pack_id = ?3 LIMIT 1
+            )",
+            params![channel, username, pack_id],
+        )?;
+        Ok(())
+    }
+
+    /// Get all items owned by a user
+    pub fn get_user_items(&self, channel: &str, username: &str) -> Result<Vec<PackItem>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT pi.id, pi.channel, pi.name, pi.rarity, pi.value, pi.enabled, pi.created_at, pi.updated_at
+             FROM user_items ui
+             JOIN pack_items pi ON ui.item_id = pi.id
+             WHERE ui.channel = ?1 AND LOWER(ui.username) = LOWER(?2)
+             ORDER BY ui.acquired_at DESC"
+        )?;
+        let items = stmt.query_map(params![channel, username], |row| {
+            Ok(PackItem {
+                id: row.get(0)?,
+                channel: row.get(1)?,
+                name: row.get(2)?,
+                rarity: row.get(3)?,
+                value: row.get(4)?,
+                enabled: row.get(5)?,
+                created_at: row.get(6)?,
+                updated_at: row.get(7)?,
+            })
+        })?
+        .collect::<Result<Vec<_>, _>>()?;
+        Ok(items)
+    }
+
+    /// Get all packs owned by a user
+    pub fn get_user_packs(&self, channel: &str, username: &str) -> Result<Vec<Pack>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT p.id, p.channel, p.name, p.price, p.enabled, p.created_at, p.updated_at
+             FROM user_packs up
+             JOIN packs p ON up.pack_id = p.id
+             WHERE up.channel = ?1 AND LOWER(up.username) = LOWER(?2)
+             ORDER BY up.acquired_at DESC"
+        )?;
+        let packs = stmt.query_map(params![channel, username], |row| {
+            Ok(Pack {
+                id: row.get(0)?,
+                channel: row.get(1)?,
+                name: row.get(2)?,
+                price: row.get(3)?,
+                enabled: row.get(4)?,
+                created_at: row.get(5)?,
+                updated_at: row.get(6)?,
+            })
+        })?
+        .collect::<Result<Vec<_>, _>>()?;
+        Ok(packs)
+    }
+
+    /// Add coins to a user's balance
+    pub fn add_coins(&self, channel: &str, username: &str, amount: i64) -> Result<Option<i64>> {
+        let conn = self.conn.lock().unwrap();
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_secs() as i64;
+
+        // Initialize user if they don't exist
+        conn.execute(
+            "INSERT OR IGNORE INTO users (channel, username, coins, spin_tokens, last_seen, created_at)
+             VALUES (?1, LOWER(?2), 0, 0, ?3, ?3)",
+            params![channel, username, now],
+        )?;
+
+        // Add coins
+        conn.execute(
+            "UPDATE users SET coins = coins + ?3, last_seen = ?4
+             WHERE channel = ?1 AND LOWER(username) = LOWER(?2)",
+            params![channel, username, amount, now],
+        )?;
+
+        // Get new balance
+        let new_balance: i64 = conn.query_row(
+            "SELECT coins FROM users WHERE channel = ?1 AND LOWER(username) = LOWER(?2)",
+            params![channel, username],
+            |row| row.get(0)
+        )?;
+
+        Ok(Some(new_balance))
+    }
+
+    /// Remove coins from a user's balance
+    pub fn remove_coins(&self, channel: &str, username: &str, amount: i64) -> Result<Option<i64>> {
+        let conn = self.conn.lock().unwrap();
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_secs() as i64;
+
+        // Check current balance
+        let current_balance: i64 = conn.query_row(
+            "SELECT coins FROM users WHERE channel = ?1 AND LOWER(username) = LOWER(?2)",
+            params![channel, username],
+            |row| row.get(0)
+        ).unwrap_or(0);
+
+        if current_balance < amount {
+            return Ok(None); // Insufficient coins
+        }
+
+        // Remove coins
+        conn.execute(
+            "UPDATE users SET coins = coins - ?3, last_seen = ?4
+             WHERE channel = ?1 AND LOWER(username) = LOWER(?2)",
+            params![channel, username, amount, now],
+        )?;
+
+        // Get new balance
+        let new_balance: i64 = conn.query_row(
+            "SELECT coins FROM users WHERE channel = ?1 AND LOWER(username) = LOWER(?2)",
+            params![channel, username],
+            |row| row.get(0)
+        )?;
+
+        Ok(Some(new_balance))
+    }
+
+    /// Get user's coin balance
+    pub fn get_user_coins(&self, channel: &str, username: &str) -> Result<i64> {
+        let conn = self.conn.lock().unwrap();
+        let coins: i64 = conn.query_row(
+            "SELECT coins FROM users WHERE channel = ?1 AND LOWER(username) = LOWER(?2)",
+            params![channel, username],
+            |row| row.get(0)
+        ).unwrap_or(0);
+        Ok(coins)
+    }
+
+    /// Add spin tokens to a user's balance
+    pub fn add_spin_tokens(&self, channel: &str, username: &str, amount: i64) -> Result<Option<i64>> {
+        let conn = self.conn.lock().unwrap();
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_secs() as i64;
+
+        // Initialize user if they don't exist
+        conn.execute(
+            "INSERT OR IGNORE INTO users (channel, username, coins, spin_tokens, last_seen, created_at)
+             VALUES (?1, LOWER(?2), 0, 0, ?3, ?3)",
+            params![channel, username, now],
+        )?;
+
+        // Add spin tokens
+        conn.execute(
+            "UPDATE users SET spin_tokens = spin_tokens + ?3, last_seen = ?4
+             WHERE channel = ?1 AND LOWER(username) = LOWER(?2)",
+            params![channel, username, amount, now],
+        )?;
+
+        // Get new balance
+        let new_balance: i64 = conn.query_row(
+            "SELECT spin_tokens FROM users WHERE channel = ?1 AND LOWER(username) = LOWER(?2)",
+            params![channel, username],
+            |row| row.get(0)
+        )?;
+
+        Ok(Some(new_balance))
+    }
+
+    /// Get user's currency (coins, spin tokens, and daily availability)
+    pub fn get_user_currency(&self, channel: &str, username: &str) -> Result<(i64, i64, bool)> {
+        let conn = self.conn.lock().unwrap();
+
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_secs() as i64;
+
+        let result = conn.query_row(
+            "SELECT coins, spin_tokens, COALESCE(last_daily_spin, 0) FROM users WHERE channel = ?1 AND LOWER(username) = LOWER(?2)",
+            params![channel, username],
+            |row| {
+                let coins: i64 = row.get(0)?;
+                let spin_tokens: i64 = row.get(1)?;
+                let last_daily_spin: i64 = row.get(2)?;
+                let daily_available = (now - last_daily_spin) >= 86400; // 24 hours
+                Ok((coins, spin_tokens, daily_available))
+            }
+        ).unwrap_or((0, 0, true));
+        Ok(result)
+    }
+
+    /// Get user's spin token balance
+    pub fn get_spin_tokens(&self, channel: &str, username: &str) -> Result<i64> {
+        let conn = self.conn.lock().unwrap();
+        let tokens: i64 = conn.query_row(
+            "SELECT spin_tokens FROM users WHERE channel = ?1 AND LOWER(username) = LOWER(?2)",
+            params![channel, username],
+            |row| row.get(0)
+        ).unwrap_or(0);
+        Ok(tokens)
+    }
+
+    /// Remove spin tokens from a user's balance
+    pub fn remove_spin_tokens(&self, channel: &str, username: &str, amount: i64) -> Result<Option<i64>> {
+        let conn = self.conn.lock().unwrap();
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_secs() as i64;
+
+        // Check current balance
+        let current_balance: i64 = conn.query_row(
+            "SELECT spin_tokens FROM users WHERE channel = ?1 AND LOWER(username) = LOWER(?2)",
+            params![channel, username],
+            |row| row.get(0)
+        ).unwrap_or(0);
+
+        if current_balance < amount {
+            return Ok(None); // Insufficient tokens
+        }
+
+        // Remove tokens
+        conn.execute(
+            "UPDATE users SET spin_tokens = spin_tokens - ?3, last_seen = ?4
+             WHERE channel = ?1 AND LOWER(username) = LOWER(?2)",
+            params![channel, username, amount, now],
+        )?;
+
+        // Get new balance
+        let new_balance: i64 = conn.query_row(
+            "SELECT spin_tokens FROM users WHERE channel = ?1 AND LOWER(username) = LOWER(?2)",
+            params![channel, username],
+            |row| row.get(0)
+        )?;
+
+        Ok(Some(new_balance))
+    }
+
+    /// Use daily spin (check if user has used daily spin today)
+    pub fn use_daily_spin(&self, channel: &str, username: &str) -> Result<bool> {
+        let conn = self.conn.lock().unwrap();
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_secs() as i64;
+
+        // Check if user has used daily spin today (within last 24 hours)
+        let last_spin: Option<i64> = conn.query_row(
+            "SELECT last_daily_spin FROM users WHERE channel = ?1 AND LOWER(username) = LOWER(?2)",
+            params![channel, username],
+            |row| row.get(0)
+        ).optional()?;
+
+        if let Some(last) = last_spin {
+            let seconds_since_last = now - last;
+            if seconds_since_last < 86400 {
+                return Ok(false); // Already used today
+            }
+        }
+
+        // Update last daily spin time
+        conn.execute(
+            "UPDATE users SET last_daily_spin = ?3 WHERE channel = ?1 AND LOWER(username) = LOWER(?2)",
+            params![channel, username, now],
+        )?;
+
+        Ok(true)
+    }
+
+    /// Get all packs for a channel
+    pub fn get_all_packs(&self, channel: &str) -> Result<Vec<Pack>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT id, channel, name, price, enabled, created_at, updated_at
+             FROM packs WHERE channel = ?1 ORDER BY price ASC"
+        )?;
+        let packs = stmt.query_map(params![channel], |row| {
+            Ok(Pack {
+                id: row.get(0)?,
+                channel: row.get(1)?,
+                name: row.get(2)?,
+                price: row.get(3)?,
+                enabled: row.get(4)?,
+                created_at: row.get(5)?,
+                updated_at: row.get(6)?,
+            })
+        })?
+        .collect::<Result<Vec<_>, _>>()?;
+        Ok(packs)
+    }
+
+    /// Get all packs across all channels (for management UI)
+    pub fn get_all_packs_no_filter(&self) -> Result<Vec<Pack>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT id, channel, name, price, enabled, created_at, updated_at
+             FROM packs ORDER BY channel, price ASC"
+        )?;
+        let packs = stmt.query_map([], |row| {
+            Ok(Pack {
+                id: row.get(0)?,
+                channel: row.get(1)?,
+                name: row.get(2)?,
+                price: row.get(3)?,
+                enabled: row.get(4)?,
+                created_at: row.get(5)?,
+                updated_at: row.get(6)?,
+            })
+        })?
+        .collect::<Result<Vec<_>, _>>()?;
+        Ok(packs)
+    }
+
+    /// Add a new pack
+    pub fn add_pack(&self, channel: &str, name: &str, price: i64) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_secs() as i64;
+
+        conn.execute(
+            "INSERT INTO packs (channel, name, price, enabled, created_at, updated_at)
+             VALUES (?1, ?2, ?3, 1, ?4, ?4)",
+            params![channel, name, price, now],
+        )?;
+        Ok(())
+    }
+
+    /// Update a pack
+    pub fn update_pack(&self, id: i64, name: &str, price: i64) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_secs() as i64;
+
+        conn.execute(
+            "UPDATE packs SET name = ?2, price = ?3, updated_at = ?4 WHERE id = ?1",
+            params![id, name, price, now],
+        )?;
+        Ok(())
+    }
+
+    /// Delete a pack
+    pub fn delete_pack(&self, id: i64) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute("DELETE FROM packs WHERE id = ?1", params![id])?;
+        Ok(())
+    }
+
+    /// Toggle pack enabled status
+    pub fn toggle_pack(&self, id: i64) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_secs() as i64;
+
+        conn.execute(
+            "UPDATE packs SET enabled = NOT enabled, updated_at = ?2 WHERE id = ?1",
+            params![id, now],
+        )?;
+        Ok(())
+    }
+
+    /// Get all pack items for a channel
+    pub fn get_all_pack_items(&self, channel: &str) -> Result<Vec<PackItem>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT id, channel, name, rarity, value, enabled, created_at, updated_at
+             FROM pack_items WHERE channel = ?1 ORDER BY rarity, name"
+        )?;
+        let items = stmt.query_map(params![channel], |row| {
+            Ok(PackItem {
+                id: row.get(0)?,
+                channel: row.get(1)?,
+                name: row.get(2)?,
+                rarity: row.get(3)?,
+                value: row.get(4)?,
+                enabled: row.get(5)?,
+                created_at: row.get(6)?,
+                updated_at: row.get(7)?,
+            })
+        })?
+        .collect::<Result<Vec<_>, _>>()?;
+        Ok(items)
+    }
+
+    /// Get all pack items across all channels (for management UI)
+    pub fn get_all_pack_items_no_filter(&self) -> Result<Vec<PackItem>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT id, channel, name, rarity, value, enabled, created_at, updated_at
+             FROM pack_items ORDER BY
+             CASE rarity
+                WHEN 'mythic' THEN 1
+                WHEN 'legendary' THEN 2
+                WHEN 'epic' THEN 3
+                WHEN 'rare' THEN 4
+                WHEN 'uncommon' THEN 5
+                WHEN 'common' THEN 6
+                ELSE 7
+             END, name"
+        )?;
+        let items = stmt.query_map([], |row| {
+            Ok(PackItem {
+                id: row.get(0)?,
+                channel: row.get(1)?,
+                name: row.get(2)?,
+                rarity: row.get(3)?,
+                value: row.get(4)?,
+                enabled: row.get(5)?,
+                created_at: row.get(6)?,
+                updated_at: row.get(7)?,
+            })
+        })?
+        .collect::<Result<Vec<_>, _>>()?;
+        Ok(items)
+    }
+
+    /// Add a new pack item
+    pub fn add_pack_item(&self, channel: &str, name: &str, rarity: &str, value: i64) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_secs() as i64;
+
+        conn.execute(
+            "INSERT INTO pack_items (channel, name, rarity, value, enabled, created_at, updated_at)
+             VALUES (?1, ?2, ?3, ?4, 1, ?5, ?5)",
+            params![channel, name, rarity, value, now],
+        )?;
+        Ok(())
+    }
+
+    /// Update a pack item
+    pub fn update_pack_item(&self, id: i64, name: &str, rarity: &str, value: i64) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_secs() as i64;
+
+        conn.execute(
+            "UPDATE pack_items SET name = ?2, rarity = ?3, value = ?4, updated_at = ?5 WHERE id = ?1",
+            params![id, name, rarity, value, now],
+        )?;
+        Ok(())
+    }
+
+    /// Delete a pack item
+    pub fn delete_pack_item(&self, id: i64) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute("DELETE FROM pack_items WHERE id = ?1", params![id])?;
+        Ok(())
+    }
+
+    /// Toggle pack item enabled status
+    pub fn toggle_pack_item(&self, id: i64) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_secs() as i64;
+
+        conn.execute(
+            "UPDATE pack_items SET enabled = NOT enabled, updated_at = ?2 WHERE id = ?1",
+            params![id, now],
+        )?;
+        Ok(())
+    }
+
+    // ==================== PACK SYSTEM SEED DATA ====================
+
+    /// Clear all packs and items for a channel
+    pub fn clear_all_packs(&self, channel: &str) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+
+        // Delete all user packs for this channel
+        conn.execute(
+            "DELETE FROM user_packs WHERE channel = ?1",
+            params![channel],
+        )?;
+
+        // Delete all user items for this channel
+        conn.execute(
+            "DELETE FROM user_items WHERE channel = ?1",
+            params![channel],
+        )?;
+
+        // Delete all packs for this channel
+        conn.execute(
+            "DELETE FROM packs WHERE channel = ?1",
+            params![channel],
+        )?;
+
+        // Delete all pack items for this channel
+        conn.execute(
+            "DELETE FROM pack_items WHERE channel = ?1",
+            params![channel],
+        )?;
+
+        Ok(())
+    }
+
+    /// Seed the database with sample packs and items
+    pub fn seed_pack_data(&self, channel: &str) -> Result<()> {
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_secs() as i64;
+
+        let conn = self.conn.lock().unwrap();
+
+        // Check if packs already exist
+        let pack_count: i64 = conn.query_row(
+            "SELECT COUNT(*) FROM packs WHERE channel = ?1",
+            params![channel],
+            |row| row.get(0),
+        )?;
+
+        if pack_count > 0 {
+            return Ok(()); // Already seeded
+        }
+
+        // Insert packs
+        let packs = vec![
+            ("Starter Pack", 100),
+            ("Bronze Pack", 250),
+            ("Silver Pack", 500),
+            ("Gold Pack", 1000),
+            ("Diamond Pack", 2500),
+        ];
+
+        for (name, price) in packs {
+            conn.execute(
+                "INSERT INTO packs (channel, name, price, enabled, created_at, updated_at) VALUES (?1, ?2, ?3, 1, ?4, ?4)",
+                params![channel, name, price, now],
+            )?;
+        }
+
+        // Insert common items
+        let common_items = vec![
+            ("Wooden Sword", 10),
+            ("Leather Boots", 15),
+            ("Basic Shield", 12),
+            ("Simple Potion", 8),
+            ("Torn Map", 5),
+            ("Rusty Dagger", 9),
+            ("Old Helmet", 11),
+        ];
+
+        for (name, value) in common_items {
+            conn.execute(
+                "INSERT INTO pack_items (channel, name, rarity, value, enabled, created_at, updated_at) VALUES (?1, ?2, 'common', ?3, 1, ?4, ?4)",
+                params![channel, name, value, now],
+            )?;
+        }
+
+        // Insert uncommon items
+        let uncommon_items = vec![
+            ("Iron Sword", 25),
+            ("Enchanted Bow", 30),
+            ("Magic Amulet", 35),
+            ("Health Potion", 20),
+            ("Mysterious Compass", 28),
+            ("Silver Ring", 32),
+        ];
+
+        for (name, value) in uncommon_items {
+            conn.execute(
+                "INSERT INTO pack_items (channel, name, rarity, value, enabled, created_at, updated_at) VALUES (?1, ?2, 'uncommon', ?3, 1, ?4, ?4)",
+                params![channel, name, value, now],
+            )?;
+        }
+
+        // Insert rare items
+        let rare_items = vec![
+            ("Steel Greatsword", 50),
+            ("Crystal Shield", 55),
+            ("Dragon Scale Armor", 75),
+            ("Elixir of Strength", 45),
+            ("Ancient Scroll", 60),
+            ("Sapphire Necklace", 70),
+        ];
+
+        for (name, value) in rare_items {
+            conn.execute(
+                "INSERT INTO pack_items (channel, name, rarity, value, enabled, created_at, updated_at) VALUES (?1, ?2, 'rare', ?3, 1, ?4, ?4)",
+                params![channel, name, value, now],
+            )?;
+        }
+
+        // Insert epic items
+        let epic_items = vec![
+            ("Flaming Sword", 150),
+            ("Shadow Cloak", 180),
+            ("Phoenix Feather", 200),
+            ("Thunderbolt Staff", 175),
+            ("Boots of Speed", 160),
+        ];
+
+        for (name, value) in epic_items {
+            conn.execute(
+                "INSERT INTO pack_items (channel, name, rarity, value, enabled, created_at, updated_at) VALUES (?1, ?2, 'epic', ?3, 1, ?4, ?4)",
+                params![channel, name, value, now],
+            )?;
+        }
+
+        // Insert legendary items
+        let legendary_items = vec![
+            ("Excalibur", 500),
+            ("Crown of Kings", 600),
+            ("Dragon Heart", 750),
+            ("Orb of Wisdom", 550),
+            ("Wings of Freedom", 650),
+        ];
+
+        for (name, value) in legendary_items {
+            conn.execute(
+                "INSERT INTO pack_items (channel, name, rarity, value, enabled, created_at, updated_at) VALUES (?1, ?2, 'legendary', ?3, 1, ?4, ?4)",
+                params![channel, name, value, now],
+            )?;
+        }
+
+        // Insert mythic items
+        let mythic_items = vec![
+            ("Infinity Gauntlet", 2000),
+            ("Divine Blade", 2500),
+            ("Celestial Crown", 3000),
+            ("Cosmic Orb", 2750),
+        ];
+
+        for (name, value) in mythic_items {
+            conn.execute(
+                "INSERT INTO pack_items (channel, name, rarity, value, enabled, created_at, updated_at) VALUES (?1, ?2, 'mythic', ?3, 1, ?4, ?4)",
+                params![channel, name, value, now],
+            )?;
+        }
+
+        Ok(())
+    }
+
+    // ========== Roulette Methods ==========
+
+    /// Create a new roulette game
+    pub fn create_roulette_game(&self, channel: &str) -> Result<i64> {
+        let conn = self.conn.lock().unwrap();
+        let now = chrono::Utc::now().timestamp();
+
+        conn.execute(
+            "INSERT INTO roulette_games (channel, status, created_at)
+             VALUES (?1, 'betting', ?2)",
+            params![channel, now],
+        )?;
+
+        Ok(conn.last_insert_rowid())
+    }
+
+    /// Get current active roulette game for a channel
+    pub fn get_active_roulette_game(&self, channel: &str) -> Result<Option<RouletteGame>> {
+        let conn = self.conn.lock().unwrap();
+
+        match conn.query_row(
+            "SELECT id, channel, status, winning_number, spin_started_at, created_at, completed_at
+             FROM roulette_games
+             WHERE channel = ?1 AND status IN ('betting', 'spinning')
+             ORDER BY created_at DESC
+             LIMIT 1",
+            params![channel],
+            |row| {
+                Ok(RouletteGame {
+                    id: row.get(0)?,
+                    channel: row.get(1)?,
+                    status: row.get(2)?,
+                    winning_number: row.get(3)?,
+                    spin_started_at: row.get(4)?,
+                    created_at: row.get(5)?,
+                    completed_at: row.get(6)?,
+                })
+            },
+        ).optional()? {
+            Some(game) => Ok(Some(game)),
+            None => Ok(None)
+        }
+    }
+
+    /// Get roulette game by ID
+    pub fn get_roulette_game(&self, game_id: i64) -> Result<Option<RouletteGame>> {
+        let conn = self.conn.lock().unwrap();
+
+        match conn.query_row(
+            "SELECT id, channel, status, winning_number, spin_started_at, created_at, completed_at
+             FROM roulette_games
+             WHERE id = ?1",
+            params![game_id],
+            |row| {
+                Ok(RouletteGame {
+                    id: row.get(0)?,
+                    channel: row.get(1)?,
+                    status: row.get(2)?,
+                    winning_number: row.get(3)?,
+                    spin_started_at: row.get(4)?,
+                    created_at: row.get(5)?,
+                    completed_at: row.get(6)?,
+                })
+            },
+        ).optional()? {
+            Some(game) => Ok(Some(game)),
+            None => Ok(None)
+        }
+    }
+
+    /// Place a bet on a roulette game
+    pub fn place_roulette_bet(&self, game_id: i64, user_id: &str, username: &str, bet_type: &str, bet_value: &str, amount: i64) -> Result<i64> {
+        let conn = self.conn.lock().unwrap();
+        let now = chrono::Utc::now().timestamp();
+
+        conn.execute(
+            "INSERT INTO roulette_bets (game_id, user_id, username, bet_type, bet_value, amount, created_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            params![game_id, user_id, username, bet_type, bet_value, amount, now],
+        )?;
+
+        Ok(conn.last_insert_rowid())
+    }
+
+    /// Get all bets for a roulette game
+    pub fn get_roulette_bets(&self, game_id: i64) -> Result<Vec<RouletteBet>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT id, game_id, user_id, username, bet_type, bet_value, amount, payout, created_at
+             FROM roulette_bets
+             WHERE game_id = ?1
+             ORDER BY created_at ASC"
+        )?;
+
+        let bets = stmt.query_map(params![game_id], |row| {
+            Ok(RouletteBet {
+                id: row.get(0)?,
+                game_id: row.get(1)?,
+                user_id: row.get(2)?,
+                username: row.get(3)?,
+                bet_type: row.get(4)?,
+                bet_value: row.get(5)?,
+                amount: row.get(6)?,
+                payout: row.get(7)?,
+                created_at: row.get(8)?,
+            })
+        })?
+        .collect::<Result<Vec<_>>>()?;
+
+        Ok(bets)
+    }
+
+    /// Update roulette game status
+    pub fn update_roulette_game_status(&self, game_id: i64, status: &str, winning_number: Option<i64>) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        let now = chrono::Utc::now().timestamp();
+
+        if status == "spinning" {
+            conn.execute(
+                "UPDATE roulette_games
+                 SET status = ?1, spin_started_at = ?2
+                 WHERE id = ?3",
+                params![status, now, game_id],
+            )?;
+        } else if status == "completed" {
+            conn.execute(
+                "UPDATE roulette_games
+                 SET status = ?1, winning_number = ?2, completed_at = ?3
+                 WHERE id = ?4",
+                params![status, winning_number, now, game_id],
+            )?;
+        } else {
+            conn.execute(
+                "UPDATE roulette_games
+                 SET status = ?1
+                 WHERE id = ?2",
+                params![status, game_id],
+            )?;
+        }
+
+        Ok(())
+    }
+
+    /// Update bet payout
+    pub fn update_roulette_bet_payout(&self, bet_id: i64, payout: i64) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+
+        conn.execute(
+            "UPDATE roulette_bets
+             SET payout = ?1
+             WHERE id = ?2",
+            params![payout, bet_id],
+        )?;
+
+        Ok(())
+    }
+
+    /// Get user's last bets from their most recent game (for repeat betting)
+    pub fn get_user_last_roulette_bets(&self, channel: &str, user_id: &str) -> Result<Vec<RouletteBet>> {
+        let conn = self.conn.lock().unwrap();
+
+        // First, find the user's most recent game where they placed bets
+        let last_game_id: Option<i64> = conn.query_row(
+            "SELECT game_id FROM roulette_bets
+             WHERE user_id = ?1
+             AND game_id IN (SELECT id FROM roulette_games WHERE channel = ?2)
+             ORDER BY created_at DESC
+             LIMIT 1",
+            params![user_id, channel],
+            |row| row.get(0)
+        ).ok();
+
+        if let Some(game_id) = last_game_id {
+            // Get all bets from that game by this user
+            let mut stmt = conn.prepare(
+                "SELECT id, game_id, user_id, username, bet_type, bet_value, amount, payout, created_at
+                 FROM roulette_bets
+                 WHERE game_id = ?1 AND user_id = ?2
+                 ORDER BY created_at ASC"
+            )?;
+
+            let bets = stmt.query_map(params![game_id, user_id], |row| {
+                Ok(RouletteBet {
+                    id: row.get(0)?,
+                    game_id: row.get(1)?,
+                    user_id: row.get(2)?,
+                    username: row.get(3)?,
+                    bet_type: row.get(4)?,
+                    bet_value: row.get(5)?,
+                    amount: row.get(6)?,
+                    payout: row.get(7)?,
+                    created_at: row.get(8)?,
+                })
+            })?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+
+            Ok(bets)
+        } else {
+            Ok(Vec::new())
+        }
+    }
+
+    /// Delete all bets for a user in a specific game (cancel bets)
+    pub fn cancel_user_roulette_bets(&self, game_id: i64, user_id: &str) -> Result<Vec<RouletteBet>> {
+        let conn = self.conn.lock().unwrap();
+
+        // First get the bets to return them
+        let mut stmt = conn.prepare(
+            "SELECT id, game_id, user_id, username, bet_type, bet_value, amount, payout, created_at
+             FROM roulette_bets
+             WHERE game_id = ?1 AND user_id = ?2"
+        )?;
+
+        let bets = stmt.query_map(params![game_id, user_id], |row| {
+            Ok(RouletteBet {
+                id: row.get(0)?,
+                game_id: row.get(1)?,
+                user_id: row.get(2)?,
+                username: row.get(3)?,
+                bet_type: row.get(4)?,
+                bet_value: row.get(5)?,
+                amount: row.get(6)?,
+                payout: row.get(7)?,
+                created_at: row.get(8)?,
+            })
+        })?
+        .collect::<Result<Vec<_>>>()?;
+
+        // Delete the bets
+        conn.execute(
+            "DELETE FROM roulette_bets WHERE game_id = ?1 AND user_id = ?2",
+            params![game_id, user_id],
+        )?;
+
+        Ok(bets)
+    }
+
+    /// Get completed roulette games for a channel
+    pub fn get_roulette_history(&self, channel: &str, limit: i64) -> Result<Vec<RouletteGame>> {
+        let conn = self.conn.lock().unwrap();
+
+        let mut stmt = conn.prepare(
+            "SELECT id, channel, status, winning_number, spin_started_at, created_at, completed_at
+             FROM roulette_games
+             WHERE channel = ?1 AND status = 'completed'
+             ORDER BY completed_at DESC
+             LIMIT ?2"
+        )?;
+
+        let games = stmt.query_map(params![channel, limit], |row| {
+            Ok(RouletteGame {
+                id: row.get(0)?,
+                channel: row.get(1)?,
+                status: row.get(2)?,
+                winning_number: row.get(3)?,
+                spin_started_at: row.get(4)?,
+                created_at: row.get(5)?,
+                completed_at: row.get(6)?,
+            })
+        })?
+        .collect::<Result<Vec<_>>>()?;
+
+        Ok(games)
     }
 }
 

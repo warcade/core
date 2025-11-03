@@ -49,22 +49,40 @@ function SnowOverlay() {
     };
   };
 
+  // Snowflake emoji variations
+  const snowflakeEmojis = ['❄️', '❅', '❆', '✻', '✼', '❋'];
+
   // Create a new snowflake
   const createSnowflake = () => {
     const currentSettings = settings();
     const size = currentSettings.size.min + Math.random() * (currentSettings.size.max - currentSettings.size.min);
     const opacity = currentSettings.opacity.min + Math.random() * (currentSettings.opacity.max - currentSettings.opacity.min);
 
+    // Depth layers - smaller/faster flakes in front, larger/slower in back
+    const depth = Math.random();
+    const depthFactor = 0.3 + depth * 0.7; // 0.3 to 1.0
+
+    // Randomly choose between emoji or circle (70% emoji, 30% circle)
+    const useEmoji = Math.random() > 0.3;
+    const emojiType = snowflakeEmojis[Math.floor(Math.random() * snowflakeEmojis.length)];
+
     return {
       id: nextId++,
       x: Math.random() * window.innerWidth,
       y: -20,
-      size: size,
-      opacity: opacity,
-      speed: (0.5 + Math.random() * 1.5) * currentSettings.speed,
-      drift: Math.random() * 2 - 1, // horizontal drift
+      size: size * depthFactor,
+      opacity: opacity * (0.6 + depth * 0.4),
+      speed: (0.3 + Math.random() * 0.8) * currentSettings.speed * depthFactor,
+      drift: (Math.random() * 1.5 - 0.75) * depthFactor, // horizontal drift
       wobble: Math.random() * Math.PI * 2, // for sine wave effect
-      wobbleSpeed: 0.01 + Math.random() * 0.02
+      wobbleSpeed: (0.005 + Math.random() * 0.01) * depthFactor,
+      wobbleAmplitude: 20 + Math.random() * 40, // width of wobble
+      rotation: Math.random() * 360,
+      rotationSpeed: (Math.random() - 0.5) * 2,
+      blur: depth < 0.3 ? 0.8 : depth < 0.6 ? 0.5 : 0.3,
+      depth: depth,
+      useEmoji: useEmoji,
+      emoji: emojiType
     };
   };
 
@@ -95,11 +113,14 @@ function SnowOverlay() {
       const updated = prev.map(flake => {
         // Update wobble for horizontal sine wave motion
         const newWobble = flake.wobble + flake.wobbleSpeed;
-        const wobbleOffset = Math.sin(newWobble) * 30;
+        const wobbleOffset = Math.sin(newWobble) * flake.wobbleAmplitude * 0.05;
 
-        // Calculate new position
-        let newX = flake.x + (flake.drift * currentSettings.windSpeed) + wobbleOffset * 0.1;
+        // Calculate new position with more natural drift
+        let newX = flake.x + (flake.drift * currentSettings.windSpeed * 0.5) + wobbleOffset;
         let newY = flake.y + flake.speed;
+
+        // Update rotation
+        const newRotation = flake.rotation + flake.rotationSpeed;
 
         // Wrap around horizontally
         if (newX < -20) newX = window.innerWidth + 20;
@@ -114,7 +135,8 @@ function SnowOverlay() {
           ...flake,
           x: newX,
           y: newY,
-          wobble: newWobble
+          wobble: newWobble,
+          rotation: newRotation
         };
       });
 
@@ -177,17 +199,42 @@ function SnowOverlay() {
       <For each={snowflakes()}>
         {(flake) => (
           <div
-            class="absolute rounded-full bg-white"
+            class="absolute"
             style={{
               left: `${flake.x}px`,
               top: `${flake.y}px`,
-              width: `${flake.size}px`,
-              height: `${flake.size}px`,
               opacity: flake.opacity,
-              'box-shadow': '0 0 3px rgba(255, 255, 255, 0.8)',
-              filter: 'blur(0.5px)'
+              transform: `rotate(${flake.rotation}deg)`,
+              'will-change': 'transform'
             }}
-          />
+          >
+            {flake.useEmoji ? (
+              /* Emoji Snowflake */
+              <div
+                style={{
+                  'font-size': `${flake.size * 3}px`,
+                  'line-height': '1',
+                  filter: `drop-shadow(0 0 ${flake.size * 0.5}px rgba(255, 255, 255, ${flake.opacity * 0.8}))`,
+                  'text-shadow': `0 0 ${flake.size}px rgba(200, 230, 255, ${flake.opacity})`
+                }}
+              >
+                {flake.emoji}
+              </div>
+            ) : (
+              /* Circle Snowflake */
+              <div
+                class="snowflake-shape"
+                style={{
+                  width: `${flake.size}px`,
+                  height: `${flake.size}px`,
+                  background: 'radial-gradient(circle, white 0%, rgba(255, 255, 255, 0.9) 50%, rgba(255, 255, 255, 0.4) 100%)',
+                  'border-radius': '50%',
+                  filter: `blur(${flake.blur}px)`,
+                  'box-shadow': `0 0 ${flake.size * 0.5}px rgba(255, 255, 255, ${flake.opacity * 0.6})`
+                }}
+              />
+            )}
+          </div>
         )}
       </For>
     </div>

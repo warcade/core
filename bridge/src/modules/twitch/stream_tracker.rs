@@ -135,6 +135,11 @@ impl StreamTracker {
                                                                 match db.update_watchtime(channel, &chatter.user_login, 1) {
                                                                     Ok(total) => {
                                                                         log::debug!("Updated watchtime for {}: {} minutes total", chatter.user_login, total);
+
+                                                                        // Award coins for watching (5 coins per minute)
+                                                                        if let Err(e) = db.add_coins(channel, &chatter.user_login, 5) {
+                                                                            log::error!("Failed to award watchtime coins to {}: {}", chatter.user_login, e);
+                                                                        }
                                                                     }
                                                                     Err(e) => {
                                                                         log::error!("Failed to update watchtime for {}: {}", chatter.user_login, e);

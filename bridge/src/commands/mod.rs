@@ -18,6 +18,10 @@ pub mod wheel_command;
 pub mod voice_commands;
 pub mod effect_command;
 pub mod confession_command;
+pub mod currency_commands;
+pub mod rewards;
+pub mod pack_commands;
+pub mod roulette_commands;
 
 use crate::modules::twitch::CommandSystem;
 use database::Database;
@@ -86,6 +90,15 @@ pub async fn register_all_commands(command_system: &CommandSystem) {
 
     // Register confession command
     confession_command::register(command_system, db.clone()).await;
+
+    // Register currency commands
+    currency_commands::register(command_system, db.clone()).await;
+
+    // Register pack commands
+    pack_commands::register(command_system, db.clone()).await;
+
+    // Register roulette commands
+    roulette_commands::register(command_system, db.clone()).await;
 
     log::info!("✅ All custom commands registered");
 }

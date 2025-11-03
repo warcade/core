@@ -13,12 +13,16 @@ export default function WheelViewport() {
   const [newOptionText, setNewOptionText] = createSignal('');
   const [newOptionColor, setNewOptionColor] = createSignal('#9146FF');
   const [newOptionWeight, setNewOptionWeight] = createSignal(1);
+  const [newOptionPercentage, setNewOptionPercentage] = createSignal('');
+  const [usePercentage, setUsePercentage] = createSignal(false);
 
   // Edit state
   const [editingId, setEditingId] = createSignal(null);
   const [editText, setEditText] = createSignal('');
   const [editColor, setEditColor] = createSignal('#9146FF');
   const [editWeight, setEditWeight] = createSignal(1);
+  const [editPercentage, setEditPercentage] = createSignal('');
+  const [editUsePercentage, setEditUsePercentage] = createSignal(false);
 
   // Spin state
   const [isSpinning, setIsSpinning] = createSignal(false);
@@ -65,21 +69,32 @@ export default function WheelViewport() {
     if (!text) return;
 
     try {
+      const payload = {
+        channel: selectedChannel(),
+        option_text: text,
+        color: newOptionColor(),
+      };
+
+      // Add either percentage or weight
+      if (usePercentage() && newOptionPercentage()) {
+        payload.chance_percentage = parseFloat(newOptionPercentage());
+        payload.weight = 1; // Default weight when using percentage
+      } else {
+        payload.weight = newOptionWeight();
+      }
+
       const response = await bridgeFetch('/database/wheel/options', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          channel: selectedChannel(),
-          option_text: text,
-          color: newOptionColor(),
-          weight: newOptionWeight(),
-        }),
+        body: JSON.stringify(payload),
       });
 
       if (response.ok) {
         setNewOptionText('');
         setNewOptionColor('#9146FF');
         setNewOptionWeight(1);
+        setNewOptionPercentage('');
+        setUsePercentage(false);
         await loadOptions(selectedChannel());
       }
     } catch (e) {
@@ -108,6 +123,8 @@ export default function WheelViewport() {
     setEditText(option.option_text);
     setEditColor(option.color);
     setEditWeight(option.weight);
+    setEditPercentage(option.chance_percentage ? option.chance_percentage.toString() : '');
+    setEditUsePercentage(!!option.chance_percentage);
   };
 
   const cancelEdit = () => {
@@ -115,6 +132,8 @@ export default function WheelViewport() {
     setEditText('');
     setEditColor('#9146FF');
     setEditWeight(1);
+    setEditPercentage('');
+    setEditUsePercentage(false);
   };
 
   const saveEdit = async () => {
@@ -125,14 +144,24 @@ export default function WheelViewport() {
     if (!text) return;
 
     try {
+      const payload = {
+        option_text: text,
+        color: editColor(),
+      };
+
+      // Add either percentage or weight
+      if (editUsePercentage() && editPercentage()) {
+        payload.chance_percentage = parseFloat(editPercentage());
+        payload.weight = 1; // Default weight when using percentage
+      } else {
+        payload.weight = editWeight();
+        payload.chance_percentage = null; // Clear percentage if using weight
+      }
+
       const response = await bridgeFetch(`/database/wheel/options/${id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          option_text: text,
-          color: editColor(),
-          weight: editWeight(),
-        }),
+        body: JSON.stringify(payload),
       });
 
       if (response.ok) {
@@ -259,16 +288,41 @@ export default function WheelViewport() {
               onInput={(e) => setNewOptionColor(e.target.value)}
               title="Pick color"
             />
-            <input
-              type="number"
-              min="1"
-              max="100"
-              class="input input-bordered input-sm w-20"
-              value={newOptionWeight()}
-              onInput={(e) => setNewOptionWeight(parseInt(e.target.value) || 1)}
-              title="Weight (probability)"
-              placeholder="Weight"
-            />
+            <label class="swap swap-flip">
+              <input type="checkbox" checked={usePercentage()} onChange={(e) => setUsePercentage(e.target.checked)} />
+              <div class="swap-on">
+                <input
+                  type="number"
+                  min="0.01"
+                  max="100"
+                  step="0.1"
+                  class="input input-bordered input-sm w-24"
+                  value={newOptionPercentage()}
+                  onInput={(e) => setNewOptionPercentage(e.target.value)}
+                  placeholder="%"
+                  title="Percentage chance (0-100)"
+                />
+              </div>
+              <div class="swap-off">
+                <input
+                  type="number"
+                  min="1"
+                  max="100"
+                  class="input input-bordered input-sm w-20"
+                  value={newOptionWeight()}
+                  onInput={(e) => setNewOptionWeight(parseInt(e.target.value) || 1)}
+                  title="Weight (probability)"
+                  placeholder="Weight"
+                />
+              </div>
+            </label>
+            <button
+              class="btn btn-xs btn-ghost"
+              onClick={() => setUsePercentage(!usePercentage())}
+              title={usePercentage() ? "Switch to weight" : "Switch to percentage"}
+            >
+              {usePercentage() ? '%' : 'W'}
+            </button>
             <button
               class="btn btn-primary btn-sm"
               onClick={addOption}
@@ -338,7 +392,9 @@ export default function WheelViewport() {
                               <div class="flex-1">
                                 <h3 class="font-semibold text-sm">{option.option_text}</h3>
                                 <p class="text-xs text-base-content/60">
-                                  Weight: {option.weight} | {option.enabled ? 'Enabled' : 'Disabled'}
+                                  {option.chance_percentage
+                                    ? `${option.chance_percentage.toFixed(1)}% chance`
+                                    : `Weight: ${option.weight}`} | {option.enabled ? 'Enabled' : 'Disabled'}
                                 </p>
                               </div>
                             </div>
@@ -384,14 +440,35 @@ export default function WheelViewport() {
                               value={editColor()}
                               onInput={(e) => setEditColor(e.target.value)}
                             />
-                            <input
-                              type="number"
-                              min="1"
-                              max="100"
-                              class="input input-bordered input-sm w-20"
-                              value={editWeight()}
-                              onInput={(e) => setEditWeight(parseInt(e.target.value) || 1)}
-                            />
+                            <Show when={editUsePercentage()} fallback={
+                              <input
+                                type="number"
+                                min="1"
+                                max="100"
+                                class="input input-bordered input-sm w-20"
+                                value={editWeight()}
+                                onInput={(e) => setEditWeight(parseInt(e.target.value) || 1)}
+                                placeholder="Weight"
+                              />
+                            }>
+                              <input
+                                type="number"
+                                min="0.01"
+                                max="100"
+                                step="0.1"
+                                class="input input-bordered input-sm w-24"
+                                value={editPercentage()}
+                                onInput={(e) => setEditPercentage(e.target.value)}
+                                placeholder="%"
+                              />
+                            </Show>
+                            <button
+                              class="btn btn-xs btn-ghost"
+                              onClick={() => setEditUsePercentage(!editUsePercentage())}
+                              title={editUsePercentage() ? "Switch to weight" : "Switch to percentage"}
+                            >
+                              {editUsePercentage() ? '%' : 'W'}
+                            </button>
                           </div>
                           <div class="flex gap-2 justify-end">
                             <button

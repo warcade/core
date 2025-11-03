@@ -97,7 +97,7 @@ struct ApiResponse<T> {
     total: Option<u64>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 struct Pagination {
     cursor: Option<String>,
 }
@@ -460,6 +460,161 @@ impl TwitchAPI {
 
         Ok(())
     }
+
+    /// Get channel stream schedule
+    pub async fn get_schedule(
+        &self,
+        broadcaster_id: &str,
+        start_time: Option<&str>,
+        utc_offset: Option<i32>,
+    ) -> Result<ScheduleResponse> {
+        let mut endpoint = format!("/schedule?broadcaster_id={}", broadcaster_id);
+
+        if let Some(start) = start_time {
+            endpoint.push_str(&format!("&start_time={}", start));
+        }
+        if let Some(offset) = utc_offset {
+            endpoint.push_str(&format!("&utc_offset={}", offset));
+        }
+
+        let config = self.config_manager.load()?;
+        let access_token = self.auth.get_valid_token().await?;
+        let url = format!("{}{}", TWITCH_API_BASE, endpoint);
+
+        let response = self
+            .http_client
+            .get(&url)
+            .header("Authorization", format!("Bearer {}", access_token))
+            .header("Client-Id", &config.client_id)
+            .send()
+            .await
+            .context("Failed to get schedule")?;
+
+        if !response.status().is_success() {
+            let error_text = response.text().await.unwrap_or_default();
+            anyhow::bail!("Failed to get schedule: {}", error_text);
+        }
+
+        let schedule_response: ScheduleResponse = response
+            .json()
+            .await
+            .context("Failed to parse schedule response")?;
+
+        Ok(schedule_response)
+    }
+
+    /// Create a new schedule segment
+    pub async fn create_schedule_segment(
+        &self,
+        broadcaster_id: &str,
+        segment: CreateScheduleSegment,
+    ) -> Result<ScheduleSegment> {
+        let endpoint = format!("/schedule/segment?broadcaster_id={}", broadcaster_id);
+        let config = self.config_manager.load()?;
+        let access_token = self.auth.get_valid_token().await?;
+        let url = format!("{}{}", TWITCH_API_BASE, endpoint);
+
+        let response = self
+            .http_client
+            .post(&url)
+            .header("Authorization", format!("Bearer {}", access_token))
+            .header("Client-Id", &config.client_id)
+            .header("Content-Type", "application/json")
+            .json(&segment)
+            .send()
+            .await
+            .context("Failed to create schedule segment")?;
+
+        if !response.status().is_success() {
+            let error_text = response.text().await.unwrap_or_default();
+            anyhow::bail!("Failed to create schedule segment: {}", error_text);
+        }
+
+        let api_response: ApiResponse<ScheduleSegment> = response
+            .json()
+            .await
+            .context("Failed to parse create schedule response")?;
+
+        api_response
+            .data
+            .into_iter()
+            .next()
+            .ok_or_else(|| anyhow::anyhow!("No segment data returned"))
+    }
+
+    /// Update an existing schedule segment
+    pub async fn update_schedule_segment(
+        &self,
+        broadcaster_id: &str,
+        segment_id: &str,
+        segment: UpdateScheduleSegment,
+    ) -> Result<ScheduleSegment> {
+        let endpoint = format!(
+            "/schedule/segment?broadcaster_id={}&id={}",
+            broadcaster_id, segment_id
+        );
+        let config = self.config_manager.load()?;
+        let access_token = self.auth.get_valid_token().await?;
+        let url = format!("{}{}", TWITCH_API_BASE, endpoint);
+
+        let response = self
+            .http_client
+            .patch(&url)
+            .header("Authorization", format!("Bearer {}", access_token))
+            .header("Client-Id", &config.client_id)
+            .header("Content-Type", "application/json")
+            .json(&segment)
+            .send()
+            .await
+            .context("Failed to update schedule segment")?;
+
+        if !response.status().is_success() {
+            let error_text = response.text().await.unwrap_or_default();
+            anyhow::bail!("Failed to update schedule segment: {}", error_text);
+        }
+
+        let api_response: ApiResponse<ScheduleSegment> = response
+            .json()
+            .await
+            .context("Failed to parse update schedule response")?;
+
+        api_response
+            .data
+            .into_iter()
+            .next()
+            .ok_or_else(|| anyhow::anyhow!("No segment data returned"))
+    }
+
+    /// Delete a schedule segment
+    pub async fn delete_schedule_segment(
+        &self,
+        broadcaster_id: &str,
+        segment_id: &str,
+    ) -> Result<()> {
+        let endpoint = format!(
+            "/schedule/segment?broadcaster_id={}&id={}",
+            broadcaster_id, segment_id
+        );
+        let config = self.config_manager.load()?;
+        let access_token = self.auth.get_valid_token().await?;
+        let url = format!("{}{}", TWITCH_API_BASE, endpoint);
+
+        let response = self
+            .http_client
+            .delete(&url)
+            .header("Authorization", format!("Bearer {}", access_token))
+            .header("Client-Id", &config.client_id)
+            .send()
+            .await
+            .context("Failed to delete schedule segment")?;
+
+        if !response.status().is_success() {
+            let error_text = response.text().await.unwrap_or_default();
+            anyhow::bail!("Failed to delete schedule segment: {}", error_text);
+        }
+
+        Ok(())
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -467,6 +622,82 @@ pub struct GameInfo {
     pub id: String,
     pub name: String,
     pub box_art_url: String,
+}
+
+/// Schedule segment information
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ScheduleSegment {
+    pub id: String,
+    pub start_time: String,
+    pub end_time: String,
+    pub title: String,
+    pub canceled_until: Option<String>,
+    pub category: Option<ScheduleCategory>,
+    pub is_recurring: bool,
+}
+
+/// Schedule category information
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ScheduleCategory {
+    pub id: String,
+    pub name: String,
+}
+
+/// Schedule vacation information
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ScheduleVacation {
+    pub start_time: String,
+    pub end_time: String,
+}
+
+/// Schedule response from API
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ScheduleResponse {
+    pub data: ScheduleData,
+    #[serde(default)]
+    pub pagination: Option<Pagination>,
+}
+
+/// Schedule data wrapper
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ScheduleData {
+    pub segments: Vec<ScheduleSegment>,
+    pub broadcaster_id: String,
+    pub broadcaster_name: String,
+    pub broadcaster_login: String,
+    pub vacation: Option<ScheduleVacation>,
+}
+
+/// Create schedule segment request
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CreateScheduleSegment {
+    pub start_time: String,
+    pub timezone: String,
+    pub duration: String,
+    pub title: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub category_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub is_recurring: Option<bool>,
+}
+
+/// Update schedule segment request
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UpdateScheduleSegment {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub start_time: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub timezone: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub duration: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub title: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub category_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub is_recurring: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub is_canceled: Option<bool>,
 }
 
 #[cfg(test)]

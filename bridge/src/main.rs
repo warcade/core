@@ -113,7 +113,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     set_alexa_manager(alexa_manager.clone());
 
     // Set Twitch manager for WebSocket server
-    modules::websocket_server::set_twitch_manager(Some(twitch_manager)).await;
+    modules::websocket_server::set_twitch_manager(Some(twitch_manager.clone())).await;
+
+    // Start goal auto-sync background task
+    info!("Starting goal auto-sync background task");
+    start_goal_sync_task(database.clone(), twitch_manager.clone());
 
     let addr: SocketAddr = format!("127.0.0.1:{}", port).parse()?;
     let listener = TcpListener::bind(addr).await?;

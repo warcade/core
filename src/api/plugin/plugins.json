@@ -37,6 +37,13 @@
     },
     {
       "enabled": true,
+      "id": "mood-tracker-plugin",
+      "main": "index.jsx",
+      "path": "/src/plugins/core/mood-tracker",
+      "priority": 1
+    },
+    {
+      "enabled": true,
       "id": "hue-plugin",
       "main": "index.jsx",
       "path": "/src/plugins/core/hue",
@@ -194,6 +201,27 @@
       "id": "chat-highlight-plugin",
       "main": "index.jsx",
       "path": "/src/plugins/core/chat-highlight",
+      "priority": 2
+    },
+    {
+      "enabled": true,
+      "id": "notes-plugin",
+      "main": "index.jsx",
+      "path": "/src/plugins/core/notes",
+      "priority": 2
+    },
+    {
+      "enabled": true,
+      "id": "packs-plugin",
+      "main": "index.jsx",
+      "path": "/src/plugins/core/packs",
+      "priority": 2
+    },
+    {
+      "enabled": true,
+      "id": "roulette-plugin",
+      "main": "index.jsx",
+      "path": "/src/plugins/core/roulette",
       "priority": 2
     }
   ]

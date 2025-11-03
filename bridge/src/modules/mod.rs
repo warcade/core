@@ -10,6 +10,7 @@ pub mod twitch;
 pub mod withings_api;
 pub mod discord;
 pub mod alexa;
+pub mod goal_sync;
 
 // Export only what's needed by main.rs
 pub use handlers::{handle_http_request, set_startup_time, set_memory_cache, set_database, set_twitch_manager, set_withings_api, set_discord_manager, set_alexa_manager};
@@ -21,3 +22,4 @@ pub use twitch::TwitchManager;
 pub use withings_api::WithingsAPI;
 pub use discord::DiscordManager;
 pub use alexa::AlexaManager;
+pub use goal_sync::start_goal_sync_task;

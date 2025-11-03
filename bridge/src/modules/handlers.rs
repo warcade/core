@@ -440,6 +440,43 @@ pub async fn handle_http_request(req: Request<hyper::body::Incoming>) -> Result<
             }
         }
 
+        // Schedule endpoints
+        (&Method::GET, "/twitch/schedule") => return Ok(handle_get_schedule(&query).await),
+        (&Method::POST, "/twitch/schedule/segment") => {
+            match &body {
+                Some(body_content) => return Ok(handle_create_schedule_segment(body_content).await),
+                None => error_response(StatusCode::BAD_REQUEST, "Missing request body"),
+            }
+        }
+        (&Method::PATCH, "/twitch/schedule/segment") => {
+            match &body {
+                Some(body_content) => return Ok(handle_update_schedule_segment(body_content, &query).await),
+                None => error_response(StatusCode::BAD_REQUEST, "Missing request body"),
+            }
+        }
+        (&Method::DELETE, "/twitch/schedule/segment") => return Ok(handle_delete_schedule_segment(&query).await),
+        (&Method::POST, "/twitch/schedule/sync") => return Ok(handle_sync_schedule().await),
+
+        // Roulette endpoints (must be before /overlay/ handler)
+        (&Method::GET, "/api/roulette/game") => return Ok(handle_get_roulette_game(&query).await),
+        (&Method::GET, "/api/roulette/history") => return Ok(handle_get_roulette_history(&query).await),
+        (&Method::GET, "/api/roulette/start") => return Ok(handle_roulette_start(&query).await),
+        (&Method::POST, "/api/roulette/result") => {
+            match &body {
+                Some(body_content) => return Ok(handle_roulette_result(Bytes::from(body_content.clone())).await),
+                None => return Ok(error_response(StatusCode::BAD_REQUEST, "Missing request body"))
+            }
+        }
+
+        // Settings endpoints
+        (&Method::GET, "/api/settings") => return Ok(handle_get_setting(&query).await),
+        (&Method::POST, "/api/settings") => {
+            match &body {
+                Some(body_content) => return Ok(handle_set_setting(Bytes::from(body_content.clone())).await),
+                None => return Ok(error_response(StatusCode::BAD_REQUEST, "Missing request body"))
+            }
+        }
+
         // Overlay endpoints
         (&Method::GET, path) if path.starts_with("/overlay/") => {
             let overlay_id = &path[9..];
@@ -786,6 +823,12 @@ pub async fn handle_http_request(req: Request<hyper::body::Incoming>) -> Result<
                 None => error_response(StatusCode::BAD_REQUEST, "Missing request body"),
             }
         }
+        (&Method::POST, "/api/status/breaking-news") => {
+            match &body {
+                Some(body_content) => return Ok(handle_update_breaking_news(body_content.clone()).await),
+                None => error_response(StatusCode::BAD_REQUEST, "Missing request body"),
+            }
+        }
 
         // Ticker events config endpoints
         (&Method::GET, "/api/ticker/events/config") => return Ok(handle_get_ticker_events_config().await),
@@ -795,6 +838,115 @@ pub async fn handle_http_request(req: Request<hyper::body::Incoming>) -> Result<
                 None => error_response(StatusCode::BAD_REQUEST, "Missing request body"),
             }
         }
+
+        // Ticker segments endpoints
+        (&Method::GET, "/api/ticker/segments") => return Ok(handle_get_ticker_segments().await),
+        (&Method::POST, "/api/ticker/segments") => {
+            match &body {
+                Some(body_content) => return Ok(handle_add_ticker_segment(body_content.clone()).await),
+                None => error_response(StatusCode::BAD_REQUEST, "Missing request body"),
+            }
+        }
+        (&Method::PUT, path) if path.starts_with("/api/ticker/segments/") => {
+            let id = path.trim_start_matches("/api/ticker/segments/").parse::<i64>().ok();
+            match (id, &body) {
+                (Some(id), Some(body_content)) => return Ok(handle_update_ticker_segment(id, body_content.clone()).await),
+                _ => error_response(StatusCode::BAD_REQUEST, "Invalid request"),
+            }
+        }
+        (&Method::DELETE, path) if path.starts_with("/api/ticker/segments/") => {
+            let id = path.trim_start_matches("/api/ticker/segments/").parse::<i64>().ok();
+            match id {
+                Some(id) => return Ok(handle_delete_ticker_segment(id).await),
+                None => error_response(StatusCode::BAD_REQUEST, "Invalid segment ID"),
+            }
+        }
+
+        // Segment duration endpoint
+        (&Method::POST, "/api/status/segment-duration") => {
+            match &body {
+                Some(body_content) => return Ok(handle_update_segment_duration(body_content.clone()).await),
+                None => error_response(StatusCode::BAD_REQUEST, "Missing request body"),
+            }
+        }
+
+        // Reorder segments endpoint
+        (&Method::POST, "/api/ticker/segments/reorder") => {
+            match &body {
+                Some(body_content) => return Ok(handle_reorder_ticker_segments(body_content.clone()).await),
+                None => error_response(StatusCode::BAD_REQUEST, "Missing request body"),
+            }
+        }
+
+        // Mood ticker endpoints
+        (&Method::GET, "/api/mood-ticker/data") => return Ok(handle_get_mood_ticker_data().await),
+        (&Method::POST, "/api/mood-ticker/data") => {
+            match &body {
+                Some(body_content) => return Ok(handle_update_mood_ticker_data(body_content.clone()).await),
+                None => error_response(StatusCode::BAD_REQUEST, "Missing request body"),
+            }
+        }
+        (&Method::GET, "/api/mood-ticker/withings/weight") => return Ok(handle_get_withings_weight().await),
+
+        // Pack system endpoints
+        (&Method::GET, "/api/packs") => return Ok(handle_get_packs(&query).await),
+        (&Method::POST, "/api/packs") => {
+            match &body {
+                Some(body_content) => return Ok(handle_add_pack(body_content.clone()).await),
+                None => error_response(StatusCode::BAD_REQUEST, "Missing request body"),
+            }
+        }
+        (&Method::PUT, "/api/packs") => {
+            match &body {
+                Some(body_content) => return Ok(handle_update_pack(body_content.clone()).await),
+                None => error_response(StatusCode::BAD_REQUEST, "Missing request body"),
+            }
+        }
+        (&Method::DELETE, "/api/packs") => {
+            match &body {
+                Some(body_content) => return Ok(handle_delete_pack(body_content.clone()).await),
+                None => error_response(StatusCode::BAD_REQUEST, "Missing request body"),
+            }
+        }
+        (&Method::POST, "/api/packs/toggle") => {
+            match &body {
+                Some(body_content) => return Ok(handle_toggle_pack(body_content.clone()).await),
+                None => error_response(StatusCode::BAD_REQUEST, "Missing request body"),
+            }
+        }
+
+        // Pack items endpoints
+        (&Method::GET, "/api/packs/items") => return Ok(handle_get_pack_items(&query).await),
+        (&Method::POST, "/api/packs/items") => {
+            match &body {
+                Some(body_content) => return Ok(handle_add_pack_item(body_content.clone()).await),
+                None => error_response(StatusCode::BAD_REQUEST, "Missing request body"),
+            }
+        }
+        (&Method::PUT, "/api/packs/items") => {
+            match &body {
+                Some(body_content) => return Ok(handle_update_pack_item(body_content.clone()).await),
+                None => error_response(StatusCode::BAD_REQUEST, "Missing request body"),
+            }
+        }
+        (&Method::DELETE, "/api/packs/items") => {
+            match &body {
+                Some(body_content) => return Ok(handle_delete_pack_item(body_content.clone()).await),
+                None => error_response(StatusCode::BAD_REQUEST, "Missing request body"),
+            }
+        }
+        (&Method::POST, "/api/packs/items/toggle") => {
+            match &body {
+                Some(body_content) => return Ok(handle_toggle_pack_item(body_content.clone()).await),
+                None => error_response(StatusCode::BAD_REQUEST, "Missing request body"),
+            }
+        }
+
+        // Pack seed endpoint
+        (&Method::POST, "/api/packs/seed") => return Ok(handle_seed_packs().await),
+
+        // Clear all packs and items endpoint
+        (&Method::DELETE, "/api/packs/clear") => return Ok(handle_clear_all_packs().await),
 
         // Database management endpoints
         (&Method::GET, "/database/tables") => return Ok(handle_get_tables().await),
@@ -987,6 +1139,35 @@ pub async fn handle_http_request(req: Request<hyper::body::Incoming>) -> Result<
             }
         }
 
+        // Notes endpoints
+        (&Method::GET, "/api/notes") => return Ok(handle_get_notes().await),
+        (&Method::GET, "/api/notes/favorites") => return Ok(handle_get_favorite_notes().await),
+        (&Method::GET, "/api/notes/categories") => return Ok(handle_get_note_categories().await),
+        (&Method::POST, "/api/notes") => {
+            match &body {
+                Some(body_content) => return Ok(handle_create_note(body_content.clone()).await),
+                None => error_response(StatusCode::BAD_REQUEST, "Missing request body"),
+            }
+        }
+        (&Method::PUT, "/api/notes") => {
+            match &body {
+                Some(body_content) => return Ok(handle_update_note(body_content.clone()).await),
+                None => error_response(StatusCode::BAD_REQUEST, "Missing request body"),
+            }
+        }
+        (&Method::DELETE, "/api/notes") => {
+            match &body {
+                Some(body_content) => return Ok(handle_delete_note(body_content.clone()).await),
+                None => error_response(StatusCode::BAD_REQUEST, "Missing request body"),
+            }
+        }
+        (&Method::POST, "/api/notes/toggle-favorite") => {
+            match &body {
+                Some(body_content) => return Ok(handle_toggle_note_favorite(body_content.clone()).await),
+                None => error_response(StatusCode::BAD_REQUEST, "Missing request body"),
+            }
+        }
+
         // Static file serving for overlay assets (JS, CSS, etc.)
         (&Method::GET, path) => {
             // Try to serve static files from dist/overlays directory
@@ -1012,7 +1193,9 @@ pub async fn handle_http_request(req: Request<hyper::body::Incoming>) -> Result<
                         .status(StatusCode::OK)
                         .header("Content-Type", content_type)
                         .header("Access-Control-Allow-Origin", "*")
-                        .header("Cache-Control", "public, max-age=31536000") // Cache for 1 year
+                        .header("Cache-Control", "no-cache, no-store, must-revalidate") // Prevent caching for OBS browser sources
+                        .header("Pragma", "no-cache")
+                        .header("Expires", "0")
                         .body(BoxBody::new(Full::new(Bytes::from(content))))
                         .unwrap()
                 }
@@ -1053,7 +1236,7 @@ fn cors_response(status: StatusCode, body: &str) -> Response<BoxBody<Bytes, Infa
     Response::builder()
         .status(status)
         .header(ACCESS_CONTROL_ALLOW_ORIGIN, "*")
-        .header(ACCESS_CONTROL_ALLOW_METHODS, "GET, POST, DELETE, OPTIONS")
+        .header(ACCESS_CONTROL_ALLOW_METHODS, "GET, POST, PUT, DELETE, OPTIONS")
         .header(ACCESS_CONTROL_ALLOW_HEADERS, "Content-Type, Authorization")
         .header(CONTENT_TYPE, "application/json")
         .body(BoxBody::new(Full::new(Bytes::from(body.to_string()))))
@@ -2674,7 +2857,7 @@ async fn handle_reset_counter(body: &str) -> Response<BoxBody<Bytes, Infallible>
 // Goals handlers
 
 // Helper function to broadcast goals for a channel
-fn broadcast_goals_for_channel(channel: &str) {
+pub fn broadcast_goals_for_channel(channel: &str) {
     if let Some(db) = get_database() {
         if let Ok(goals) = db.get_goals(channel) {
             let goals_json: Vec<serde_json::Value> = goals
@@ -3021,13 +3204,17 @@ async fn handle_add_wheel_option(body: &str) -> Response<BoxBody<Bytes, Infallib
         option_text: String,
         color: String,
         weight: i64,
+        chance_percentage: Option<f64>,
     }
 
     match get_database() {
         Some(db) => {
             match serde_json::from_str::<AddRequest>(body) {
                 Ok(req) => {
-                    match db.add_wheel_option(&req.channel, &req.option_text, &req.color, req.weight) {
+                    // Use weight-based creation (frontend should convert percentage to weight if needed)
+                    let result = db.add_wheel_option(&req.channel, &req.option_text, &req.color, req.weight);
+
+                    match result {
                         Ok(_) => {
                             let response = ApiResponse {
                                 success: true,
@@ -3055,12 +3242,14 @@ async fn handle_update_wheel_option(id: i64, body: &str) -> Response<BoxBody<Byt
         option_text: String,
         color: String,
         weight: i64,
+        chance_percentage: Option<f64>,
     }
 
     match get_database() {
         Some(db) => {
             match serde_json::from_str::<UpdateRequest>(body) {
                 Ok(req) => {
+                    // Update wheel option (frontend should convert percentage to weight if needed)
                     match db.update_wheel_option(id, &req.option_text, &req.color, req.weight) {
                         Ok(_) => {
                             let response = ApiResponse {
@@ -5120,6 +5309,288 @@ async fn handle_delete_text_command(body: &str) -> Response<BoxBody<Bytes, Infal
     }
 }
 
+// ========== Schedule Handlers ==========
+
+async fn handle_get_schedule(query: &str) -> Response<BoxBody<Bytes, Infallible>> {
+    info!("📅 GET /twitch/schedule");
+
+    match get_twitch_manager() {
+        Some(manager) => {
+            // Parse query parameters
+            let mut broadcaster_id: Option<String> = None;
+            let mut start_time: Option<String> = None;
+
+            for param in query.split('&') {
+                let parts: Vec<&str> = param.split('=').collect();
+                if parts.len() == 2 {
+                    match parts[0] {
+                        "broadcaster_id" => broadcaster_id = Some(parts[1].to_string()),
+                        "start_time" => start_time = Some(parts[1].to_string()),
+                        _ => {}
+                    }
+                }
+            }
+
+            // Use broadcaster_id from query, or default to authenticated user
+            let api = manager.get_api();
+
+            let broadcaster_id = if let Some(id) = broadcaster_id {
+                id
+            } else {
+                // Get authenticated user's ID
+                match api.get_authenticated_user().await {
+                    Ok(user) => user.id,
+                    Err(e) => {
+                        error!("Failed to get authenticated user: {}", e);
+                        return error_response(StatusCode::INTERNAL_SERVER_ERROR, &format!("Failed to get authenticated user: {}", e));
+                    }
+                }
+            };
+
+            match api.get_schedule(&broadcaster_id, start_time.as_deref(), None).await {
+                Ok(schedule) => {
+                    // Store in database
+                    if let Some(db) = get_database() {
+                        let now = SystemTime::now()
+                            .duration_since(UNIX_EPOCH)
+                            .unwrap()
+                            .as_secs() as i64;
+
+                        for segment in &schedule.data.segments {
+                            let _ = db.upsert_schedule_segment(
+                                &segment.id,
+                                &schedule.data.broadcaster_id,
+                                &schedule.data.broadcaster_name,
+                                &segment.start_time,
+                                &segment.end_time,
+                                &segment.title,
+                                segment.category.as_ref().map(|c| c.id.as_str()),
+                                segment.category.as_ref().map(|c| c.name.as_str()),
+                                segment.is_recurring,
+                                segment.canceled_until.is_some(),
+                                false,
+                                now,
+                            );
+                        }
+                    }
+
+                    json_response(&schedule)
+                }
+                Err(e) => {
+                    error!("Failed to get schedule: {}", e);
+                    error_response(StatusCode::INTERNAL_SERVER_ERROR, &format!("Failed to get schedule: {}", e))
+                }
+            }
+        }
+        None => error_response(StatusCode::SERVICE_UNAVAILABLE, "Twitch manager not initialized"),
+    }
+}
+
+async fn handle_create_schedule_segment(body: &str) -> Response<BoxBody<Bytes, Infallible>> {
+    use crate::modules::twitch::twitch_api::CreateScheduleSegment;
+
+    info!("📅 POST /twitch/schedule/segment");
+
+    match get_twitch_manager() {
+        Some(manager) => {
+            match serde_json::from_str::<CreateScheduleSegment>(body) {
+                Ok(segment_data) => {
+                    let api = manager.get_api();
+
+                    // Get broadcaster ID
+                    let broadcaster_id = match api.get_authenticated_user().await {
+                        Ok(user) => user.id,
+                        Err(e) => {
+                            error!("Failed to get authenticated user: {}", e);
+                            return error_response(StatusCode::INTERNAL_SERVER_ERROR, &format!("Failed to get authenticated user: {}", e));
+                        }
+                    };
+
+                    match api.create_schedule_segment(&broadcaster_id, segment_data).await {
+                        Ok(segment) => json_response(&segment),
+                        Err(e) => {
+                            error!("Failed to create schedule segment: {}", e);
+                            error_response(StatusCode::INTERNAL_SERVER_ERROR, &format!("Failed to create schedule segment: {}", e))
+                        }
+                    }
+                }
+                Err(e) => error_response(StatusCode::BAD_REQUEST, &format!("Invalid request: {}", e)),
+            }
+        }
+        None => error_response(StatusCode::SERVICE_UNAVAILABLE, "Twitch manager not initialized"),
+    }
+}
+
+async fn handle_update_schedule_segment(body: &str, query: &str) -> Response<BoxBody<Bytes, Infallible>> {
+    use crate::modules::twitch::twitch_api::UpdateScheduleSegment;
+
+    info!("📅 PATCH /twitch/schedule/segment");
+
+    match get_twitch_manager() {
+        Some(manager) => {
+            // Parse segment_id from query
+            let mut segment_id: Option<String> = None;
+
+            for param in query.split('&') {
+                let parts: Vec<&str> = param.split('=').collect();
+                if parts.len() == 2 && parts[0] == "id" {
+                    segment_id = Some(parts[1].to_string());
+                }
+            }
+
+            let segment_id = match segment_id {
+                Some(id) => id,
+                None => return error_response(StatusCode::BAD_REQUEST, "Missing segment_id parameter"),
+            };
+
+            match serde_json::from_str::<UpdateScheduleSegment>(body) {
+                Ok(segment_data) => {
+                    let api = manager.get_api();
+
+                    // Get broadcaster ID
+                    let broadcaster_id = match api.get_authenticated_user().await {
+                        Ok(user) => user.id,
+                        Err(e) => {
+                            error!("Failed to get authenticated user: {}", e);
+                            return error_response(StatusCode::INTERNAL_SERVER_ERROR, &format!("Failed to get authenticated user: {}", e));
+                        }
+                    };
+
+                    match api.update_schedule_segment(&broadcaster_id, &segment_id, segment_data).await {
+                        Ok(segment) => json_response(&segment),
+                        Err(e) => {
+                            error!("Failed to update schedule segment: {}", e);
+                            error_response(StatusCode::INTERNAL_SERVER_ERROR, &format!("Failed to update schedule segment: {}", e))
+                        }
+                    }
+                }
+                Err(e) => error_response(StatusCode::BAD_REQUEST, &format!("Invalid request: {}", e)),
+            }
+        }
+        None => error_response(StatusCode::SERVICE_UNAVAILABLE, "Twitch manager not initialized"),
+    }
+}
+
+async fn handle_delete_schedule_segment(query: &str) -> Response<BoxBody<Bytes, Infallible>> {
+    info!("📅 DELETE /twitch/schedule/segment");
+
+    match get_twitch_manager() {
+        Some(manager) => {
+            // Parse segment_id from query
+            let mut segment_id: Option<String> = None;
+
+            for param in query.split('&') {
+                let parts: Vec<&str> = param.split('=').collect();
+                if parts.len() == 2 && parts[0] == "id" {
+                    segment_id = Some(parts[1].to_string());
+                }
+            }
+
+            let segment_id = match segment_id {
+                Some(id) => id,
+                None => return error_response(StatusCode::BAD_REQUEST, "Missing segment_id parameter"),
+            };
+
+            let api = manager.get_api();
+
+            // Get broadcaster ID
+            let broadcaster_id = match api.get_authenticated_user().await {
+                Ok(user) => user.id,
+                Err(e) => {
+                    error!("Failed to get authenticated user: {}", e);
+                    return error_response(StatusCode::INTERNAL_SERVER_ERROR, &format!("Failed to get authenticated user: {}", e));
+                }
+            };
+
+            match api.delete_schedule_segment(&broadcaster_id, &segment_id).await {
+                Ok(_) => {
+                    // Also delete from database
+                    if let Some(db) = get_database() {
+                        let _ = db.delete_schedule_segment(&segment_id);
+                    }
+
+                    let response = ApiResponse {
+                        success: true,
+                        content: Some("Schedule segment deleted successfully".to_string()),
+                        error: None
+                    };
+                    json_response(&response)
+                }
+                Err(e) => {
+                    error!("Failed to delete schedule segment: {}", e);
+                    error_response(StatusCode::INTERNAL_SERVER_ERROR, &format!("Failed to delete schedule segment: {}", e))
+                }
+            }
+        }
+        None => error_response(StatusCode::SERVICE_UNAVAILABLE, "Twitch manager not initialized"),
+    }
+}
+
+async fn handle_sync_schedule() -> Response<BoxBody<Bytes, Infallible>> {
+    info!("🔄 POST /twitch/schedule/sync - Syncing schedule from Twitch API");
+
+    match get_twitch_manager() {
+        Some(manager) => {
+            let api = manager.get_api();
+
+            // Get authenticated user's ID
+            let broadcaster_id = match api.get_authenticated_user().await {
+                Ok(user) => user.id,
+                Err(e) => {
+                    error!("Failed to get authenticated user: {}", e);
+                    return error_response(StatusCode::INTERNAL_SERVER_ERROR, &format!("Failed to get authenticated user: {}", e));
+                }
+            };
+
+            match api.get_schedule(&broadcaster_id, None, None).await {
+                Ok(schedule) => {
+                    if let Some(db) = get_database() {
+                        let now = SystemTime::now()
+                            .duration_since(UNIX_EPOCH)
+                            .unwrap()
+                            .as_secs() as i64;
+
+                        let mut synced_count = 0;
+                        for segment in &schedule.data.segments {
+                            match db.upsert_schedule_segment(
+                                &segment.id,
+                                &schedule.data.broadcaster_id,
+                                &schedule.data.broadcaster_name,
+                                &segment.start_time,
+                                &segment.end_time,
+                                &segment.title,
+                                segment.category.as_ref().map(|c| c.id.as_str()),
+                                segment.category.as_ref().map(|c| c.name.as_str()),
+                                segment.is_recurring,
+                                segment.canceled_until.is_some(),
+                                false,
+                                now,
+                            ) {
+                                Ok(_) => synced_count += 1,
+                                Err(e) => error!("Failed to sync segment {}: {}", segment.id, e),
+                            }
+                        }
+
+                        let response = ApiResponse {
+                            success: true,
+                            content: Some(format!("Synced {} schedule segments", synced_count)),
+                            error: None
+                        };
+                        json_response(&response)
+                    } else {
+                        error_response(StatusCode::SERVICE_UNAVAILABLE, "Database not initialized")
+                    }
+                }
+                Err(e) => {
+                    error!("Failed to sync schedule: {}", e);
+                    error_response(StatusCode::INTERNAL_SERVER_ERROR, &format!("Failed to sync schedule: {}", e))
+                }
+            }
+        }
+        None => error_response(StatusCode::SERVICE_UNAVAILABLE, "Twitch manager not initialized"),
+    }
+}
+
 // === OVERLAY HANDLERS ===
 
 #[derive(Deserialize)]
@@ -5361,7 +5832,7 @@ async fn handle_read_overlay_file(filename: &str) -> Response<BoxBody<Bytes, Inf
                 .status(StatusCode::OK)
                 .header("Content-Type", "text/plain; charset=utf-8")
                 .header("Access-Control-Allow-Origin", "*")
-                .header("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS")
+                .header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
                 .header("Access-Control-Allow-Headers", "Content-Type, Authorization")
                 .body(BoxBody::new(Full::new(Bytes::from(content))))
                 .unwrap()
@@ -6567,6 +7038,157 @@ async fn handle_toggle_ticker_event_sticky(body: String) -> Response<BoxBody<Byt
     }
 }
 
+// ========== Ticker Segment Handlers ==========
+
+async fn handle_get_ticker_segments() -> Response<BoxBody<Bytes, Infallible>> {
+    match Database::new() {
+        Ok(db) => {
+            match db.get_ticker_segments() {
+                Ok(segments) => json_response(&segments),
+                Err(e) => error_response(StatusCode::INTERNAL_SERVER_ERROR, &format!("Failed to get segments: {}", e))
+            }
+        }
+        Err(e) => error_response(StatusCode::INTERNAL_SERVER_ERROR, &format!("Database error: {}", e))
+    }
+}
+
+async fn handle_add_ticker_segment(body: String) -> Response<BoxBody<Bytes, Infallible>> {
+    #[derive(Deserialize)]
+    struct AddSegmentRequest {
+        #[serde(rename = "type")]
+        segment_type: String,
+        enabled: bool,
+        content: serde_json::Value,
+    }
+
+    match serde_json::from_str::<AddSegmentRequest>(&body) {
+        Ok(req) => {
+            match Database::new() {
+                Ok(db) => {
+                    match db.add_ticker_segment(&req.segment_type, &req.content) {
+                        Ok(id) => {
+                            // Broadcast ticker segments update via WebSocket
+                            crate::modules::websocket_server::broadcast_ticker_segments_update();
+
+                            let response = serde_json::json!({ "success": true, "id": id });
+                            json_response(&response)
+                        }
+                        Err(e) => error_response(StatusCode::INTERNAL_SERVER_ERROR, &format!("Failed to add segment: {}", e))
+                    }
+                }
+                Err(e) => error_response(StatusCode::INTERNAL_SERVER_ERROR, &format!("Database error: {}", e))
+            }
+        }
+        Err(e) => error_response(StatusCode::BAD_REQUEST, &format!("Invalid request: {}", e))
+    }
+}
+
+async fn handle_update_ticker_segment(id: i64, body: String) -> Response<BoxBody<Bytes, Infallible>> {
+    #[derive(Deserialize)]
+    struct UpdateSegmentRequest {
+        #[serde(rename = "type")]
+        segment_type: String,
+        enabled: bool,
+        content: serde_json::Value,
+        position: i64,
+    }
+
+    match serde_json::from_str::<UpdateSegmentRequest>(&body) {
+        Ok(req) => {
+            match Database::new() {
+                Ok(db) => {
+                    match db.update_ticker_segment(id, &req.segment_type, req.enabled, &req.content, req.position) {
+                        Ok(()) => {
+                            // Broadcast ticker segments update via WebSocket
+                            crate::modules::websocket_server::broadcast_ticker_segments_update();
+
+                            let response = serde_json::json!({ "success": true });
+                            json_response(&response)
+                        }
+                        Err(e) => error_response(StatusCode::INTERNAL_SERVER_ERROR, &format!("Failed to update segment: {}", e))
+                    }
+                }
+                Err(e) => error_response(StatusCode::INTERNAL_SERVER_ERROR, &format!("Database error: {}", e))
+            }
+        }
+        Err(e) => error_response(StatusCode::BAD_REQUEST, &format!("Invalid request: {}", e))
+    }
+}
+
+async fn handle_delete_ticker_segment(id: i64) -> Response<BoxBody<Bytes, Infallible>> {
+    match Database::new() {
+        Ok(db) => {
+            match db.delete_ticker_segment(id) {
+                Ok(()) => {
+                    // Broadcast ticker segments update via WebSocket
+                    crate::modules::websocket_server::broadcast_ticker_segments_update();
+
+                    let response = serde_json::json!({ "success": true });
+                    json_response(&response)
+                }
+                Err(e) => error_response(StatusCode::INTERNAL_SERVER_ERROR, &format!("Failed to delete segment: {}", e))
+            }
+        }
+        Err(e) => error_response(StatusCode::INTERNAL_SERVER_ERROR, &format!("Database error: {}", e))
+    }
+}
+
+async fn handle_update_segment_duration(body: String) -> Response<BoxBody<Bytes, Infallible>> {
+    #[derive(Deserialize)]
+    struct UpdateDurationRequest {
+        duration: i64,
+    }
+
+    match serde_json::from_str::<UpdateDurationRequest>(&body) {
+        Ok(req) => {
+            match Database::new() {
+                Ok(db) => {
+                    match db.update_segment_duration(req.duration) {
+                        Ok(()) => {
+                            // Broadcast segment duration update via WebSocket
+                            crate::modules::websocket_server::broadcast_segment_duration_update(req.duration);
+
+                            let response = serde_json::json!({ "success": true });
+                            json_response(&response)
+                        }
+                        Err(e) => error_response(StatusCode::INTERNAL_SERVER_ERROR, &format!("Failed to update segment duration: {}", e))
+                    }
+                }
+                Err(e) => error_response(StatusCode::INTERNAL_SERVER_ERROR, &format!("Database error: {}", e))
+            }
+        }
+        Err(e) => error_response(StatusCode::BAD_REQUEST, &format!("Invalid request: {}", e))
+    }
+}
+
+async fn handle_reorder_ticker_segments(body: String) -> Response<BoxBody<Bytes, Infallible>> {
+    #[derive(Deserialize)]
+    struct ReorderRequest {
+        segment_ids: Vec<i64>,
+    }
+
+    match serde_json::from_str::<ReorderRequest>(&body) {
+        Ok(req) => {
+            match Database::new() {
+                Ok(db) => {
+                    match db.reorder_ticker_segments(&req.segment_ids) {
+                        Ok(()) => {
+                            // Broadcast ticker segments update via WebSocket
+                            crate::modules::websocket_server::broadcast_ticker_segments_update();
+
+                            let response = serde_json::json!({ "success": true });
+                            json_response(&response)
+                        }
+                        Err(e) => error_response(StatusCode::INTERNAL_SERVER_ERROR, &format!("Failed to reorder segments: {}", e))
+                    }
+                }
+                Err(e) => error_response(StatusCode::INTERNAL_SERVER_ERROR, &format!("Database error: {}", e))
+            }
+        }
+        Err(e) => error_response(StatusCode::BAD_REQUEST, &format!("Invalid request: {}", e))
+    }
+}
+
 // ========== Status Config Handlers ==========
 
 async fn handle_get_status_config() -> Response<BoxBody<Bytes, Infallible>> {
@@ -6711,6 +7333,39 @@ async fn handle_update_max_ticker_items(body: String) -> Response<BoxBody<Bytes,
     }
 }
 
+async fn handle_update_breaking_news(body: String) -> Response<BoxBody<Bytes, Infallible>> {
+    #[derive(Deserialize)]
+    struct UpdateBreakingNewsRequest {
+        active: bool,
+        message: Option<String>,
+    }
+
+    match serde_json::from_str::<UpdateBreakingNewsRequest>(&body) {
+        Ok(req) => {
+            match Database::new() {
+                Ok(db) => {
+                    match db.update_breaking_news(req.active, req.message.clone()) {
+                        Ok(()) => {
+                            // Broadcast breaking news update via WebSocket
+                            let breaking_news = serde_json::json!({
+                                "active": req.active,
+                                "message": req.message.unwrap_or_default()
+                            });
+                            crate::modules::websocket_server::broadcast_breaking_news_update(breaking_news);
+
+                            let response = serde_json::json!({ "success": true });
+                            json_response(&response)
+                        }
+                        Err(e) => error_response(StatusCode::INTERNAL_SERVER_ERROR, &format!("Failed to update breaking news: {}", e))
+                    }
+                }
+                Err(e) => error_response(StatusCode::INTERNAL_SERVER_ERROR, &format!("Database error: {}", e))
+            }
+        }
+        Err(e) => error_response(StatusCode::BAD_REQUEST, &format!("Invalid request: {}", e))
+    }
+}
+
 async fn handle_get_ticker_events() -> Response<BoxBody<Bytes, Infallible>> {
     match Database::new() {
         Ok(db) => {
@@ -6803,5 +7458,773 @@ async fn handle_update_ticker_events_config(body: String) -> Response<BoxBody<By
             }
         }
         Err(e) => error_response(StatusCode::BAD_REQUEST, &format!("Invalid request: {}", e))
+    }
+}
+
+// ========== Mood Ticker Handlers ==========
+
+async fn handle_get_mood_ticker_data() -> Response<BoxBody<Bytes, Infallible>> {
+    match Database::new() {
+        Ok(db) => {
+            match db.get_mood_ticker_data() {
+                Ok(data) => json_response(&data),
+                Err(e) => error_response(StatusCode::INTERNAL_SERVER_ERROR, &format!("Failed to get mood ticker data: {}", e))
+            }
+        }
+        Err(e) => error_response(StatusCode::INTERNAL_SERVER_ERROR, &format!("Database error: {}", e))
+    }
+}
+
+async fn handle_update_mood_ticker_data(body: String) -> Response<BoxBody<Bytes, Infallible>> {
+    use crate::commands::database::MoodTickerData;
+
+    match serde_json::from_str::<MoodTickerData>(&body) {
+        Ok(data) => {
+            match Database::new() {
+                Ok(db) => {
+                    match db.update_mood_ticker_data(data.mood, data.weight, data.sleep, data.water, data.show_background) {
+                        Ok(()) => {
+                            // Broadcast mood ticker update via WebSocket
+                            crate::modules::websocket_server::broadcast_mood_ticker_update(data);
+
+                            let response = serde_json::json!({ "success": true });
+                            json_response(&response)
+                        }
+                        Err(e) => error_response(StatusCode::INTERNAL_SERVER_ERROR, &format!("Failed to update mood ticker data: {}", e))
+                    }
+                }
+                Err(e) => error_response(StatusCode::INTERNAL_SERVER_ERROR, &format!("Database error: {}", e))
+            }
+        }
+        Err(e) => error_response(StatusCode::BAD_REQUEST, &format!("Invalid request: {}", e))
+    }
+}
+
+async fn handle_get_withings_weight() -> Response<BoxBody<Bytes, Infallible>> {
+    // Placeholder for Withings integration
+    let response = serde_json::json!({
+        "error": "Withings integration not yet configured",
+        "weight": null
+    });
+    json_response(&response)
+}
+
+// ========== Notes Handlers ==========
+
+async fn handle_get_notes() -> Response<BoxBody<Bytes, Infallible>> {
+    match Database::new() {
+        Ok(db) => {
+            match db.get_notes() {
+                Ok(notes) => json_response(&notes),
+                Err(e) => error_response(StatusCode::INTERNAL_SERVER_ERROR, &format!("Failed to get notes: {}", e))
+            }
+        }
+        Err(e) => error_response(StatusCode::INTERNAL_SERVER_ERROR, &format!("Database error: {}", e))
+    }
+}
+
+async fn handle_get_favorite_notes() -> Response<BoxBody<Bytes, Infallible>> {
+    match Database::new() {
+        Ok(db) => {
+            match db.get_favorite_notes() {
+                Ok(notes) => json_response(&notes),
+                Err(e) => error_response(StatusCode::INTERNAL_SERVER_ERROR, &format!("Failed to get favorite notes: {}", e))
+            }
+        }
+        Err(e) => error_response(StatusCode::INTERNAL_SERVER_ERROR, &format!("Database error: {}", e))
+    }
+}
+
+async fn handle_get_note_categories() -> Response<BoxBody<Bytes, Infallible>> {
+    match Database::new() {
+        Ok(db) => {
+            match db.get_note_categories() {
+                Ok(categories) => json_response(&categories),
+                Err(e) => error_response(StatusCode::INTERNAL_SERVER_ERROR, &format!("Failed to get categories: {}", e))
+            }
+        }
+        Err(e) => error_response(StatusCode::INTERNAL_SERVER_ERROR, &format!("Database error: {}", e))
+    }
+}
+
+async fn handle_create_note(body: String) -> Response<BoxBody<Bytes, Infallible>> {
+    #[derive(Deserialize)]
+    struct CreateNoteRequest {
+        title: String,
+        content: String,
+        category: String,
+        mood: Option<String>,
+        #[serde(default)]
+        tags: Vec<String>,
+    }
+
+    match serde_json::from_str::<CreateNoteRequest>(&body) {
+        Ok(req) => {
+            match Database::new() {
+                Ok(db) => {
+                    match db.create_note(&req.title, &req.content, &req.category, req.mood.as_deref(), req.tags) {
+                        Ok(id) => {
+                            let response = serde_json::json!({ "id": id });
+                            json_response(&response)
+                        }
+                        Err(e) => error_response(StatusCode::INTERNAL_SERVER_ERROR, &format!("Failed to create note: {}", e))
+                    }
+                }
+                Err(e) => error_response(StatusCode::INTERNAL_SERVER_ERROR, &format!("Database error: {}", e))
+            }
+        }
+        Err(e) => error_response(StatusCode::BAD_REQUEST, &format!("Invalid request: {}", e))
+    }
+}
+
+async fn handle_update_note(body: String) -> Response<BoxBody<Bytes, Infallible>> {
+    #[derive(Deserialize)]
+    struct UpdateNoteRequest {
+        id: i64,
+        title: String,
+        content: String,
+        category: String,
+        mood: Option<String>,
+        #[serde(default)]
+        tags: Vec<String>,
+    }
+
+    match serde_json::from_str::<UpdateNoteRequest>(&body) {
+        Ok(req) => {
+            match Database::new() {
+                Ok(db) => {
+                    match db.update_note(req.id, &req.title, &req.content, &req.category, req.mood.as_deref(), req.tags) {
+                        Ok(()) => {
+                            let response = serde_json::json!({ "success": true });
+                            json_response(&response)
+                        }
+                        Err(e) => error_response(StatusCode::INTERNAL_SERVER_ERROR, &format!("Failed to update note: {}", e))
+                    }
+                }
+                Err(e) => error_response(StatusCode::INTERNAL_SERVER_ERROR, &format!("Database error: {}", e))
+            }
+        }
+        Err(e) => error_response(StatusCode::BAD_REQUEST, &format!("Invalid request: {}", e))
+    }
+}
+
+async fn handle_delete_note(body: String) -> Response<BoxBody<Bytes, Infallible>> {
+    #[derive(Deserialize)]
+    struct DeleteNoteRequest {
+        id: i64,
+    }
+
+    match serde_json::from_str::<DeleteNoteRequest>(&body) {
+        Ok(req) => {
+            match Database::new() {
+                Ok(db) => {
+                    match db.delete_note(req.id) {
+                        Ok(()) => {
+                            let response = serde_json::json!({ "success": true });
+                            json_response(&response)
+                        }
+                        Err(e) => error_response(StatusCode::INTERNAL_SERVER_ERROR, &format!("Failed to delete note: {}", e))
+                    }
+                }
+                Err(e) => error_response(StatusCode::INTERNAL_SERVER_ERROR, &format!("Database error: {}", e))
+            }
+        }
+        Err(e) => error_response(StatusCode::BAD_REQUEST, &format!("Invalid request: {}", e))
+    }
+}
+
+async fn handle_toggle_note_favorite(body: String) -> Response<BoxBody<Bytes, Infallible>> {
+    #[derive(Deserialize)]
+    struct ToggleFavoriteRequest {
+        id: i64,
+    }
+
+    match serde_json::from_str::<ToggleFavoriteRequest>(&body) {
+        Ok(req) => {
+            match Database::new() {
+                Ok(db) => {
+                    match db.toggle_note_favorite(req.id) {
+                        Ok(()) => {
+                            let response = serde_json::json!({ "success": true });
+                            json_response(&response)
+                        }
+                        Err(e) => error_response(StatusCode::INTERNAL_SERVER_ERROR, &format!("Failed to toggle favorite: {}", e))
+                    }
+                }
+                Err(e) => error_response(StatusCode::INTERNAL_SERVER_ERROR, &format!("Database error: {}", e))
+            }
+        }
+        Err(e) => error_response(StatusCode::BAD_REQUEST, &format!("Invalid request: {}", e))
+    }
+}
+
+// ==================== PACK SYSTEM HANDLERS ====================
+
+async fn handle_get_packs(_query: &str) -> Response<BoxBody<Bytes, Infallible>> {
+    match Database::new() {
+        Ok(db) => {
+            // Get all packs across all channels for management UI
+            match db.get_all_packs_no_filter() {
+                Ok(packs) => {
+                    let json_packs: Vec<serde_json::Value> = packs.iter().map(|pack| {
+                        serde_json::json!({
+                            "id": pack.id,
+                            "channel": &pack.channel,
+                            "name": &pack.name,
+                            "price": pack.price,
+                            "enabled": pack.enabled,
+                            "created_at": pack.created_at,
+                            "updated_at": pack.updated_at,
+                        })
+                    }).collect();
+                    json_response(&json_packs)
+                }
+                Err(e) => error_response(StatusCode::INTERNAL_SERVER_ERROR, &format!("Failed to get packs: {}", e))
+            }
+        }
+        Err(e) => error_response(StatusCode::INTERNAL_SERVER_ERROR, &format!("Database error: {}", e))
+    }
+}
+
+async fn handle_add_pack(body: String) -> Response<BoxBody<Bytes, Infallible>> {
+    #[derive(Deserialize)]
+    struct AddPackRequest {
+        name: String,
+        price: i64,
+    }
+
+    match serde_json::from_str::<AddPackRequest>(&body) {
+        Ok(req) => {
+            match Database::new() {
+                Ok(db) => {
+                    let channel = "#pianonintendos";
+                    match db.add_pack(channel, &req.name, req.price) {
+                        Ok(_) => {
+                            let response = serde_json::json!({ "success": true });
+                            json_response(&response)
+                        }
+                        Err(e) => error_response(StatusCode::INTERNAL_SERVER_ERROR, &format!("Failed to add pack: {}", e))
+                    }
+                }
+                Err(e) => error_response(StatusCode::INTERNAL_SERVER_ERROR, &format!("Database error: {}", e))
+            }
+        }
+        Err(e) => error_response(StatusCode::BAD_REQUEST, &format!("Invalid request: {}", e))
+    }
+}
+
+async fn handle_update_pack(body: String) -> Response<BoxBody<Bytes, Infallible>> {
+    #[derive(Deserialize)]
+    struct UpdatePackRequest {
+        id: i64,
+        name: String,
+        price: i64,
+        #[serde(default)]
+        channel: Option<String>,
+        #[serde(default)]
+        enabled: Option<bool>,
+        #[serde(default)]
+        created_at: Option<i64>,
+        #[serde(default)]
+        updated_at: Option<i64>,
+    }
+
+    match serde_json::from_str::<UpdatePackRequest>(&body) {
+        Ok(req) => {
+            match Database::new() {
+                Ok(db) => {
+                    match db.update_pack(req.id, &req.name, req.price) {
+                        Ok(_) => {
+                            let response = serde_json::json!({ "success": true });
+                            json_response(&response)
+                        }
+                        Err(e) => error_response(StatusCode::INTERNAL_SERVER_ERROR, &format!("Failed to update pack: {}", e))
+                    }
+                }
+                Err(e) => error_response(StatusCode::INTERNAL_SERVER_ERROR, &format!("Database error: {}", e))
+            }
+        }
+        Err(e) => error_response(StatusCode::BAD_REQUEST, &format!("Invalid request: {}", e))
+    }
+}
+
+async fn handle_delete_pack(body: String) -> Response<BoxBody<Bytes, Infallible>> {
+    #[derive(Deserialize)]
+    struct DeletePackRequest {
+        id: i64,
+    }
+
+    match serde_json::from_str::<DeletePackRequest>(&body) {
+        Ok(req) => {
+            match Database::new() {
+                Ok(db) => {
+                    match db.delete_pack(req.id) {
+                        Ok(_) => {
+                            let response = serde_json::json!({ "success": true });
+                            json_response(&response)
+                        }
+                        Err(e) => error_response(StatusCode::INTERNAL_SERVER_ERROR, &format!("Failed to delete pack: {}", e))
+                    }
+                }
+                Err(e) => error_response(StatusCode::INTERNAL_SERVER_ERROR, &format!("Database error: {}", e))
+            }
+        }
+        Err(e) => error_response(StatusCode::BAD_REQUEST, &format!("Invalid request: {}", e))
+    }
+}
+
+async fn handle_toggle_pack(body: String) -> Response<BoxBody<Bytes, Infallible>> {
+    #[derive(Deserialize)]
+    struct TogglePackRequest {
+        id: i64,
+    }
+
+    match serde_json::from_str::<TogglePackRequest>(&body) {
+        Ok(req) => {
+            match Database::new() {
+                Ok(db) => {
+                    match db.toggle_pack(req.id) {
+                        Ok(_) => {
+                            let response = serde_json::json!({ "success": true });
+                            json_response(&response)
+                        }
+                        Err(e) => error_response(StatusCode::INTERNAL_SERVER_ERROR, &format!("Failed to toggle pack: {}", e))
+                    }
+                }
+                Err(e) => error_response(StatusCode::INTERNAL_SERVER_ERROR, &format!("Database error: {}", e))
+            }
+        }
+        Err(e) => error_response(StatusCode::BAD_REQUEST, &format!("Invalid request: {}", e))
+    }
+}
+
+async fn handle_get_pack_items(_query: &str) -> Response<BoxBody<Bytes, Infallible>> {
+    match Database::new() {
+        Ok(db) => {
+            // Get all items across all channels for management UI
+            match db.get_all_pack_items_no_filter() {
+                Ok(items) => {
+                    let json_items: Vec<serde_json::Value> = items.iter().map(|item| {
+                        serde_json::json!({
+                            "id": item.id,
+                            "channel": &item.channel,
+                            "name": &item.name,
+                            "rarity": &item.rarity,
+                            "value": item.value,
+                            "enabled": item.enabled,
+                            "created_at": item.created_at,
+                            "updated_at": item.updated_at,
+                        })
+                    }).collect();
+                    json_response(&json_items)
+                }
+                Err(e) => error_response(StatusCode::INTERNAL_SERVER_ERROR, &format!("Failed to get items: {}", e))
+            }
+        }
+        Err(e) => error_response(StatusCode::INTERNAL_SERVER_ERROR, &format!("Database error: {}", e))
+    }
+}
+
+async fn handle_add_pack_item(body: String) -> Response<BoxBody<Bytes, Infallible>> {
+    #[derive(Deserialize)]
+    struct AddPackItemRequest {
+        name: String,
+        rarity: String,
+        value: i64,
+    }
+
+    match serde_json::from_str::<AddPackItemRequest>(&body) {
+        Ok(req) => {
+            match Database::new() {
+                Ok(db) => {
+                    let channel = "#pianonintendos";
+                    match db.add_pack_item(channel, &req.name, &req.rarity, req.value) {
+                        Ok(_) => {
+                            let response = serde_json::json!({ "success": true });
+                            json_response(&response)
+                        }
+                        Err(e) => error_response(StatusCode::INTERNAL_SERVER_ERROR, &format!("Failed to add item: {}", e))
+                    }
+                }
+                Err(e) => error_response(StatusCode::INTERNAL_SERVER_ERROR, &format!("Database error: {}", e))
+            }
+        }
+        Err(e) => error_response(StatusCode::BAD_REQUEST, &format!("Invalid request: {}", e))
+    }
+}
+
+async fn handle_update_pack_item(body: String) -> Response<BoxBody<Bytes, Infallible>> {
+    #[derive(Deserialize)]
+    struct UpdatePackItemRequest {
+        id: i64,
+        name: String,
+        rarity: String,
+        value: i64,
+        #[serde(default)]
+        channel: Option<String>,
+        #[serde(default)]
+        enabled: Option<bool>,
+        #[serde(default)]
+        created_at: Option<i64>,
+        #[serde(default)]
+        updated_at: Option<i64>,
+    }
+
+    match serde_json::from_str::<UpdatePackItemRequest>(&body) {
+        Ok(req) => {
+            match Database::new() {
+                Ok(db) => {
+                    match db.update_pack_item(req.id, &req.name, &req.rarity, req.value) {
+                        Ok(_) => {
+                            let response = serde_json::json!({ "success": true });
+                            json_response(&response)
+                        }
+                        Err(e) => error_response(StatusCode::INTERNAL_SERVER_ERROR, &format!("Failed to update item: {}", e))
+                    }
+                }
+                Err(e) => error_response(StatusCode::INTERNAL_SERVER_ERROR, &format!("Database error: {}", e))
+            }
+        }
+        Err(e) => error_response(StatusCode::BAD_REQUEST, &format!("Invalid request: {}", e))
+    }
+}
+
+async fn handle_delete_pack_item(body: String) -> Response<BoxBody<Bytes, Infallible>> {
+    #[derive(Deserialize)]
+    struct DeletePackItemRequest {
+        id: i64,
+    }
+
+    match serde_json::from_str::<DeletePackItemRequest>(&body) {
+        Ok(req) => {
+            match Database::new() {
+                Ok(db) => {
+                    match db.delete_pack_item(req.id) {
+                        Ok(_) => {
+                            let response = serde_json::json!({ "success": true });
+                            json_response(&response)
+                        }
+                        Err(e) => error_response(StatusCode::INTERNAL_SERVER_ERROR, &format!("Failed to delete item: {}", e))
+                    }
+                }
+                Err(e) => error_response(StatusCode::INTERNAL_SERVER_ERROR, &format!("Database error: {}", e))
+            }
+        }
+        Err(e) => error_response(StatusCode::BAD_REQUEST, &format!("Invalid request: {}", e))
+    }
+}
+
+async fn handle_toggle_pack_item(body: String) -> Response<BoxBody<Bytes, Infallible>> {
+    #[derive(Deserialize)]
+    struct TogglePackItemRequest {
+        id: i64,
+    }
+
+    match serde_json::from_str::<TogglePackItemRequest>(&body) {
+        Ok(req) => {
+            match Database::new() {
+                Ok(db) => {
+                    match db.toggle_pack_item(req.id) {
+                        Ok(_) => {
+                            let response = serde_json::json!({ "success": true });
+                            json_response(&response)
+                        }
+                        Err(e) => error_response(StatusCode::INTERNAL_SERVER_ERROR, &format!("Failed to toggle item: {}", e))
+                    }
+                }
+                Err(e) => error_response(StatusCode::INTERNAL_SERVER_ERROR, &format!("Database error: {}", e))
+            }
+        }
+        Err(e) => error_response(StatusCode::BAD_REQUEST, &format!("Invalid request: {}", e))
+    }
+}
+
+async fn handle_seed_packs() -> Response<BoxBody<Bytes, Infallible>> {
+    match Database::new() {
+        Ok(db) => {
+            // Get the first configured channel from Twitch config
+            let channel = match crate::modules::twitch::TwitchConfigManager::new().load() {
+                Ok(config) => {
+                    if config.channels.is_empty() {
+                        return error_response(StatusCode::BAD_REQUEST, "No channels configured. Please configure a channel first.");
+                    }
+                    config.channels[0].clone()
+                }
+                Err(_) => {
+                    return error_response(StatusCode::INTERNAL_SERVER_ERROR, "Failed to load channel configuration");
+                }
+            };
+
+            match db.seed_pack_data(&channel) {
+                Ok(_) => {
+                    let response = serde_json::json!({
+                        "success": true,
+                        "message": format!("Pack data seeded successfully for channel {}", channel)
+                    });
+                    json_response(&response)
+                }
+                Err(e) => error_response(StatusCode::INTERNAL_SERVER_ERROR, &format!("Failed to seed pack data: {}", e))
+            }
+        }
+        Err(e) => error_response(StatusCode::INTERNAL_SERVER_ERROR, &format!("Database error: {}", e))
+    }
+}
+
+async fn handle_clear_all_packs() -> Response<BoxBody<Bytes, Infallible>> {
+    match Database::new() {
+        Ok(db) => {
+            // Get the first configured channel from Twitch config
+            let channel = match crate::modules::twitch::TwitchConfigManager::new().load() {
+                Ok(config) => {
+                    if config.channels.is_empty() {
+                        return error_response(StatusCode::BAD_REQUEST, "No channels configured. Please configure a channel first.");
+                    }
+                    config.channels[0].clone()
+                }
+                Err(_) => {
+                    return error_response(StatusCode::INTERNAL_SERVER_ERROR, "Failed to load channel configuration");
+                }
+            };
+
+            match db.clear_all_packs(&channel) {
+                Ok(_) => {
+                    let response = serde_json::json!({
+                        "success": true,
+                        "message": format!("All packs and items cleared for channel {}", channel)
+                    });
+                    json_response(&response)
+                }
+                Err(e) => error_response(StatusCode::INTERNAL_SERVER_ERROR, &format!("Failed to clear packs: {}", e))
+            }
+        }
+        Err(e) => error_response(StatusCode::INTERNAL_SERVER_ERROR, &format!("Database error: {}", e))
+    }
+}
+
+// Roulette handlers
+async fn handle_get_roulette_game(query: &str) -> Response<BoxBody<Bytes, Infallible>> {
+    let channel = query.trim_start_matches("channel=");
+    if channel.is_empty() {
+        return error_response(StatusCode::BAD_REQUEST, "Missing channel parameter");
+    }
+
+    match Database::new() {
+        Ok(db) => {
+            match db.get_active_roulette_game(channel) {
+                Ok(Some(game)) => {
+                    // Get bets for this game
+                    let bets = match db.get_roulette_bets(game.id) {
+                        Ok(bets) => bets,
+                        Err(e) => {
+                            return error_response(StatusCode::INTERNAL_SERVER_ERROR, &format!("Failed to get bets: {}", e));
+                        }
+                    };
+
+                    let json_bets: Vec<serde_json::Value> = bets.iter().map(|bet| {
+                        serde_json::json!({
+                            "id": bet.id,
+                            "game_id": bet.game_id,
+                            "user_id": &bet.user_id,
+                            "username": &bet.username,
+                            "bet_type": &bet.bet_type,
+                            "bet_value": &bet.bet_value,
+                            "amount": bet.amount,
+                            "payout": bet.payout,
+                            "created_at": bet.created_at,
+                        })
+                    }).collect();
+
+                    let response = serde_json::json!({
+                        "game": {
+                            "id": game.id,
+                            "channel": &game.channel,
+                            "status": &game.status,
+                            "winning_number": game.winning_number,
+                            "spin_started_at": game.spin_started_at,
+                            "created_at": game.created_at,
+                            "completed_at": game.completed_at,
+                        },
+                        "bets": json_bets
+                    });
+                    json_response(&response)
+                }
+                Ok(None) => {
+                    let response = serde_json::json!({
+                        "game": null,
+                        "bets": []
+                    });
+                    json_response(&response)
+                }
+                Err(e) => error_response(StatusCode::INTERNAL_SERVER_ERROR, &format!("Failed to get game: {}", e))
+            }
+        }
+        Err(e) => error_response(StatusCode::INTERNAL_SERVER_ERROR, &format!("Database error: {}", e))
+    }
+}
+
+async fn handle_get_roulette_history(query: &str) -> Response<BoxBody<Bytes, Infallible>> {
+    let channel = query.trim_start_matches("channel=");
+    if channel.is_empty() {
+        return error_response(StatusCode::BAD_REQUEST, "Missing channel parameter");
+    }
+
+    match Database::new() {
+        Ok(db) => {
+            // Get completed games for this channel (limit to last 10)
+            match db.get_roulette_history(channel, 10) {
+                Ok(games) => {
+                    let json_games: Vec<serde_json::Value> = games.iter().map(|game| {
+                        serde_json::json!({
+                            "id": game.id,
+                            "channel": &game.channel,
+                            "status": &game.status,
+                            "winning_number": game.winning_number,
+                            "spin_started_at": game.spin_started_at,
+                            "created_at": game.created_at,
+                            "completed_at": game.completed_at,
+                        })
+                    }).collect();
+                    json_response(&json_games)
+                }
+                Err(e) => error_response(StatusCode::INTERNAL_SERVER_ERROR, &format!("Failed to get history: {}", e))
+            }
+        }
+        Err(e) => error_response(StatusCode::INTERNAL_SERVER_ERROR, &format!("Database error: {}", e))
+    }
+}
+
+async fn handle_roulette_start(query: &str) -> Response<BoxBody<Bytes, Infallible>> {
+    let channel = query.trim_start_matches("channel=");
+    if channel.is_empty() {
+        return error_response(StatusCode::BAD_REQUEST, "Missing channel parameter");
+    }
+
+    match Database::new() {
+        Ok(db) => {
+            // Check if there's already an active game
+            match db.get_active_roulette_game(channel) {
+                Ok(Some(_)) => {
+                    // Game already active
+                    json_response(&serde_json::json!({"success": false, "message": "Game already active"}))
+                }
+                Ok(None) => {
+                    // Create new game
+                    match db.create_roulette_game(channel) {
+                        Ok(game_id) => {
+                            // Start betting timer (30 seconds) - spawn auto-spin task
+                            let channel_clone = channel.to_string();
+                            let db_clone = db.clone();
+                            tokio::spawn(async move {
+                                tokio::time::sleep(tokio::time::Duration::from_secs(30)).await;
+
+                                // Check if game is still in betting state
+                                if let Ok(Some(game)) = db_clone.get_roulette_game(game_id) {
+                                    if game.status == "betting" {
+                                        // Auto-spin
+                                        let _ = crate::commands::roulette_commands::auto_spin(&channel_clone, &db_clone, game_id).await;
+                                    }
+                                }
+                            });
+
+                            // Broadcast game start via WebSocket
+                            let broadcast_data = serde_json::json!({
+                                "type": "roulette_game_started",
+                                "game_id": game_id,
+                                "channel": channel,
+                                "timer_seconds": 30
+                            });
+                            crate::modules::websocket_server::broadcast_roulette_update(broadcast_data);
+
+                            json_response(&serde_json::json!({"success": true, "game_id": game_id}))
+                        }
+                        Err(e) => error_response(StatusCode::INTERNAL_SERVER_ERROR, &format!("Failed to create game: {}", e))
+                    }
+                }
+                Err(e) => error_response(StatusCode::INTERNAL_SERVER_ERROR, &format!("Failed to check game: {}", e))
+            }
+        }
+        Err(e) => error_response(StatusCode::INTERNAL_SERVER_ERROR, &format!("Database error: {}", e))
+    }
+}
+
+async fn handle_roulette_result(body: Bytes) -> Response<BoxBody<Bytes, Infallible>> {
+    #[derive(Deserialize)]
+    struct ResultRequest {
+        channel: String,
+        game_id: i64,
+        winning_number: i64,
+    }
+
+    let request: ResultRequest = match serde_json::from_slice(&body) {
+        Ok(req) => req,
+        Err(_) => return error_response(StatusCode::BAD_REQUEST, "Invalid request body")
+    };
+
+    if request.winning_number < 0 || request.winning_number > 36 {
+        return error_response(StatusCode::BAD_REQUEST, "Invalid winning number");
+    }
+
+    match Database::new() {
+        Ok(db) => {
+            match crate::commands::roulette_commands::process_result(
+                &request.channel,
+                &db,
+                request.game_id,
+                request.winning_number
+            ).await {
+                Ok(_) => json_response(&serde_json::json!({"success": true})),
+                Err(e) => error_response(StatusCode::INTERNAL_SERVER_ERROR, &e)
+            }
+        }
+        Err(e) => error_response(StatusCode::INTERNAL_SERVER_ERROR, &format!("Database error: {}", e))
+    }
+}
+
+// Get app setting
+async fn handle_get_setting(query: &str) -> Response<BoxBody<Bytes, Infallible>> {
+    let key = query.trim_start_matches("key=");
+    if key.is_empty() {
+        return error_response(StatusCode::BAD_REQUEST, "Missing key parameter");
+    }
+
+    match Database::new() {
+        Ok(db) => {
+            match db.get_app_setting(key) {
+                Ok(Some(value)) => json_response(&serde_json::json!({
+                    "key": key,
+                    "value": value
+                })),
+                Ok(None) => json_response(&serde_json::json!({
+                    "key": key,
+                    "value": null
+                })),
+                Err(e) => error_response(StatusCode::INTERNAL_SERVER_ERROR, &format!("Database error: {}", e))
+            }
+        }
+        Err(e) => error_response(StatusCode::INTERNAL_SERVER_ERROR, &format!("Database error: {}", e))
+    }
+}
+
+// Set app setting
+async fn handle_set_setting(body: Bytes) -> Response<BoxBody<Bytes, Infallible>> {
+    #[derive(Deserialize)]
+    struct SettingRequest {
+        key: String,
+        value: String,
+    }
+
+    let request: SettingRequest = match serde_json::from_slice(&body) {
+        Ok(req) => req,
+        Err(_) => return error_response(StatusCode::BAD_REQUEST, "Invalid request body")
+    };
+
+    match Database::new() {
+        Ok(db) => {
+            match db.set_app_setting(&request.key, &request.value) {
+                Ok(_) => json_response(&serde_json::json!({"success": true})),
+                Err(e) => error_response(StatusCode::INTERNAL_SERVER_ERROR, &format!("Database error: {}", e))
+            }
+        }
+        Err(e) => error_response(StatusCode::INTERNAL_SERVER_ERROR, &format!("Database error: {}", e))
     }
 }

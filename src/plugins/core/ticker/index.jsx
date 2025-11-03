@@ -24,9 +24,22 @@ const TickerViewport = () => {
     show_gifted_subs: true,
     show_cheers: true
   });
+  const [breakingNewsActive, setBreakingNewsActive] = createSignal(false);
+  const [breakingNewsMessage, setBreakingNewsMessage] = createSignal('');
+
+  // Segment management
+  const [segments, setSegments] = createSignal([]);
+  const [segmentDuration, setSegmentDuration] = createSignal(15);
+  const [tempSegmentDuration, setTempSegmentDuration] = createSignal(15);
+  const [newSegmentType, setNewSegmentType] = createSignal('custom');
+  const [newSegmentContent, setNewSegmentContent] = createSignal('');
+  const [editingSegmentId, setEditingSegmentId] = createSignal(null);
+  const [draggedSegmentId, setDraggedSegmentId] = createSignal(null);
+  const [dragOverSegmentId, setDragOverSegmentId] = createSignal(null);
 
   let speedUpdateTimeout;
   let maxItemsUpdateTimeout;
+  let segmentDurationTimeout;
 
   // Load ticker messages
   const loadMessages = async () => {
@@ -49,9 +62,215 @@ const TickerViewport = () => {
       setTempTickerSpeed(data.ticker_speed || 30);
       setMaxTickerItems(data.max_ticker_items || 20);
       setTempMaxTickerItems(data.max_ticker_items || 20);
+      setSegmentDuration(data.segment_duration || 15);
+      setTempSegmentDuration(data.segment_duration || 15);
+      setBreakingNewsActive(data.breaking_news_active || false);
+      setBreakingNewsMessage(data.breaking_news_message || '');
     } catch (error) {
       console.error('Failed to load status config:', error);
     }
+  };
+
+  // Load ticker segments
+  const loadSegments = async () => {
+    try {
+      const response = await fetch(`${WEBARCADE_API}/api/ticker/segments`);
+      const data = await response.json();
+      setSegments(data);
+    } catch (error) {
+      console.error('Failed to load segments:', error);
+    }
+  };
+
+  // Add new segment
+  const addSegment = async () => {
+    const content = newSegmentContent().trim();
+
+    // Only check for content if not messages type
+    if (newSegmentType() !== 'messages' && !content) {
+      alert('Please enter content for this segment type');
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const segmentData = {
+        type: newSegmentType(),
+        enabled: true,
+        content: {}
+      };
+
+      // Parse content based on type
+      switch (newSegmentType()) {
+        case 'schedule':
+          try {
+            segmentData.content = { schedule: JSON.parse(content) };
+          } catch {
+            alert('Invalid JSON format for schedule');
+            setLoading(false);
+            return;
+          }
+          break;
+        case 'commands':
+          try {
+            segmentData.content = { commands: JSON.parse(content) };
+          } catch {
+            alert('Invalid JSON format for commands');
+            setLoading(false);
+            return;
+          }
+          break;
+        case 'messages':
+          segmentData.content = {};
+          break;
+        case 'custom':
+          segmentData.content = { text: content };
+          break;
+      }
+
+      await fetch(`${WEBARCADE_API}/api/ticker/segments`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(segmentData)
+      });
+      setNewSegmentContent('');
+      await loadSegments();
+    } catch (error) {
+      console.error('Failed to add segment:', error);
+    }
+    setLoading(false);
+  };
+
+  // Delete segment
+  const deleteSegment = async (id) => {
+    if (!confirm('Delete this ticker segment?')) return;
+
+    setLoading(true);
+    try {
+      await fetch(`${WEBARCADE_API}/api/ticker/segments/${id}`, {
+        method: 'DELETE'
+      });
+      await loadSegments();
+    } catch (error) {
+      console.error('Failed to delete segment:', error);
+    }
+    setLoading(false);
+  };
+
+  // Toggle segment enabled/disabled
+  const toggleSegment = async (id) => {
+    setLoading(true);
+    try {
+      const segment = segments().find(s => s.id === id);
+      await fetch(`${WEBARCADE_API}/api/ticker/segments/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          type: segment.type,
+          enabled: !segment.enabled,
+          content: segment.content,
+          position: segment.position
+        })
+      });
+      await loadSegments();
+    } catch (error) {
+      console.error('Failed to toggle segment:', error);
+    }
+    setLoading(false);
+  };
+
+  // Handle drag start
+  const handleDragStart = (e, segmentId) => {
+    setDraggedSegmentId(segmentId);
+    e.dataTransfer.effectAllowed = 'move';
+  };
+
+  // Handle drag over
+  const handleDragOver = (e, segmentId) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    setDragOverSegmentId(segmentId);
+  };
+
+  // Handle drag leave
+  const handleDragLeave = () => {
+    setDragOverSegmentId(null);
+  };
+
+  // Handle drop
+  const handleDrop = async (e, targetSegmentId) => {
+    e.preventDefault();
+    const sourceId = draggedSegmentId();
+
+    if (sourceId === targetSegmentId) {
+      setDraggedSegmentId(null);
+      setDragOverSegmentId(null);
+      return;
+    }
+
+    // Reorder segments array
+    const segmentsCopy = [...segments()];
+    const sourceIndex = segmentsCopy.findIndex(s => s.id === sourceId);
+    const targetIndex = segmentsCopy.findIndex(s => s.id === targetSegmentId);
+
+    if (sourceIndex === -1 || targetIndex === -1) return;
+
+    // Remove source and insert at target position
+    const [movedSegment] = segmentsCopy.splice(sourceIndex, 1);
+    segmentsCopy.splice(targetIndex, 0, movedSegment);
+
+    // Update local state immediately for smooth UX
+    setSegments(segmentsCopy);
+
+    // Send reorder request to backend
+    try {
+      const segmentIds = segmentsCopy.map(s => s.id);
+      await fetch(`${WEBARCADE_API}/api/ticker/segments/reorder`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ segment_ids: segmentIds })
+      });
+    } catch (error) {
+      console.error('Failed to reorder segments:', error);
+      // Reload on error to restore correct order
+      await loadSegments();
+    }
+
+    setDraggedSegmentId(null);
+    setDragOverSegmentId(null);
+  };
+
+  // Handle drag end
+  const handleDragEnd = () => {
+    setDraggedSegmentId(null);
+    setDragOverSegmentId(null);
+  };
+
+  // Update segment duration
+  const updateSegmentDuration = async (duration) => {
+    try {
+      await fetch(`${WEBARCADE_API}/api/status/segment-duration`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ duration: parseInt(duration) })
+      });
+      setSegmentDuration(duration);
+    } catch (error) {
+      console.error('Failed to update segment duration:', error);
+    }
+  };
+
+  // Handle segment duration slider change with debounce
+  const handleSegmentDurationSliderChange = (value) => {
+    setTempSegmentDuration(value);
+
+    if (segmentDurationTimeout) {
+      clearTimeout(segmentDurationTimeout);
+    }
+
+    segmentDurationTimeout = setTimeout(() => {
+      updateSegmentDuration(value);
+    }, 500);
   };
 
   // Load ticker events config
@@ -255,6 +474,25 @@ const TickerViewport = () => {
     }, 500);
   };
 
+  // Update breaking news
+  const updateBreakingNews = async (active, message) => {
+    setLoading(true);
+    try {
+      await fetch(`${WEBARCADE_API}/api/status/breaking-news`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ active, message: message || null })
+      });
+      setBreakingNewsActive(active);
+      if (!active) {
+        setBreakingNewsMessage('');
+      }
+    } catch (error) {
+      console.error('Failed to update breaking news:', error);
+    }
+    setLoading(false);
+  };
+
   // Calculate days since start date (reactive)
   const daysSinceStart = () => {
     if (!streamStartDate()) return 0;
@@ -266,6 +504,7 @@ const TickerViewport = () => {
     loadMessages();
     loadStatusConfig();
     loadEventsConfig();
+    loadSegments();
 
     // Update current date every minute to keep days counter accurate
     const dateInterval = setInterval(() => {
@@ -350,6 +589,276 @@ const TickerViewport = () => {
             <span>Min (5 items)</span>
             <span>Max (50 items)</span>
           </div>
+        </div>
+      </div>
+
+      {/* Ticker Segments */}
+      <div class="bg-base-200 rounded-lg p-4 shadow">
+        <h2 class="text-xl font-bold mb-4">🎬 Ticker Segments</h2>
+        <p class="text-sm text-gray-400 mb-4">
+          Create different segments that cycle through the ticker with animated transitions. Each segment displays for a set duration before transitioning to the next one.
+        </p>
+
+        {/* Segment Duration Control */}
+        <div class="mb-6 p-4 bg-base-300 rounded-lg">
+          <h3 class="text-lg font-bold mb-3">⏱️ Max Segment Duration</h3>
+          <p class="text-sm text-gray-400 mb-3">
+            Segments automatically advance when the ticker completes scrolling. This setting is a fallback maximum duration.
+          </p>
+          <div class="space-y-3">
+            <div class="flex items-center gap-4">
+              <input
+                type="range"
+                min="15"
+                max="120"
+                value={tempSegmentDuration()}
+                onInput={(e) => handleSegmentDurationSliderChange(parseInt(e.target.value))}
+                class="range range-primary flex-1"
+                disabled={loading()}
+              />
+              <span class="text-lg font-mono w-20 text-right">{tempSegmentDuration()}s</span>
+            </div>
+            <div class="flex justify-between text-xs text-gray-400">
+              <span>Short (15s)</span>
+              <span>Long (120s)</span>
+            </div>
+          </div>
+        </div>
+
+        {/* Add New Segment */}
+        <div class="mb-4">
+          <h3 class="text-lg font-bold mb-3">➕ Add New Segment</h3>
+          <div class="space-y-3">
+            <select
+              value={newSegmentType()}
+              onChange={(e) => setNewSegmentType(e.target.value)}
+              class="select select-bordered w-full"
+              disabled={loading()}
+            >
+              <option value="messages">📰 Regular Messages (scrolling ticker)</option>
+              <option value="schedule">📅 Stream Schedule</option>
+              <option value="commands">💬 Chat Commands</option>
+              <option value="custom">✏️ Custom Text</option>
+            </select>
+
+            <Show when={newSegmentType() === 'schedule'}>
+              <div class="text-sm text-gray-400 mb-2">
+                📅 Enter schedule as JSON array: [{"{"}"day": "Mon-Fri", "time": "6PM-12AM EST"{"}"}]<br/>
+                Will scroll continuously until one loop completes, then advance to next segment.
+              </div>
+            </Show>
+
+            <Show when={newSegmentType() === 'commands'}>
+              <div class="text-sm text-gray-400 mb-2">
+                💬 Enter commands as JSON array: [{"{"}"name": "discord", "description": "Join our Discord!"{"}"}]<br/>
+                Will scroll continuously until one loop completes, then advance to next segment.
+              </div>
+            </Show>
+
+            <Show when={newSegmentType() === 'custom'}>
+              <div class="text-sm text-gray-400 mb-2">
+                ✏️ Enter custom text to display<br/>
+                Will scroll once from right to left, then advance to next segment when fully off-screen.
+              </div>
+            </Show>
+
+            <Show when={newSegmentType() === 'messages'}>
+              <div class="text-sm text-gray-400 mb-2">
+                📰 This segment will show your ticker messages (configured below)<br/>
+                Will scroll continuously until one loop completes, then advance to next segment.
+              </div>
+            </Show>
+
+            <div class="flex gap-2">
+              <textarea
+                value={newSegmentContent()}
+                onInput={(e) => setNewSegmentContent(e.target.value)}
+                placeholder={
+                  newSegmentType() === 'messages'
+                    ? 'No content needed - uses your ticker messages'
+                    : newSegmentType() === 'custom'
+                    ? 'Enter your custom text...'
+                    : 'Enter JSON data...'
+                }
+                class="textarea textarea-bordered flex-1"
+                rows="3"
+                disabled={loading() || newSegmentType() === 'messages'}
+              />
+            </div>
+
+            <button
+              onClick={addSegment}
+              class="btn btn-primary w-full"
+              disabled={loading()}
+            >
+              Add Segment
+            </button>
+          </div>
+        </div>
+
+        {/* Segments List */}
+        <div class="space-y-2">
+          <h3 class="text-lg font-bold mb-3">📋 Current Segments ({segments().length})</h3>
+
+          <Show when={segments().length === 0}>
+            <p class="text-gray-400 text-center py-4">
+              No segments configured. Add one above to enable segment cycling!
+            </p>
+          </Show>
+
+          <For each={segments()}>
+            {(segment, index) => (
+              <div
+                draggable="true"
+                onDragStart={(e) => handleDragStart(e, segment.id)}
+                onDragOver={(e) => handleDragOver(e, segment.id)}
+                onDragLeave={handleDragLeave}
+                onDrop={(e) => handleDrop(e, segment.id)}
+                onDragEnd={handleDragEnd}
+                class={`p-4 rounded flex items-start gap-3 cursor-move transition-all ${
+                  segment.enabled ? 'bg-base-300' : 'bg-base-100 opacity-50'
+                } ${
+                  draggedSegmentId() === segment.id ? 'opacity-50 scale-95' : ''
+                } ${
+                  dragOverSegmentId() === segment.id && draggedSegmentId() !== segment.id ? 'ring-2 ring-primary' : ''
+                }`}
+              >
+                {/* Drag Handle */}
+                <div class="cursor-grab active:cursor-grabbing text-gray-400 hover:text-white mt-1">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <line x1="8" y1="6" x2="21" y2="6"></line>
+                    <line x1="8" y1="12" x2="21" y2="12"></line>
+                    <line x1="8" y1="18" x2="21" y2="18"></line>
+                    <line x1="3" y1="6" x2="3.01" y2="6"></line>
+                    <line x1="3" y1="12" x2="3.01" y2="12"></line>
+                    <line x1="3" y1="18" x2="3.01" y2="18"></line>
+                  </svg>
+                </div>
+
+                {/* Enable/Disable Toggle */}
+                <input
+                  type="checkbox"
+                  checked={segment.enabled}
+                  onChange={() => toggleSegment(segment.id)}
+                  class="checkbox checkbox-primary mt-1"
+                  disabled={loading()}
+                  onClick={(e) => e.stopPropagation()}
+                />
+
+                {/* Segment Info */}
+                <div class="flex-1">
+                  <div class="flex items-center gap-2 mb-2">
+                    <span class="badge badge-primary">#{index() + 1}</span>
+                    <span class="font-bold">
+                      {segment.type === 'messages' && '📰 Regular Messages'}
+                      {segment.type === 'schedule' && '📅 Stream Schedule'}
+                      {segment.type === 'commands' && '💬 Chat Commands'}
+                      {segment.type === 'custom' && '✏️ Custom Text'}
+                    </span>
+                  </div>
+
+                  <div class="text-sm text-gray-400">
+                    {segment.type === 'messages' && '🔄 Displays your ticker messages with continuous scrolling'}
+                    {segment.type === 'schedule' && `🔄 Schedule: ${JSON.stringify(segment.content?.schedule || [])}`}
+                    {segment.type === 'commands' && `🔄 Commands: ${segment.content?.commands?.map(c => `!${c.name}`).join(', ') || 'None'}`}
+                    {segment.type === 'custom' && `➡️ "${segment.content?.text || ''}" (scrolls once)`}
+                  </div>
+                </div>
+
+                {/* Action Buttons */}
+                <div class="flex gap-2">
+                  <button
+                    onClick={() => deleteSegment(segment.id)}
+                    class="btn btn-sm btn-error btn-ghost"
+                    disabled={loading()}
+                  >
+                    🗑️ Delete
+                  </button>
+                </div>
+              </div>
+            )}
+          </For>
+        </div>
+
+        <div class="mt-4 p-3 bg-info/20 rounded text-sm">
+          <p><strong>💡 Tip:</strong> Drag segments using the handle on the left to reorder them! All segments scroll like a ticker.</p>
+          <p class="mt-1">Segments automatically advance when scrolling completes (or after {segmentDuration()}s max).</p>
+        </div>
+      </div>
+
+      {/* Breaking News */}
+      <div class={`bg-base-200 rounded-lg p-4 shadow ${breakingNewsActive() ? 'ring-2 ring-red-500' : ''}`}>
+        <h2 class="text-xl font-bold mb-4">🚨 Breaking News</h2>
+        <p class="text-sm text-gray-400 mb-4">
+          Activate breaking news mode to replace the ticker with an urgent message. The ticker background will turn red.
+        </p>
+
+        <div class="space-y-4">
+          {/* Breaking News Toggle */}
+          <div class="form-control">
+            <label class="label cursor-pointer">
+              <span class="label-text font-bold">Breaking News Active</span>
+              <input
+                type="checkbox"
+                checked={breakingNewsActive()}
+                onChange={(e) => {
+                  const active = e.target.checked;
+                  if (!active) {
+                    updateBreakingNews(false, '');
+                  } else if (breakingNewsMessage().trim()) {
+                    updateBreakingNews(true, breakingNewsMessage());
+                  } else {
+                    alert('Please enter a breaking news message first');
+                    e.target.checked = false;
+                  }
+                }}
+                class="toggle toggle-error toggle-lg"
+                disabled={loading()}
+              />
+            </label>
+          </div>
+
+          {/* Breaking News Message Input */}
+          <div class="space-y-2">
+            <label class="label">
+              <span class="label-text">Breaking News Message</span>
+            </label>
+            <div class="flex gap-2">
+              <input
+                type="text"
+                value={breakingNewsMessage()}
+                onInput={(e) => setBreakingNewsMessage(e.target.value)}
+                placeholder="Enter breaking news message..."
+                class="input input-bordered flex-1"
+                disabled={loading()}
+                onKeyPress={(e) => {
+                  if (e.key === 'Enter' && breakingNewsMessage().trim()) {
+                    updateBreakingNews(true, breakingNewsMessage());
+                  }
+                }}
+              />
+              <button
+                onClick={() => updateBreakingNews(true, breakingNewsMessage())}
+                class="btn btn-error"
+                disabled={loading() || !breakingNewsMessage().trim()}
+              >
+                Activate
+              </button>
+            </div>
+          </div>
+
+          <Show when={breakingNewsActive()}>
+            <div class="alert alert-error">
+              <svg xmlns="http://www.w3.org/2000/svg" class="stroke-current shrink-0 h-6 w-6" fill="none" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+              </svg>
+              <span><strong>Breaking News is currently ACTIVE!</strong> The ticker is showing: "{breakingNewsMessage()}"</span>
+            </div>
+          </Show>
+        </div>
+
+        <div class="mt-4 p-3 bg-warning/20 rounded text-sm">
+          <p><strong>⚠️ Note:</strong> When breaking news is active, the normal ticker messages will be hidden and replaced with your breaking news message. The ticker background will turn red.</p>
         </div>
       </div>
 

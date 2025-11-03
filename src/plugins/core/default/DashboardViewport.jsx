@@ -1,5 +1,5 @@
 import { createSignal, createEffect, onCleanup, Show } from 'solid-js';
-import { IconCpu, IconDatabase, IconActivity, IconBrandTwitch, IconPlayerPlay, IconPlayerStop, IconCheck, IconX } from '@tabler/icons-solidjs';
+import { IconCpu, IconDatabase, IconActivity, IconBrandTwitch, IconPlayerPlay, IconPlayerStop, IconCheck, IconX, IconCalendar, IconClock } from '@tabler/icons-solidjs';
 import twitchStore from '@/plugins/core/twitch/TwitchStore.jsx';
 
 export default function DashboardViewport() {
@@ -7,6 +7,7 @@ export default function DashboardViewport() {
   const [statsHistory, setStatsHistory] = createSignal([]);
   const [twitchConfig, setTwitchConfig] = createSignal(null);
   const [twitchStatus, setTwitchStatus] = createSignal({ status: 'disconnected' });
+  const [currentSchedule, setCurrentSchedule] = createSignal(null);
   const [startingBot, setStartingBot] = createSignal(false);
   const [stoppingBot, setStoppingBot] = createSignal(false);
   const [autoStartAttempted, setAutoStartAttempted] = createSignal(false);
@@ -74,6 +75,54 @@ export default function DashboardViewport() {
       console.log('[Dashboard] Auto-starting Twitch bot...');
       handleStartBot();
     }
+  });
+
+  // Fetch current/next scheduled stream
+  createEffect(() => {
+    const fetchScheduleData = async () => {
+      try {
+        const response = await fetch('/twitch/schedule');
+        if (response.ok) {
+          const data = await response.json();
+          // Find current or next segment from database
+          if (data?.data?.segments?.length > 0) {
+            const now = new Date();
+            // Find current segment
+            let current = data.data.segments.find(seg => {
+              const start = new Date(seg.start_time);
+              const end = new Date(seg.end_time);
+              return start <= now && end >= now && !seg.canceled_until;
+            });
+
+            // If no current, find next upcoming
+            if (!current) {
+              current = data.data.segments.find(seg => {
+                const start = new Date(seg.start_time);
+                return start > now && !seg.canceled_until;
+              });
+            }
+
+            if (current) {
+              const start = new Date(current.start_time);
+              const end = new Date(current.end_time);
+              setCurrentSchedule({
+                ...current,
+                is_current: start <= now && end >= now,
+                formatted_start: start.toLocaleString(),
+                formatted_end: end.toLocaleString(),
+              });
+            }
+          }
+        }
+      } catch (error) {
+        // Silent fail
+      }
+    };
+
+    fetchScheduleData();
+    const interval = setInterval(fetchScheduleData, 30000); // Update every 30 seconds
+
+    onCleanup(() => clearInterval(interval));
   });
 
   const handleStartBot = async () => {
@@ -331,6 +380,65 @@ export default function DashboardViewport() {
                     {!stoppingBot() && <IconPlayerStop size={20} />}
                     {stoppingBot() ? 'Stopping...' : 'Stop Bot'}
                   </button>
+                </Show>
+              </div>
+            </div>
+          </div>
+        </Show>
+
+        {/* Schedule Card */}
+        <Show when={currentSchedule()}>
+          <div class="card bg-base-100 shadow-xl border-2 border-blue-500/20">
+            <div class="card-body">
+              <div class="flex items-center gap-3 mb-4">
+                <div class="p-3 bg-blue-500/20 rounded-lg">
+                  <IconCalendar size={32} class="text-blue-500" />
+                </div>
+                <div class="flex-1">
+                  <h2 class="card-title text-2xl">
+                    {currentSchedule().is_current ? 'Currently Scheduled' : 'Next Stream'}
+                  </h2>
+                  <p class="text-sm text-base-content/60">
+                    {currentSchedule().is_current ? 'Live now' : 'Upcoming'}
+                  </p>
+                </div>
+                <div class={`badge badge-lg ${currentSchedule().is_current ? 'badge-success' : 'badge-info'}`}>
+                  {currentSchedule().is_current ? 'Live' : 'Scheduled'}
+                </div>
+              </div>
+
+              <div class="divider my-2"></div>
+
+              <div class="space-y-4">
+                <div>
+                  <h3 class="text-2xl font-bold text-primary mb-2">{currentSchedule().title}</h3>
+                  <Show when={currentSchedule().category}>
+                    <div class="badge badge-primary">{currentSchedule().category.name}</div>
+                  </Show>
+                </div>
+
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div class="flex items-start gap-3">
+                    <IconClock size={20} class="text-base-content/60 mt-1" />
+                    <div>
+                      <p class="text-xs text-base-content/60 mb-1">Start Time</p>
+                      <p class="font-semibold">{currentSchedule().formatted_start}</p>
+                    </div>
+                  </div>
+                  <div class="flex items-start gap-3">
+                    <IconClock size={20} class="text-base-content/60 mt-1" />
+                    <div>
+                      <p class="text-xs text-base-content/60 mb-1">End Time</p>
+                      <p class="font-semibold">{currentSchedule().formatted_end}</p>
+                    </div>
+                  </div>
+                </div>
+
+                <Show when={currentSchedule().is_recurring}>
+                  <div class="alert alert-info">
+                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" class="stroke-current shrink-0 w-6 h-6"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                    <span>This is a recurring stream</span>
+                  </div>
                 </Show>
               </div>
             </div>

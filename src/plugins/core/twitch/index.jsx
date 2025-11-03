@@ -1,7 +1,8 @@
 import { createPlugin } from '@/api/plugin';
-import { IconMessage, IconSettings, IconInfoCircle } from '@tabler/icons-solidjs';
+import { IconMessage, IconSettings, IconInfoCircle, IconCalendar } from '@tabler/icons-solidjs';
 import TwitchSettingsViewport from './TwitchSettingsViewport.jsx';
 import TwitchChatViewport from './TwitchChatViewport.jsx';
+import TwitchScheduleViewport from './TwitchScheduleViewport.jsx';
 import StreamInfoPanel from './StreamInfoPanel.jsx';
 import twitchStore from './TwitchStore.jsx';
 
@@ -43,6 +44,14 @@ export default createPlugin({
       component: TwitchSettingsViewport,
       icon: IconSettings,
       description: 'Configure Twitch bot settings and authentication'
+    });
+
+    // Register Schedule as a viewport
+    api.viewport('twitch-schedule', {
+      label: 'Stream Schedule',
+      component: TwitchScheduleViewport,
+      icon: IconCalendar,
+      description: 'View and manage your Twitch stream schedule'
     });
 
     console.log('[Twitch Plugin] Started successfully');

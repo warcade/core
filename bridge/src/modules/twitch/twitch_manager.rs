@@ -193,9 +193,17 @@ impl TwitchManager {
                             tracker.mark_user_active(&msg.username).await;
                         }
 
-                        // Award XP for non-command messages
+                        // Award XP and coins for non-command messages
                         if !msg.message.starts_with("!") {
                             if let Some(ref database) = db {
+                                // Check for first message bonus
+                                use crate::commands::rewards::RewardSystem;
+                                if let Ok(Some(config)) = RewardSystem::award_first_message(database, &msg.channel, &msg.username) {
+                                    let reward_msg = RewardSystem::format_rewards(&config);
+                                    let welcome_msg = format!("👋 Welcome @{}! First message bonus: {}", msg.username, reward_msg);
+                                    let _ = irc_manager_clone.send_message(&msg.channel, &welcome_msg).await;
+                                }
+
                                 if let Some((old_level, new_level, total_xp, xp_needed)) = levels::award_message_xp(database, &msg.channel, &msg.username, &irc_manager_clone).await {
                                     // Broadcast level up event
                                     let level_up_event = TwitchEvent::LevelUp(super::twitch_irc_client::LevelUpEvent {
@@ -207,6 +215,12 @@ impl TwitchManager {
                                         xp_needed,
                                     });
                                     let _ = event_sender_clone.send(level_up_event);
+                                }
+
+                                // Award coins for chatting (1-3 coins per message, randomly)
+                                let coin_reward = fastrand::i64(1..=3);
+                                if let Err(e) = database.add_coins(&msg.channel, &msg.username, coin_reward) {
+                                    log::error!("Failed to award coins to {}: {}", msg.username, e);
                                 }
                             }
                         }
@@ -436,6 +450,34 @@ impl TwitchManager {
     /// Broadcast an event to all subscribers
     pub fn broadcast_event(&self, event: TwitchEvent) {
         info!("📢 Broadcasting Twitch event: {:?}", event);
+
+        // Track follow events in database and award rewards
+        if let TwitchEvent::Follow(follow_event) = &event {
+            let channel = follow_event.broadcaster_user_login.clone();
+            let username = follow_event.user_login.clone();
+            let followed_at = follow_event.followed_at.clone();
+
+            tokio::spawn(async move {
+                if let Ok(db) = Database::new() {
+                    match db.set_user_followed_at(&channel, &username, &followed_at) {
+                        Ok(_) => {
+                            info!("✅ Saved follow event to database: {} followed {} at {}", username, channel, followed_at);
+
+                            // Award follow rewards
+                            use crate::commands::rewards::{RewardSystem, RewardEvent};
+                            if let Ok(_config) = RewardSystem::process_event(&db, &channel, &username, RewardEvent::Follow) {
+                                info!("💰 Awarded follow rewards to {}", username);
+                            }
+                        }
+                        Err(e) => {
+                            log::error!("❌ Failed to save follow event to database: {}", e);
+                        }
+                    }
+                } else {
+                    log::error!("❌ Failed to initialize database for follow tracking");
+                }
+            });
+        }
 
         // Save ticker-relevant events to database
         let (event_type, event_json, display_text) = match &event {

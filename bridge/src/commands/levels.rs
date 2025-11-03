@@ -1,6 +1,7 @@
 use crate::modules::twitch::{CommandSystem, Command, PermissionLevel, TwitchIRCManager};
 use std::sync::Arc;
 use super::database::Database;
+use super::rewards::{RewardSystem, RewardEvent};
 
 const XP_COOLDOWN_SECONDS: i64 = 60; // 1 minute cooldown between XP gains
 const MIN_XP_PER_MESSAGE: i64 = 10;
@@ -21,6 +22,7 @@ fn xp_to_next_level(current_xp: i64) -> (i64, i64) {
     (next_level, xp_remaining)
 }
 
+
 /// Award XP to a user for sending a message
 /// Returns (old_level, new_level, total_xp, xp_needed) if user leveled up
 pub async fn award_message_xp(db: &Database, channel: &str, username: &str, irc: &Arc<TwitchIRCManager>) -> Option<(i64, i64, i64, i64)> {
@@ -34,7 +36,16 @@ pub async fn award_message_xp(db: &Database, channel: &str, username: &str, irc:
                 // Calculate XP needed for next level
                 let (next_level, xp_needed) = xp_to_next_level(total_xp);
 
-                // Send exciting level up message
+                // Award level up rewards using the reward system
+                let reward_msg = match RewardSystem::process_event(db, channel, username, RewardEvent::LevelUp(new_level)) {
+                    Ok(config) => RewardSystem::format_rewards(&config),
+                    Err(e) => {
+                        log::error!("Failed to process level up rewards for {}: {}", username, e);
+                        "Error awarding rewards".to_string()
+                    }
+                };
+
+                // Send exciting level up message with rewards
                 let level_emoji = match new_level {
                     1..=5 => "⭐",
                     6..=10 => "🌟",
@@ -44,11 +55,11 @@ pub async fn award_message_xp(db: &Database, channel: &str, username: &str, irc:
                 };
 
                 let msg = format!(
-                    "🎊 LEVEL UP! 🎊 @{} reached Level {} {}! [XP: {} | Next Level: {} XP needed]",
-                    username, new_level, level_emoji, total_xp, xp_needed
+                    "🎊 LEVEL UP! 🎊 @{} reached Level {} {}! Rewards: {} | [XP: {} | Next Level: {} XP needed]",
+                    username, new_level, level_emoji, reward_msg, total_xp, xp_needed
                 );
                 let _ = irc.send_message(channel, &msg).await;
-                log::info!("User {} leveled up: {} -> {} (XP: {})", username, old_level, new_level, total_xp);
+                log::info!("User {} leveled up: {} -> {} (XP: {}) | Rewards: {}", username, old_level, new_level, total_xp, reward_msg);
 
                 // Return level up data
                 return Some((old_level, new_level, total_xp, xp_needed));

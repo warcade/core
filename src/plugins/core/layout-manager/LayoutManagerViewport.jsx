@@ -786,7 +786,7 @@ export default function LayoutManagerViewport() {
                             }}
                           >
                             <iframe
-                              src={`${BRIDGE_URL}/overlay/${overlay.type}`}
+                              src={`${BRIDGE_URL}/overlay/${overlay.type}?v=${Date.now()}`}
                               class="border-none pointer-events-none"
                               style={{
                                 width: `${iframeWidth}px`,

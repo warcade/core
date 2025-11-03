@@ -363,7 +363,9 @@ impl TwitchAuth {
             "channel:edit:commercial".to_string(),
             "channel:manage:ads".to_string(),
             "channel:manage:broadcast".to_string(),
+            "channel:manage:clips".to_string(),
             "channel:manage:extensions".to_string(),
+            "channel:manage:guest_star".to_string(),
             "channel:manage:moderators".to_string(),
             "channel:manage:polls".to_string(),
             "channel:manage:predictions".to_string(),
@@ -393,6 +395,9 @@ impl TwitchAuth {
             // Clips
             "clips:edit".to_string(),
 
+            // Editor
+            "editor:manage:clips".to_string(),
+
             // Moderation
             "moderation:read".to_string(),
             "moderator:manage:announcements".to_string(),
@@ -408,35 +413,38 @@ impl TwitchAuth {
             "moderator:manage:unban_requests".to_string(),
             "moderator:manage:warnings".to_string(),
             "moderator:read:automod_settings".to_string(),
+            "moderator:read:banned_users".to_string(),
             "moderator:read:blocked_terms".to_string(),
+            "moderator:read:chat_messages".to_string(),
             "moderator:read:chat_settings".to_string(),
             "moderator:read:chatters".to_string(),
             "moderator:read:followers".to_string(),
             "moderator:read:guest_star".to_string(),
+            "moderator:read:moderators".to_string(),
             "moderator:read:shield_mode".to_string(),
             "moderator:read:shoutouts".to_string(),
             "moderator:read:suspicious_users".to_string(),
             "moderator:read:unban_requests".to_string(),
+            "moderator:read:vips".to_string(),
             "moderator:read:warnings".to_string(),
 
             // User
             "user:bot".to_string(),
             "user:edit".to_string(),
             "user:edit:broadcast".to_string(),
-            "user:edit:follows".to_string(),
             "user:manage:blocked_users".to_string(),
             "user:manage:chat_color".to_string(),
             "user:manage:whispers".to_string(),
             "user:read:blocked_users".to_string(),
             "user:read:broadcast".to_string(),
+            "user:read:chat".to_string(),
             "user:read:email".to_string(),
+            "user:read:emotes".to_string(),
             "user:read:follows".to_string(),
+            "user:read:moderated_channels".to_string(),
             "user:read:subscriptions".to_string(),
+            "user:read:whispers".to_string(),
             "user:write:chat".to_string(),
-
-            // Whispers
-            "whispers:edit".to_string(),
-            "whispers:read".to_string(),
         ]
     }
 

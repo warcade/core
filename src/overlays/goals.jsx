@@ -162,7 +162,7 @@ function GoalsOverlay() {
                 const percentage = getPercentage(goal.current, goal.target);
                 return (
                   <div
-                    class="relative overflow-hidden bg-gradient-to-r from-black/90 via-black/85 to-black/90 backdrop-blur-md border border-black/40"
+                    class="relative overflow-hidden bg-gradient-to-r from-black/95 via-black/90 to-black/95 backdrop-blur-md border border-black/50"
                   >
                     {/* Background Progress Bar with Gradient */}
                     <div

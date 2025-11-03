@@ -112,9 +112,10 @@ function LayoutOverlay() {
       let iframe = iframeMap.get(overlay.id);
 
       if (!iframe) {
-        // Create new iframe
+        // Create new iframe with cache-busting parameter
         iframe = document.createElement('iframe');
-        iframe.src = `${BRIDGE_URL}/overlay/${overlay.type}`;
+        const cacheBuster = Date.now();
+        iframe.src = `${BRIDGE_URL}/overlay/${overlay.type}?v=${cacheBuster}`;
         iframe.className = 'absolute border-none pointer-events-auto';
         iframe.style.display = 'block';
         iframe.style.border = 'none';

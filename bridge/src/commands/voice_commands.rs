@@ -172,7 +172,7 @@ pub async fn register(command_system: &CommandSystem, db: Database) {
             tokio::spawn(async move {
                 let filter = args.first().map(|s| s.to_lowercase());
 
-                let voice_list: Vec<String> = VOICES.iter()
+                let filtered_voices: Vec<(&str, &str)> = VOICES.iter()
                     .filter(|(name, desc)| {
                         if let Some(ref f) = filter {
                             desc.to_lowercase().contains(f) || name.to_lowercase().contains(f)
@@ -180,23 +180,48 @@ pub async fn register(command_system: &CommandSystem, db: Database) {
                             true
                         }
                     })
-                    .take(15) // Limit to avoid spam
-                    .map(|(name, desc)| format!("{} ({})", name, desc))
+                    .take(20)
+                    .map(|(n, d)| (*n, *d))
                     .collect();
 
-                if voice_list.is_empty() {
+                if filtered_voices.is_empty() {
                     let _ = irc.send_message(&channel,
                         &format!("@{} No voices found matching '{}'", username, filter.unwrap_or_default())
                     ).await;
                 } else {
-                    let count_text = if VOICES.len() > 15 && filter.is_none() {
-                        format!(" (showing 15/{} voices)", VOICES.len())
-                    } else {
-                        String::new()
-                    };
+                    // Build message with just voice names to fit in Twitch's 500 char limit
+                    let voice_names: Vec<&str> = filtered_voices.iter().map(|(name, _)| *name).collect();
 
+                    // Split into chunks that fit Twitch's message limit (500 chars)
+                    let mut current_msg = String::from("🔊 TTS Voices: ");
+                    let mut messages = Vec::new();
+
+                    for (i, name) in voice_names.iter().enumerate() {
+                        let separator = if i > 0 { ", " } else { "" };
+                        let addition = format!("{}{}", separator, name);
+
+                        // Check if adding this voice would exceed ~450 chars (safe limit)
+                        if current_msg.len() + addition.len() > 450 {
+                            messages.push(current_msg.clone());
+                            current_msg = format!("🔊 TTS Voices (cont.): {}", name);
+                        } else {
+                            current_msg.push_str(&addition);
+                        }
+                    }
+
+                    if !current_msg.is_empty() {
+                        messages.push(current_msg);
+                    }
+
+                    // Send all message chunks
+                    for msg in messages {
+                        let _ = irc.send_message(&channel, &msg).await;
+                        tokio::time::sleep(tokio::time::Duration::from_millis(500)).await; // Small delay between messages
+                    }
+
+                    // Send usage tip
                     let _ = irc.send_message(&channel,
-                        &format!("🔊 Available TTS voices{}: {}", count_text, voice_list.join(", "))
+                        &format!("@{} Use !voice <name> to set your voice. Filter: !voices english/french/male/female", username)
                     ).await;
                 }
             });
