@@ -223,6 +223,13 @@
       "main": "index.jsx",
       "path": "/src/plugins/core/roulette",
       "priority": 2
+    },
+    {
+      "enabled": true,
+      "id": "auction-plugin",
+      "main": "index.jsx",
+      "path": "/src/plugins/core/auction",
+      "priority": 2
     }
   ]
 }

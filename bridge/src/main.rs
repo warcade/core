@@ -1,139 +1,173 @@
-use std::fs;
 use std::env;
+use std::fs;
 use std::net::SocketAddr;
 use std::sync::Arc;
-use std::time::{SystemTime, UNIX_EPOCH};
 use hyper::server::conn::http1;
 use hyper::service::service_fn;
 use hyper_util::rt::TokioIo;
 use tokio::net::TcpListener;
 use log::{info, error};
+use anyhow::Result;
 
-use webarcade_bridge::{*, commands};
-
+use webarcade_bridge::core::{EventBus, ServiceRegistry, PluginManager, HttpRouter, WebSocketBridge};
+use webarcade_bridge::plugins;
 
 #[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // Initialize logger with timestamp and colors
+async fn main() -> Result<()> {
+    // Initialize logger with timestamp
     env_logger::Builder::from_default_env()
         .format_timestamp_secs()
         .init();
 
-    info!("Initializing WebArcade Bridge server");
+    info!("🎮 WebArcade Bridge - Plugin System v2.0");
+    info!("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
 
-    // Initialize application state with startup time
-    let startup_time = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .expect("Time went backwards")
-        .as_secs();
-
+    // Get configuration
     let port = env::var("BRIDGE_PORT").unwrap_or_else(|_| "3001".to_string());
-    let base_path = get_base_path();
-    let projects_path = get_projects_path();
+    let ws_port = env::var("WS_PORT").unwrap_or_else(|_| "3002".to_string());
 
-    info!("Starting bridge server on port {}", port);
-    info!("Base path: {}", base_path.display());
-    info!("Projects path: {}", projects_path.display());
+    // Initialize core systems
+    info!("📦 Initializing core systems...");
 
-    if !projects_path.exists() {
-        fs::create_dir_all(&projects_path)?;
-        info!("Created projects directory");
+    let event_bus = Arc::new(EventBus::new());
+    let service_registry = Arc::new(ServiceRegistry::new());
+
+    // Get database path
+    let db_path = webarcade_bridge::core::database::get_database_path();
+    webarcade_bridge::core::database::ensure_database_dir()?;
+
+    info!("💾 Database: {}", db_path.display());
+
+    // Load plugin configuration
+    let plugin_config = load_plugin_config()?;
+
+    // Create plugin manager
+    let mut plugin_manager = PluginManager::new(
+        event_bus.clone(),
+        service_registry.clone(),
+        plugin_config,
+        db_path.to_string_lossy().to_string(),
+    );
+
+    // Register all plugins
+    info!("📦 Registering plugins...");
+    plugins::register_all_plugins(&mut plugin_manager);
+
+    // Initialize all plugins
+    info!("🔧 Initializing plugins...");
+    plugin_manager.init_all().await?;
+
+    // Start all plugins
+    info!("🚀 Starting plugins...");
+    plugin_manager.start_all().await?;
+
+    // List loaded plugins
+    let loaded_plugins = plugin_manager.list_plugins();
+    info!("✅ Loaded {} plugins:", loaded_plugins.len());
+    for plugin in &loaded_plugins {
+        info!("   - {} v{}: {}", plugin.name, plugin.version, plugin.description);
     }
 
-    // Initialize file watcher
-    initialize_file_watcher(projects_path.clone())?;
+    info!("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
 
-    // Initialize system monitor
-    initialize_system_monitor();
+    // Create HTTP router
+    let http_router = Arc::new(HttpRouter::new(
+        service_registry.clone(),
+        event_bus.clone(),
+    ));
 
-    // Start WebSocket server on port 3002
-    let ws_port = env::var("WS_PORT").unwrap_or_else(|_| "3002".to_string());
-    let ws_port_num: u16 = ws_port.parse().unwrap_or(3002);
+    // Start WebSocket server for real-time events
+    let event_bus_ws = event_bus.clone();
+    let ws_port_clone = ws_port.clone();
     tokio::spawn(async move {
-        if let Err(e) = start_websocket_server(ws_port_num).await {
+        let ws_bridge = WebSocketBridge::new(event_bus_ws);
+        if let Err(e) = ws_bridge.start(ws_port_clone).await {
             error!("WebSocket server error: {}", e);
         }
     });
 
-    // Initialize lightweight memory cache
-    info!("Initializing memory cache");
-    let memory_cache = Arc::new(tokio::sync::Mutex::new(MemoryCache::new()));
-
-    // Initialize database
-    info!("Initializing database");
-    let database = commands::database::Database::new()
-        .expect("Failed to initialize database");
-    let database = Arc::new(database);
-
-    // Initialize Twitch manager
-    info!("Initializing Twitch integration");
-    let (twitch_manager, mut twitch_receiver) = TwitchManager::new();
-    let twitch_manager = Arc::new(twitch_manager);
-
-    // Initialize Withings API
-    info!("Initializing Withings API");
-    let withings_api = Arc::new(WithingsAPI::new());
-
-    // Initialize Discord manager
-    info!("Initializing Discord integration");
-    let discord_manager = Arc::new(DiscordManager::new(database.clone()));
-
-    // Initialize Alexa manager
-    info!("Initializing Alexa integration");
-    let alexa_manager = Arc::new(AlexaManager::new((*database).clone()));
-
-    // Register custom commands
-    info!("🎮 Registering custom Twitch commands");
-    let command_system = twitch_manager.get_command_system();
-    commands::register_all_commands(&command_system).await;
-
-    // Load text commands for all configured channels
-    info!("📝 Loading custom text commands from database");
-    let config_manager = twitch_manager.get_config_manager();
-    if let Ok(config) = config_manager.load() {
-        for channel in &config.channels {
-            commands::load_channel_text_commands(&command_system, channel).await;
-        }
-    }
-
-    // TTS is now handled in twitch_manager.rs - this receiver is for other events if needed
-    tokio::spawn(async move {
-        while let Ok(_event) = twitch_receiver.recv().await {
-            // Other event handling can go here if needed
-        }
-    });
-
-    // Set state in handlers module
-    set_startup_time(startup_time);
-    set_memory_cache(memory_cache);
-    set_database(database.clone());
-    set_twitch_manager(twitch_manager.clone());
-    set_withings_api(withings_api.clone());
-    set_discord_manager(discord_manager.clone());
-    set_alexa_manager(alexa_manager.clone());
-
-    // Set Twitch manager for WebSocket server
-    modules::websocket_server::set_twitch_manager(Some(twitch_manager.clone())).await;
-
-    // Start goal auto-sync background task
-    info!("Starting goal auto-sync background task");
-    start_goal_sync_task(database.clone(), twitch_manager.clone());
-
+    // Start HTTP server
     let addr: SocketAddr = format!("127.0.0.1:{}", port).parse()?;
     let listener = TcpListener::bind(addr).await?;
-    info!("Server listening on http://localhost:{}", port);
+
+    info!("🌐 HTTP server listening on http://{}", addr);
+    info!("📡 WebSocket server listening on ws://127.0.0.1:{}", ws_port);
+    info!("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+    info!("✨ WebArcade Bridge is ready!");
 
     loop {
-        let (tcp, client_addr) = listener.accept().await?;
-        let io = TokioIo::new(tcp);
+        let (stream, _) = listener.accept().await?;
+        let io = TokioIo::new(stream);
+        let router = http_router.clone();
 
-        tokio::task::spawn(async move {
+        tokio::spawn(async move {
             if let Err(err) = http1::Builder::new()
-                .serve_connection(io, service_fn(handle_http_request))
+                .serve_connection(io, service_fn(move |req| {
+                    let router = router.clone();
+                    async move {
+                        Ok::<_, std::convert::Infallible>(router.route(req).await)
+                    }
+                }))
                 .await
             {
-                error!("Error serving connection from {}: {:?}", client_addr, err);
+                error!("Error serving connection: {:?}", err);
             }
         });
     }
+}
+
+fn load_plugin_config() -> Result<std::collections::HashMap<String, serde_json::Value>> {
+    let config_path = std::path::Path::new("plugins.json");
+
+    if !config_path.exists() {
+        // Create default config with all plugins enabled
+        let default_config = serde_json::json!({
+            "plugins": [
+                {"id": "currency", "enabled": true, "config": {"starting_balance": 1000}},
+                {"id": "notes", "enabled": true, "config": {}},
+                {"id": "goals", "enabled": true, "config": {}},
+                {"id": "todos", "enabled": true, "config": {}},
+                {"id": "auction", "enabled": true, "config": {}},
+                {"id": "roulette", "enabled": true, "config": {}},
+                {"id": "levels", "enabled": true, "config": {"xp_per_message": 5}},
+                {"id": "wheel", "enabled": true, "config": {}},
+                {"id": "packs", "enabled": true, "config": {}},
+                {"id": "files", "enabled": true, "config": {}},
+                {"id": "system", "enabled": true, "config": {}},
+                {"id": "ticker", "enabled": true, "config": {}},
+                {"id": "text_commands", "enabled": true, "config": {}},
+                {"id": "user_profiles", "enabled": true, "config": {}},
+                {"id": "tts", "enabled": true, "config": {}},
+                {"id": "confessions", "enabled": true, "config": {}},
+                {"id": "household", "enabled": true, "config": {}},
+                {"id": "twitch", "enabled": true, "config": {}},
+                {"id": "hue", "enabled": false, "config": {}},
+                {"id": "withings", "enabled": false, "config": {}}
+            ]
+        });
+
+        fs::write(config_path, serde_json::to_string_pretty(&default_config)?)?;
+        info!("📝 Created default plugins.json");
+    }
+
+    let config_content = fs::read_to_string(config_path)?;
+    let config: serde_json::Value = serde_json::from_str(&config_content)?;
+
+    let mut plugin_configs = std::collections::HashMap::new();
+
+    if let Some(plugins) = config["plugins"].as_array() {
+        for plugin in plugins {
+            if let (Some(id), Some(enabled)) = (
+                plugin["id"].as_str(),
+                plugin["enabled"].as_bool(),
+            ) {
+                if enabled {
+                    let plugin_config = plugin["config"].clone();
+                    plugin_configs.insert(id.to_string(), plugin_config);
+                }
+            }
+        }
+    }
+
+    Ok(plugin_configs)
 }

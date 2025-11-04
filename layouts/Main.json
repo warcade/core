@@ -17,8 +17,8 @@
       "id": 1762105148558,
       "type": "goals",
       "width": 590,
-      "x": 31,
-      "y": 954,
+      "x": 1328,
+      "y": 4,
       "zIndex": 8
     },
     {
@@ -66,9 +66,9 @@
       "height": 70,
       "id": 1762104423013,
       "type": "mood-ticker",
-      "width": 800,
-      "x": 663,
-      "y": 948,
+      "width": 1920,
+      "x": 0,
+      "y": -1,
       "zIndex": 3
     },
     {
@@ -78,7 +78,7 @@
       "type": "ticker",
       "width": 1920,
       "x": 0,
-      "y": 1016,
+      "y": 1009,
       "zIndex": 2
     },
     {
@@ -100,6 +100,26 @@
       "x": 967,
       "y": 4,
       "zIndex": 10
+    },
+    {
+      "fitMode": "contain",
+      "height": 589,
+      "id": 1762211439550,
+      "type": "pack-opening",
+      "width": 700,
+      "x": -2,
+      "y": 4,
+      "zIndex": 11
+    },
+    {
+      "fitMode": "contain",
+      "height": 1078,
+      "id": 1762214831445,
+      "type": "auction",
+      "width": 1923,
+      "x": -2,
+      "y": -7,
+      "zIndex": 12
     }
   ]
 }

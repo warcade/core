@@ -7,12 +7,12 @@ use futures_util::{SinkExt, StreamExt, stream::SplitSink};
 use log::{info, warn, error, debug};
 use tokio::sync::broadcast;
 use crate::file_watcher::get_file_change_receiver;
-use super::twitch::{TwitchEvent, TwitchManager};
+// use super::twitch::{TwitchEvent, TwitchManager}; // Commented out - using plugin system now
 
 pub type WsSink = SplitSink<WebSocketStream<TcpStream>, Message>;
 
-// Global managers for WebSocket access
-static TWITCH_MANAGER: tokio::sync::OnceCell<Option<Arc<TwitchManager>>> = tokio::sync::OnceCell::const_new();
+// Global managers for WebSocket access - DISABLED (using plugin system)
+// static TWITCH_MANAGER: tokio::sync::OnceCell<Option<Arc<TwitchManager>>> = tokio::sync::OnceCell::const_new();
 
 // Timer broadcast channel
 static TIMER_BROADCAST: std::sync::OnceLock<broadcast::Sender<serde_json::Value>> = std::sync::OnceLock::new();
@@ -151,14 +151,15 @@ pub fn get_mood_ticker_broadcast_sender() -> broadcast::Sender<serde_json::Value
     }).clone()
 }
 
-pub fn broadcast_mood_ticker_update(data: crate::commands::database::MoodTickerData) {
-    let sender = get_mood_ticker_broadcast_sender();
-    let message = serde_json::json!({
-        "type": "mood_ticker_update",
-        "data": data
-    });
-    let _ = sender.send(message);
-}
+// Commented out - depends on old database.rs
+// pub fn broadcast_mood_ticker_update(data: crate::commands::database::MoodTickerData) {
+//     let sender = get_mood_ticker_broadcast_sender();
+//     let message = serde_json::json!({
+//         "type": "mood_ticker_update",
+//         "data": data
+//     });
+//     let _ = sender.send(message);
+// }
 
 // Layout broadcast channel
 static LAYOUT_BROADCAST: std::sync::OnceLock<broadcast::Sender<serde_json::Value>> = std::sync::OnceLock::new();
@@ -244,13 +245,29 @@ pub fn broadcast_roulette_update(roulette_data: serde_json::Value) {
     let _ = sender.send(roulette_data);
 }
 
-pub async fn set_twitch_manager(manager: Option<Arc<TwitchManager>>) {
-    let _ = TWITCH_MANAGER.set(manager);
+// Auction broadcast channel
+static AUCTION_BROADCAST: std::sync::OnceLock<broadcast::Sender<serde_json::Value>> = std::sync::OnceLock::new();
+
+pub fn get_auction_broadcast_sender() -> broadcast::Sender<serde_json::Value> {
+    AUCTION_BROADCAST.get_or_init(|| {
+        let (sender, _) = broadcast::channel(100);
+        sender
+    }).clone()
 }
 
-pub async fn get_twitch_manager() -> Option<Arc<TwitchManager>> {
-    TWITCH_MANAGER.get().and_then(|m| m.clone())
+pub fn broadcast_auction_update(auction_data: serde_json::Value) {
+    let sender = get_auction_broadcast_sender();
+    let _ = sender.send(auction_data);
 }
+
+// Commented out - using plugin system now
+// pub async fn set_twitch_manager(manager: Option<Arc<TwitchManager>>) {
+//     let _ = TWITCH_MANAGER.set(manager);
+// }
+
+// pub async fn get_twitch_manager() -> Option<Arc<TwitchManager>> {
+//     TWITCH_MANAGER.get().and_then(|m| m.clone())
+// }
 
 pub async fn start_websocket_server(port: u16) -> Result<(), Box<dyn std::error::Error>> {
     let addr = SocketAddr::from(([127, 0, 0, 1], port));
@@ -284,15 +301,15 @@ async fn handle_websocket_connection(stream: TcpStream, client_addr: SocketAddr)
         "message": "WebSocket connection established"
     });
 
-    // Try to get channel from Twitch manager config
-    if let Some(twitch_manager) = get_twitch_manager().await {
-        let config_manager = twitch_manager.get_config_manager();
-        if let Ok(config) = config_manager.load() {
-            if let Some(first_channel) = config.channels.first() {
-                welcome_msg["channel"] = serde_json::json!(first_channel);
-            }
-        }
-    }
+    // Try to get channel from Twitch manager config - DISABLED (using plugin system)
+    // if let Some(twitch_manager) = get_twitch_manager().await {
+    //     let config_manager = twitch_manager.get_config_manager();
+    //     if let Ok(config) = config_manager.load() {
+    //         if let Some(first_channel) = config.channels.first() {
+    //             welcome_msg["channel"] = serde_json::json!(first_channel);
+    //         }
+    //     }
+    // }
 
     if let Ok(welcome_text) = serde_json::to_string(&welcome_msg) {
         if let Err(e) = ws_sender.send(Message::Text(welcome_text)).await {
@@ -310,13 +327,13 @@ async fn handle_websocket_connection(stream: TcpStream, client_addr: SocketAddr)
         }
     };
 
-    // Get Twitch event receiver if available
-    let mut twitch_receiver_opt: Option<broadcast::Receiver<TwitchEvent>> = None;
-    if let Some(twitch_manager) = get_twitch_manager().await {
-        let receiver = twitch_manager.get_event_sender().subscribe();
-        twitch_receiver_opt = Some(receiver);
-        info!("📡 WebSocket client {} subscribed to Twitch events", client_addr);
-    }
+    // Get Twitch event receiver if available - DISABLED (using plugin system)
+    // let mut twitch_receiver_opt: Option<broadcast::Receiver<TwitchEvent>> = None;
+    // if let Some(twitch_manager) = get_twitch_manager().await {
+    //     let receiver = twitch_manager.get_event_sender().subscribe();
+    //     twitch_receiver_opt = Some(receiver);
+    //     info!("📡 WebSocket client {} subscribed to Twitch events", client_addr);
+    // }
 
     // Get timer event receiver
     let mut timer_receiver = get_timer_broadcast_sender().subscribe();
@@ -369,6 +386,10 @@ async fn handle_websocket_connection(stream: TcpStream, client_addr: SocketAddr)
     // Get roulette event receiver
     let mut roulette_receiver = get_roulette_broadcast_sender().subscribe();
     info!("📡 WebSocket client {} subscribed to roulette events", client_addr);
+
+    // Get auction event receiver
+    let mut auction_receiver = get_auction_broadcast_sender().subscribe();
+    info!("📡 WebSocket client {} subscribed to auction events", client_addr);
 
     info!("📡 WebSocket client {} subscribed to file changes", client_addr);
 
@@ -438,40 +459,40 @@ async fn handle_websocket_connection(stream: TcpStream, client_addr: SocketAddr)
                 }
             }
 
-            // Handle Twitch events (if subscribed)
-            twitch_event = async {
-                if let Some(ref mut receiver) = twitch_receiver_opt {
-                    Some(receiver.recv().await)
-                } else {
-                    std::future::pending::<Option<Result<TwitchEvent, tokio::sync::broadcast::error::RecvError>>>().await
-                }
-            }, if twitch_receiver_opt.is_some() => {
-                let twitch_event = twitch_event.unwrap();
-                match twitch_event {
-                    Ok(event) => {
-                        debug!("📡 Broadcasting Twitch event to {}", client_addr);
+            // Handle Twitch events (if subscribed) - DISABLED (using plugin system WebSocket bridge)
+            // twitch_event = async {
+            //     if let Some(ref mut receiver) = twitch_receiver_opt {
+            //         Some(receiver.recv().await)
+            //     } else {
+            //         std::future::pending::<Option<Result<TwitchEvent, tokio::sync::broadcast::error::RecvError>>>().await
+            //     }
+            // }, if twitch_receiver_opt.is_some() => {
+            //     let twitch_event = twitch_event.unwrap();
+            //     match twitch_event {
+            //         Ok(event) => {
+            //             debug!("📡 Broadcasting Twitch event to {}", client_addr);
 
-                        let ws_message = serde_json::json!({
-                            "type": "twitch_event",
-                            "event": event
-                        });
-
-                        if let Ok(message_text) = serde_json::to_string(&ws_message) {
-                            if let Err(e) = ws_sender.send(Message::Text(message_text)).await {
-                                error!("Failed to send Twitch event to {}: {}", client_addr, e);
-                                break;
-                            }
-                        }
-                    }
-                    Err(broadcast::error::RecvError::Lagged(count)) => {
-                        warn!("📡 WebSocket client {} lagged {} Twitch messages", client_addr, count);
-                    }
-                    Err(broadcast::error::RecvError::Closed) => {
-                        info!("📡 Twitch event broadcaster closed for {}", client_addr);
-                        twitch_receiver_opt = None;
-                    }
-                }
-            }
+            //             let ws_message = serde_json::json!({
+            //                 "type": "twitch_event",
+            //                 "event": event
+            //             });
+            //
+            //             if let Ok(message_text) = serde_json::to_string(&ws_message) {
+            //                 if let Err(e) = ws_sender.send(Message::Text(message_text)).await {
+            //                     error!("Failed to send Twitch event to {}: {}", client_addr, e);
+            //                     break;
+            //                 }
+            //             }
+            //         }
+            //         Err(broadcast::error::RecvError::Lagged(count)) => {
+            //             warn!("📡 WebSocket client {} lagged {} Twitch messages", client_addr, count);
+            //         }
+            //         Err(broadcast::error::RecvError::Closed) => {
+            //             info!("📡 Twitch event broadcaster closed for {}", client_addr);
+            //             twitch_receiver_opt = None;
+            //         }
+            //     }
+            // }
 
             // Handle timer events
             timer_event = timer_receiver.recv() => {
@@ -778,6 +799,29 @@ async fn handle_websocket_connection(stream: TcpStream, client_addr: SocketAddr)
                     }
                     Err(broadcast::error::RecvError::Closed) => {
                         info!("📡 Roulette broadcaster closed for {}", client_addr);
+                        break;
+                    }
+                }
+            }
+
+            // Handle auction events
+            auction_event = auction_receiver.recv() => {
+                match auction_event {
+                    Ok(message) => {
+                        debug!("📡 Broadcasting auction event to {}", client_addr);
+
+                        if let Ok(message_text) = serde_json::to_string(&message) {
+                            if let Err(e) = ws_sender.send(Message::Text(message_text)).await {
+                                error!("Failed to send auction event to {}: {}", client_addr, e);
+                                break;
+                            }
+                        }
+                    }
+                    Err(broadcast::error::RecvError::Lagged(count)) => {
+                        warn!("📡 WebSocket client {} lagged {} auction messages", client_addr, count);
+                    }
+                    Err(broadcast::error::RecvError::Closed) => {
+                        info!("📡 Auction broadcaster closed for {}", client_addr);
                         break;
                     }
                 }
