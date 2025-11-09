@@ -1,6 +1,28 @@
 {
   "plugins": [
     {
+      "id": "calendar",
+      "path": "/plugins/calendar",
+      "main": "index.jsx",
+      "widget": null,
+      "widgets": [
+        "CalendarWidget.jsx"
+      ],
+      "enabled": true,
+      "priority": 1
+    },
+    {
+      "id": "crypto",
+      "path": "/plugins/crypto",
+      "main": "index.jsx",
+      "widget": null,
+      "widgets": [
+        "CryptoWidget.jsx"
+      ],
+      "enabled": true,
+      "priority": 1
+    },
+    {
       "id": "dashboard",
       "path": "/plugins/dashboard",
       "main": "index.jsx",
@@ -37,14 +59,21 @@
       "main": "index.jsx",
       "widget": null,
       "widgets": [
+        "CalculatorWidget.jsx",
         "ClockWidget.jsx",
+        "ColorPickerWidget.jsx",
         "CpuWidget.jsx",
-        "MemoryWidget.jsx"
+        "GoalTrackerWidget.jsx",
+        "MemoryWidget.jsx",
+        "NotesWidget.jsx",
+        "PomodoroWidget.jsx",
+        "WaterTrackerWidget.jsx",
+        "WeatherWidget.jsx"
       ],
       "enabled": true,
       "priority": 1
     }
   ],
-  "generatedAt": "2025-11-09T13:50:36.259Z",
+  "generatedAt": "2025-11-09T23:22:16.168Z",
   "generator": "discover-plugins.js"
 }

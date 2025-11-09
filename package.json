@@ -36,8 +36,10 @@
     "chartjs-adapter-date-fns": "^3.0.0",
     "daisyui": "^5.0.50",
     "date-fns": "^4.1.0",
+    "draggabilly": "^3.0.0",
     "kill-port": "^2.0.1",
     "monaco-editor": "^0.52.2",
+    "packery": "^3.0.0",
     "solid-js": "^1.9.7",
     "solid-refresh": "^0.7.5",
     "vite-solid-starter": "."

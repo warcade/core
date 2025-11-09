@@ -1,14 +1,19 @@
-import { createSignal, For, Show, onMount } from 'solid-js';
+import { createSignal, For, Show, onMount, createEffect, onCleanup, untrack } from 'solid-js';
 import { usePluginAPI } from '@/api/plugin';
 import { IconGripVertical, IconX, IconColumns1, IconColumns2 } from '@tabler/icons-solidjs';
+import Packery from 'packery';
+import Draggabilly from 'draggabilly';
 
 export default function WidgetGrid() {
   const api = usePluginAPI();
   const [widgetLayout, setWidgetLayout] = createSignal([]);
   const [availableWidgets, setAvailableWidgets] = createSignal([]);
-  const [draggedItem, setDraggedItem] = createSignal(null);
-  const [dragOverIndex, setDragOverIndex] = createSignal(null);
-  const [isDragging, setIsDragging] = createSignal(false);
+  const [draggedIndex, setDraggedIndex] = createSignal(null);
+  const [dropTargetIndex, setDropTargetIndex] = createSignal(null);
+  let containerRef;
+  let packeryInstance = null;
+  let isDragging = false;
+  let isInitialized = false;
 
   onMount(() => {
     // Small delay to ensure plugins are loaded
@@ -72,59 +77,6 @@ export default function WidgetGrid() {
     localStorage.setItem('dashboard-widget-layout', JSON.stringify(layout));
   };
 
-  const handleDragStart = (e, index) => {
-    setDraggedItem(index);
-    setIsDragging(true);
-    e.dataTransfer.effectAllowed = 'move';
-    // Add a slight delay to allow the drag image to be created
-    setTimeout(() => {
-      e.target.style.opacity = '0.4';
-    }, 0);
-  };
-
-  const handleDragOver = (e, index) => {
-    e.preventDefault();
-    e.dataTransfer.dropEffect = 'move';
-    setDragOverIndex(index);
-  };
-
-  const handleDragLeave = () => {
-    setDragOverIndex(null);
-  };
-
-  const handleDrop = (e, dropIndex) => {
-    e.preventDefault();
-    const dragIndex = draggedItem();
-
-    if (dragIndex === null || dragIndex === dropIndex) {
-      setDraggedItem(null);
-      setDragOverIndex(null);
-      return;
-    }
-
-    const newLayout = [...widgetLayout()];
-    const [movedItem] = newLayout.splice(dragIndex, 1);
-    newLayout.splice(dropIndex, 0, movedItem);
-
-    // Update order
-    const updatedLayout = newLayout.map((item, index) => ({
-      ...item,
-      order: index
-    }));
-
-    setWidgetLayout(updatedLayout);
-    saveLayout(updatedLayout);
-    setDraggedItem(null);
-    setDragOverIndex(null);
-  };
-
-  const handleDragEnd = (e) => {
-    e.target.style.opacity = '1';
-    setDraggedItem(null);
-    setDragOverIndex(null);
-    setIsDragging(false);
-  };
-
   const removeWidget = (widgetId) => {
     const newLayout = widgetLayout().filter(item => item.id !== widgetId);
     const updatedLayout = newLayout.map((item, index) => ({
@@ -133,16 +85,6 @@ export default function WidgetGrid() {
     }));
     setWidgetLayout(updatedLayout);
     saveLayout(updatedLayout);
-  };
-
-  const addWidget = (widgetId) => {
-    const newLayout = [...widgetLayout(), {
-      id: widgetId,
-      order: widgetLayout().length,
-      columns: 1 // Default to 1 column
-    }];
-    setWidgetLayout(newLayout);
-    saveLayout(newLayout);
   };
 
   const toggleWidgetColumns = (widgetId) => {
@@ -163,126 +105,284 @@ export default function WidgetGrid() {
     return availableWidgets().find(w => w.id === widgetId);
   };
 
+  const calculateColumns = () => {
+    if (!containerRef) return 6;
+    const horizontalPadding = 32; // 16px left + 16px right
+    const containerWidth = containerRef.offsetWidth - horizontalPadding;
+    const minColumnWidth = 180; // Reduced from 200 to allow more columns
+    const gutter = 16;
+
+    const maxColumns = Math.floor((containerWidth + gutter) / (minColumnWidth + gutter));
+    return Math.max(1, Math.min(maxColumns, 8)); // Increased max from 6 to 8 columns
+  };
+
+  const initPackery = () => {
+    if (!containerRef) return;
+
+    // Destroy existing instance
+    if (packeryInstance) {
+      packeryInstance.destroy();
+    }
+
+    // Calculate column width based on container (accounting for horizontal padding)
+    const horizontalPadding = 32; // 16px left + 16px right
+    const containerWidth = containerRef.offsetWidth - horizontalPadding;
+    const gutter = 16;
+    const columns = calculateColumns();
+    const columnWidth = (containerWidth - (gutter * (columns - 1))) / columns;
+
+    // Initialize Packery
+    packeryInstance = new Packery(containerRef, {
+      itemSelector: '.widget-item',
+      columnWidth: columnWidth,
+      gutter: gutter,
+      transitionDuration: '0.2s',
+      stagger: 0,
+      isInitLayout: true
+    });
+
+    // Force Packery to reload and recognize all items
+    packeryInstance.reloadItems();
+    packeryInstance.layout();
+
+    // Make all widget items draggable using Draggabilly
+    const itemElems = containerRef.querySelectorAll('.widget-item');
+
+    itemElems.forEach((itemElem) => {
+      const draggie = new Draggabilly(itemElem, {
+        handle: '.drag-handle',
+        grid: [1, 1] // Smoother dragging with finer grid
+      });
+
+      // Store draggabilly instance
+      packeryInstance.bindDraggabillyEvents(draggie);
+
+      // Track drag state
+      draggie.on('dragStart', () => {
+        isDragging = true;
+      });
+
+      // Save new order after drag
+      draggie.on('dragEnd', () => {
+        isDragging = false;
+
+        const items = packeryInstance.getItemElements();
+        const newLayout = items.map((elem, index) => {
+          const widgetId = elem.getAttribute('data-widget-id');
+          const layoutItem = widgetLayout().find(item => item.id === widgetId);
+          return {
+            ...layoutItem,
+            order: index
+          };
+        });
+
+        // Only update if order actually changed
+        const currentOrder = widgetLayout().map(item => item.id).join(',');
+        const newOrder = newLayout.map(item => item.id).join(',');
+
+        if (currentOrder !== newOrder) {
+          // Save to localStorage only - don't update state to avoid re-render
+          localStorage.setItem('dashboard-widget-layout', JSON.stringify(newLayout));
+
+          // Update the data attributes to keep DOM in sync without re-rendering
+          items.forEach((elem, index) => {
+            elem.setAttribute('data-order', index);
+          });
+        }
+      });
+    });
+
+    isInitialized = true;
+  };
+
+  const layoutPackery = () => {
+    if (packeryInstance) {
+      packeryInstance.layout();
+    }
+  };
+
+  // Initialize packery when widgets are loaded
+  createEffect(() => {
+    const layout = widgetLayout();
+    if (layout.length > 0 && containerRef && !isInitialized) {
+      setTimeout(() => {
+        initPackery();
+        setTimeout(() => layoutPackery(), 100);
+      }, 100);
+    }
+  });
+
+  // Relayout on window resize and panel resize
+  onMount(() => {
+    let resizeTimeout;
+    let lastColumns = calculateColumns();
+
+    const handleResize = () => {
+      // Debounce to prevent resize loop
+      clearTimeout(resizeTimeout);
+      resizeTimeout = setTimeout(() => {
+        if (widgetLayout().length > 0 && containerRef) {
+          const newColumns = calculateColumns();
+
+          // If column count changed, reinitialize to recalculate everything
+          if (newColumns !== lastColumns) {
+            lastColumns = newColumns;
+            isInitialized = false;
+            initPackery();
+          } else if (packeryInstance) {
+            // Just update width and relayout
+            const horizontalPadding = 32; // 16px left + 16px right
+            const containerWidth = containerRef.offsetWidth - horizontalPadding;
+            const gutter = 16;
+            const columnWidth = (containerWidth - (gutter * (newColumns - 1))) / newColumns;
+
+            // Update packery column width and force relayout
+            packeryInstance.options.columnWidth = columnWidth;
+
+            // Update widget widths
+            const widgetElements = containerRef.querySelectorAll('.widget-item');
+            widgetElements.forEach((elem) => {
+              const widgetId = elem.getAttribute('data-widget-id');
+              const layoutItem = widgetLayout().find(item => item.id === widgetId);
+              if (layoutItem) {
+                const columns = layoutItem.columns || 1;
+                const width = getWidgetWidth(columns);
+                elem.style.width = `${width}px`;
+              }
+            });
+
+            packeryInstance.layout();
+          }
+        }
+      }, 150);
+    };
+
+    // Use ResizeObserver to detect panel resize
+    const resizeObserver = new ResizeObserver(() => {
+      handleResize();
+    });
+
+    if (containerRef?.parentElement) {
+      resizeObserver.observe(containerRef.parentElement);
+    }
+
+    window.addEventListener('resize', handleResize);
+    onCleanup(() => {
+      clearTimeout(resizeTimeout);
+      window.removeEventListener('resize', handleResize);
+      resizeObserver.disconnect();
+      if (packeryInstance) {
+        packeryInstance.destroy();
+      }
+    });
+  });
+
+  const getWidgetWidth = (requestedColumns) => {
+    if (!containerRef) return 300;
+    const horizontalPadding = 32; // 16px left + 16px right
+    const containerWidth = containerRef.offsetWidth - horizontalPadding;
+    const gutter = 16;
+    const numColumns = calculateColumns();
+    const columnWidth = (containerWidth - (gutter * (numColumns - 1))) / numColumns;
+
+    // If requesting 2 columns but there's not enough space, use 1 column
+    if (requestedColumns === 2) {
+      const twoColWidth = columnWidth * 2 + gutter;
+      const minTwoColWidth = 400;
+
+      if (twoColWidth < minTwoColWidth || numColumns < 4) {
+        return columnWidth;
+      }
+      return twoColWidth;
+    }
+
+    return columnWidth;
+  };
+
   return (
     <div class="h-full overflow-y-auto bg-gradient-to-br from-base-300 to-base-200 p-4">
       <div class="max-w-7xl mx-auto">
-        {/* Widget Grid */}
-        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+        {/* Masonry Layout Container */}
+        <div ref={containerRef} style={{ padding: '0 16px' }}>
           <For each={widgetLayout()}>
             {(layoutItem, index) => {
               const widget = getWidgetById(layoutItem.id);
               if (!widget) return null;
 
               const WidgetComponent = widget.component;
-              const isBeingDragged = draggedItem() === index();
-              const isDragOver = dragOverIndex() === index();
               const columns = layoutItem.columns || 1;
+              const width = untrack(() => getWidgetWidth(columns));
+              const isDragged = () => draggedIndex() === index();
+              const isDropTarget = () => dropTargetIndex() === index() && draggedIndex() !== null && draggedIndex() !== index();
 
               return (
-                <>
-                  {/* Drop Zone Before Widget */}
-                  <Show when={isDragging() && !isBeingDragged}>
-                    <div
-                      class={`transition-all duration-200 rounded-lg border-2 border-dashed ${
-                        isDragOver ? 'border-primary bg-primary/10 scale-105' : 'border-base-300 bg-base-200/50'
-                      }`}
-                      classList={{
-                        'md:col-span-2 lg:col-span-2': columns === 2,
-                        'md:col-span-1 lg:col-span-1': columns === 1
-                      }}
-                      style={{
-                        'min-height': '100px',
-                        'display': 'flex',
-                        'align-items': 'center',
-                        'justify-content': 'center'
-                      }}
-                      onDragOver={(e) => handleDragOver(e, index())}
-                      onDragLeave={handleDragLeave}
-                      onDrop={(e) => handleDrop(e, index())}
-                    >
-                      <div class={`text-xs transition-opacity ${isDragOver ? 'opacity-100' : 'opacity-40'}`}>
-                        Drop here
-                      </div>
-                    </div>
-                  </Show>
-
-                  {/* Widget Container with Controls */}
                   <div
-                    class={`relative group transition-all duration-200 ${
-                      isBeingDragged ? 'opacity-40 scale-95' : ''
-                    }`}
+                    class="widget-item relative group mb-4"
                     classList={{
-                      'md:col-span-2 lg:col-span-2': columns === 2,
-                      'md:col-span-1 lg:col-span-1': columns === 1
+                      'ring-4 ring-primary ring-offset-2': isDropTarget(),
+                      'opacity-30': isDragged()
                     }}
-                    draggable={true}
-                    onDragStart={(e) => handleDragStart(e, index())}
-                    onDragOver={(e) => handleDragOver(e, index())}
-                    onDragLeave={handleDragLeave}
-                    onDrop={(e) => handleDrop(e, index())}
-                    onDragEnd={handleDragEnd}
+                    data-widget-id={layoutItem.id}
+                    data-order={layoutItem.order}
                     style={{
-                      'cursor': 'grab'
+                      width: `${width}px`
                     }}
                   >
-                    {/* Floating Control Bar */}
-                    <div class="absolute -top-2 -right-2 z-10 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                      <div class="flex items-center gap-1 bg-base-100 shadow-lg rounded-lg p-1 border border-base-300">
-                        <div class="cursor-grab active:cursor-grabbing px-1" title="Drag to reorder">
-                          <IconGripVertical size={14} class="text-base-content/50" />
-                        </div>
-                        <div class="w-px h-4 bg-base-300"></div>
-                        <button
-                          class="btn btn-ghost btn-xs btn-square hover:bg-base-300"
-                          onClick={() => toggleWidgetColumns(widget.id)}
-                          title={`Switch to ${columns === 1 ? '2' : '1'} column${columns === 1 ? 's' : ''}`}
-                        >
-                          {columns === 1 ? <IconColumns2 size={14} /> : <IconColumns1 size={14} />}
-                        </button>
-                        <button
-                          class="btn btn-ghost btn-xs btn-square hover:bg-error hover:text-error-content"
-                          onClick={() => removeWidget(widget.id)}
-                          title="Remove widget"
-                        >
-                          <IconX size={14} />
-                        </button>
+                  {/* Floating Control Bar with Drag Handle */}
+                  <div class="absolute -top-2 -right-2 z-30 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <div class="flex items-center gap-1 bg-base-100 shadow-lg rounded-lg p-1 border border-base-300">
+                      <div
+                        class="drag-handle cursor-grab active:cursor-grabbing px-1 hover:bg-base-200 rounded"
+                      >
+                        <IconGripVertical size={14} class="text-base-content/50" />
                       </div>
-                    </div>
-
-                    {/* Widget Content (the widget IS the card) */}
-                    <div class={`h-full transition-all duration-200 ${
-                      isBeingDragged ? 'ring-2 ring-primary' : ''
-                    }`}>
-                      <WidgetComponent />
+                      <div class="w-px h-4 bg-base-300"></div>
+                      <button
+                        class="btn btn-ghost btn-xs btn-square hover:bg-base-300"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          toggleWidgetColumns(widget.id);
+                          setTimeout(() => layoutPackery(), 100);
+                        }}
+                      >
+                        {columns === 1 ? <IconColumns2 size={14} /> : <IconColumns1 size={14} />}
+                      </button>
+                      <button
+                        class="btn btn-ghost btn-xs btn-square hover:bg-error hover:text-error-content"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          removeWidget(widget.id);
+                        }}
+                      >
+                        <IconX size={14} />
+                      </button>
                     </div>
                   </div>
-                </>
+
+                  {/* Widget Content */}
+                  <div class="relative">
+                    <Show when={isDropTarget()}>
+                      <div class="absolute inset-0 flex items-center justify-center bg-primary/20 rounded-lg z-10 pointer-events-none">
+                        <span class="text-primary font-semibold text-lg bg-base-100 px-4 py-2 rounded-lg shadow-lg">
+                          Drop here
+                        </span>
+                      </div>
+                    </Show>
+                    <WidgetComponent />
+                  </div>
+                </div>
               );
             }}
           </For>
-
-          {/* Drop Zone at End */}
-          <Show when={isDragging()}>
-            <div
-              class={`transition-all duration-200 rounded-lg border-2 border-dashed ${
-                dragOverIndex() === widgetLayout().length ? 'border-primary bg-primary/10 scale-105' : 'border-base-300 bg-base-200/50'
-              }`}
-              style={{
-                'min-height': '100px',
-                'display': 'flex',
-                'align-items': 'center',
-                'justify-content': 'center'
-              }}
-              onDragOver={(e) => handleDragOver(e, widgetLayout().length)}
-              onDragLeave={handleDragLeave}
-              onDrop={(e) => handleDrop(e, widgetLayout().length)}
-            >
-              <div class={`text-xs transition-opacity ${dragOverIndex() === widgetLayout().length ? 'opacity-100' : 'opacity-40'}`}>
-                Drop at end
-              </div>
-            </div>
-          </Show>
         </div>
+
+        {/* Instructions when empty */}
+        <Show when={widgetLayout().length === 0}>
+          <div class="text-center py-20 opacity-50">
+            <p class="text-lg">No widgets on dashboard</p>
+            <p class="text-sm mt-2">Widgets will appear here automatically</p>
+          </div>
+        </Show>
       </div>
     </div>
   );

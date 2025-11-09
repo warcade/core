@@ -28,6 +28,7 @@
     ],
     "security": {
       "csp": null,
+      "dangerousDisableAssetCspModification": true,
       "capabilities": [
         {
           "identifier": "main-capability",

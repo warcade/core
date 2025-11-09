@@ -105,7 +105,7 @@ export default function ClockWidget() {
               style={{
                 width: '1.5px',
                 height: '50px',
-                'background': 'var(--fallback-in,oklch(var(--in)))',
+                'background': '#ef4444',
                 'border-radius': '1px',
                 transform: `translate(-50%, -100%) rotate(${rotation().second}deg)`
               }}
