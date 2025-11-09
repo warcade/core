@@ -524,8 +524,9 @@ export default function MyPanel() {
 ```rust
 mod router;  // Import router module
 
-use crate::core::plugin::{Plugin, PluginMetadata};
+use crate::core::plugin::Plugin;
 use crate::core::plugin_context::PluginContext;
+use crate::plugin_metadata;
 use async_trait::async_trait;
 use std::sync::Arc;
 use anyhow::Result;
@@ -534,16 +535,14 @@ pub struct MyPlugin;
 
 #[async_trait]
 impl Plugin for MyPlugin {
-    fn metadata(&self) -> PluginMetadata {
-        PluginMetadata {
-            id: "my-plugin".to_string(),
-            name: "My Plugin".to_string(),
-            version: "1.0.0".to_string(),
-            description: "Plugin description".to_string(),
-            author: "Your Name".to_string(),
-            dependencies: vec![],  // Other plugin IDs this depends on
-        }
-    }
+    // Define metadata using the macro
+    plugin_metadata!("my-plugin", "My Plugin", "1.0.0", "Plugin description");
+
+    // With dependencies:
+    // plugin_metadata!("my-plugin", "My Plugin", "1.0.0", "Description", deps: ["other-plugin"]);
+
+    // With custom author:
+    // plugin_metadata!("my-plugin", "My Plugin", "1.0.0", "Description", author: "Your Name");
 
     async fn init(&self, ctx: &PluginContext) -> Result<()> {
         log::info!("[My Plugin] Initializing...");
@@ -603,7 +602,7 @@ The `PluginContext` provides these APIs:
 
 #### Database
 ```rust
-// Get SQLite connection
+// Get SQLite connection (if you need raw access)
 let conn = ctx.db()?;
 
 // Run migrations (tracked per plugin)
@@ -611,6 +610,29 @@ ctx.migrate(&[
     "CREATE TABLE IF NOT EXISTS my_table (...)",
     "ALTER TABLE my_table ADD COLUMN ...",
 ])?;
+
+// Query helper methods - use these instead of raw connections!
+let items: Vec<String> = ctx.query(
+    "SELECT name FROM my_table WHERE active = ?1",
+    [true],
+    |row| row.get(0)
+)?;
+
+let count: i64 = ctx.query_row(
+    "SELECT COUNT(*) FROM my_table",
+    [],
+    |row| row.get(0)
+)?;
+
+let rows_affected = ctx.execute(
+    "UPDATE my_table SET value = ?1 WHERE id = ?2",
+    rusqlite::params!["new_value", 123]
+)?;
+
+ctx.execute_batch(r#"
+    CREATE INDEX IF NOT EXISTS idx_name ON my_table(name);
+    CREATE INDEX IF NOT EXISTS idx_created ON my_table(created_at);
+"#)?;
 ```
 
 #### Events
@@ -681,48 +703,26 @@ let id = ctx.plugin_id();
 ```rust
 use crate::core::plugin_context::PluginContext;
 use crate::core::plugin_router::PluginRouter;
-use hyper::{Method, Request, Response, StatusCode, body::Incoming};
-use http_body_util::{Full, BodyExt};
-use hyper::body::{Bytes, Body};
-use bytes::Buf;
+use crate::core::router_utils::*;  // Shared utilities
+use crate::route;  // Route macro
+use hyper::{Request, Response, StatusCode, body::Incoming};
+use hyper::body::Bytes;
+use http_body_util::combinators::BoxBody;
+use std::convert::Infallible;
 use anyhow::Result;
 
 pub async fn register_routes(ctx: &PluginContext) -> Result<()> {
     let mut router = PluginRouter::new();
 
-    // GET /my-plugin/data
-    router.route(Method::GET, "/data", |_path, _query, _req| {
-        Box::pin(async move {
-            handle_get_data().await
-        })
-    });
-
-    // GET /my-plugin/item?id=123
-    router.route(Method::GET, "/item", |_path, query, _req| {
-        Box::pin(async move {
-            handle_get_item(query).await
-        })
-    });
-
-    // POST /my-plugin/create
-    router.route(Method::POST, "/create", |_path, _query, req| {
-        Box::pin(async move {
-            handle_create(req).await
-        })
-    });
+    // Register routes using the macro
+    route!(router, GET "/data" => handle_get_data);
+    route!(router, GET "/item", query => handle_get_item);
+    route!(router, POST "/create" => handle_create);
+    route!(router, DELETE "/item/:id", path => handle_delete);
+    route!(router, OPTIONS "/create" => cors_preflight);
 
     ctx.register_router("my-plugin", router).await;
     Ok(())
-}
-
-// Helper type aliases for responses
-type BoxBody<T, E> = http_body_util::combinators::BoxBody<T, E>;
-use std::convert::Infallible;
-
-fn full_body(s: &str) -> BoxBody<Bytes, Infallible> {
-    http_body_util::Full::new(Bytes::from(s.to_string()))
-        .map_err(|never| match never {})
-        .boxed()
 }
 
 // GET handler
@@ -754,19 +754,16 @@ async fn handle_get_data() -> Response<BoxBody<Bytes, Infallible>> {
 }
 
 // Query parameter handler
-async fn handle_get_item(query: &str) -> Response<BoxBody<Bytes, Infallible>> {
-    // Parse query string
-    let params: std::collections::HashMap<String, String> =
-        url::form_urlencoded::parse(query.as_bytes())
-            .into_owned()
-            .collect();
+async fn handle_get_item(query: String) -> Response<BoxBody<Bytes, Infallible>> {
+    let id_str = match parse_query_param(&query, "id") {
+        Some(val) => val,
+        None => return error_response(StatusCode::BAD_REQUEST, "Missing 'id' parameter")
+    };
 
-    let id = params.get("id")
-        .and_then(|s| s.parse::<i64>().ok());
-
-    if id.is_none() {
-        return error_response(StatusCode::BAD_REQUEST, "Missing 'id' parameter");
-    }
+    let id = match id_str.parse::<i64>() {
+        Ok(val) => val,
+        Err(_) => return error_response(StatusCode::BAD_REQUEST, "Invalid 'id' parameter")
+    };
 
     // Query database
     let db_path = crate::core::database::get_database_path();
@@ -774,7 +771,7 @@ async fn handle_get_item(query: &str) -> Response<BoxBody<Bytes, Infallible>> {
 
     match conn.query_row(
         "SELECT id, name, value FROM my_table WHERE id = ?1",
-        [id.unwrap()],
+        [id],
         |row| {
             Ok(serde_json::json!({
                 "id": row.get::<_, i64>(0)?,
@@ -790,26 +787,9 @@ async fn handle_get_item(query: &str) -> Response<BoxBody<Bytes, Infallible>> {
 
 // POST handler with body
 async fn handle_create(req: Request<Incoming>) -> Response<BoxBody<Bytes, Infallible>> {
-    // Read request body
-    let whole_body = match req.collect().await {
-        Ok(collected) => collected.to_bytes(),
-        Err(e) => {
-            return error_response(
-                StatusCode::BAD_REQUEST,
-                &format!("Failed to read body: {}", e)
-            );
-        }
-    };
-
-    // Parse JSON
-    let body: serde_json::Value = match serde_json::from_reader(whole_body.reader()) {
-        Ok(v) => v,
-        Err(e) => {
-            return error_response(
-                StatusCode::BAD_REQUEST,
-                &format!("Invalid JSON: {}", e)
-            );
-        }
+    let body = match read_json_body(req).await {
+        Ok(b) => b,
+        Err(e) => return error_response(StatusCode::BAD_REQUEST, &e)
     };
 
     let name = body.get("name").and_then(|v| v.as_str()).unwrap_or("");
@@ -836,27 +816,6 @@ async fn handle_create(req: Request<Incoming>) -> Response<BoxBody<Bytes, Infall
     }
 }
 
-// Response helpers
-fn json_response<T: serde::Serialize>(data: &T) -> Response<BoxBody<Bytes, Infallible>> {
-    let json = serde_json::to_string(data).unwrap_or_else(|_| "{}".to_string());
-    Response::builder()
-        .status(StatusCode::OK)
-        .header("Content-Type", "application/json")
-        .header("Access-Control-Allow-Origin", "*")
-        .body(full_body(&json))
-        .unwrap()
-}
-
-fn error_response(status: StatusCode, message: &str) -> Response<BoxBody<Bytes, Infallible>> {
-    let json = serde_json::json!({"error": message}).to_string();
-    Response::builder()
-        .status(status)
-        .header("Content-Type", "application/json")
-        .header("Access-Control-Allow-Origin", "*")
-        .body(full_body(&json))
-        .unwrap()
-}
-
 fn current_timestamp() -> i64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -869,40 +828,33 @@ fn current_timestamp() -> i64 {
 
 ## Simplified Plugin Utilities
 
-WebArcade provides simplified utilities to reduce boilerplate code when writing plugins.
+WebArcade provides utilities to eliminate boilerplate code in plugins.
 
 ### Router Utilities
 
-Instead of writing duplicate helper functions in every plugin, import shared utilities:
+Import shared utilities instead of defining them in every plugin:
 
 ```rust
 use crate::core::router_utils::*;
 ```
 
-#### Available Utilities
+**Available Functions:**
 
-**Request Parsing:**
 ```rust
 // Read JSON body from POST/PUT requests
 let body = read_json_body(req).await?;
-let name = body.get("name").and_then(|v| v.as_str());
 
 // Parse query parameters
 let id = parse_query_param(&query, "id");
-```
 
-**Response Helpers:**
-```rust
 // JSON response with CORS headers
 json_response(&serde_json::json!({"data": "value"}))
 
 // Error response with status code
 error_response(StatusCode::BAD_REQUEST, "Invalid input")
 
-// Convert string to HTTP body
+// Convert string/bytes to HTTP body
 full_body("Hello World")
-
-// Convert bytes to HTTP body
 bytes_body(vec![1, 2, 3])
 
 // CORS preflight response
@@ -911,96 +863,42 @@ cors_preflight()
 
 ### Plugin Metadata Macro
 
-Simplify plugin metadata definition with the `plugin_metadata!` macro:
+Define metadata in one line:
 
-**Before:**
-```rust
-fn metadata(&self) -> PluginMetadata {
-    PluginMetadata {
-        id: "my-plugin".to_string(),
-        name: "My Plugin".to_string(),
-        version: "1.0.0".to_string(),
-        description: "Plugin description".to_string(),
-        author: "WebArcade Team".to_string(),
-        dependencies: vec![],
-    }
-}
-```
-
-**After:**
 ```rust
 use crate::plugin_metadata;
 
 impl Plugin for MyPlugin {
     plugin_metadata!("my-plugin", "My Plugin", "1.0.0", "Plugin description");
-
-    // ... rest of plugin implementation
 }
 ```
 
-**With dependencies:**
+**With options:**
 ```rust
+// With dependencies
 plugin_metadata!("my-plugin", "My Plugin", "1.0.0", "Description",
-                 deps: ["other-plugin", "another-plugin"]);
-```
+                 deps: ["other-plugin"]);
 
-**With custom author:**
-```rust
+// With custom author
 plugin_metadata!("my-plugin", "My Plugin", "1.0.0", "Description",
                  author: "Your Name");
 ```
 
 ### Route Registration Macro
 
-Simplify route registration with the `route!` macro:
+Register routes in one line:
 
 ```rust
 use crate::route;
-```
 
-**Before:**
-```rust
-router.route(Method::GET, "/data", |_path, _query, _req| {
-    Box::pin(async move {
-        handle_get_data().await
-    })
-});
-
-router.route(Method::POST, "/create", |_path, _query, req| {
-    Box::pin(async move {
-        handle_create(req).await
-    })
-});
-```
-
-**After:**
-```rust
 route!(router, GET "/data" => handle_get_data);
 route!(router, POST "/create" => handle_create);
 route!(router, DELETE "/item/:id", path => handle_delete);
 route!(router, GET "/search", query => handle_search);
-```
-
-**Supported Methods:**
-- `GET`, `POST`, `PUT`, `DELETE`, `OPTIONS`
-
-**Variants:**
-```rust
-// Simple GET/DELETE (no parameters)
-route!(router, GET "/list" => handle_list);
-
-// POST/PUT with request body
-route!(router, POST "/create" => handle_create);
-
-// With query string
-route!(router, GET "/search", query => handle_search);
-
-// With path parameters
-route!(router, DELETE "/item/:id", path => handle_delete);
-
-// With both path and query
 route!(router, GET "/item/:id", path, query => handle_get_with_query);
 ```
+
+**Supported methods:** `GET`, `POST`, `PUT`, `DELETE`, `OPTIONS`
 
 ### Database Helper Methods
 
@@ -1123,15 +1021,14 @@ async fn handle_delete(path: String) -> Response<BoxBody<Bytes, Infallible>> {
 }
 ```
 
-### Benefits
+### Why Use These Utilities?
 
-Using these utilities provides:
-
-- **40-50% less code** in plugin routers
-- **Consistent error handling** across all plugins
-- **Better maintainability** - single source of truth for utilities
-- **Type safety** - macros catch errors at compile time
-- **CORS support** - automatic CORS headers on all responses
+- **40-50% less code** - No boilerplate in every plugin
+- **Consistent patterns** - All plugins work the same way
+- **Better maintainability** - Update once, applies everywhere
+- **Type safety** - Macros catch errors at compile time
+- **CORS built-in** - Automatic CORS headers on all responses
+- **Faster development** - Focus on logic, not boilerplate
 
 ---
 
@@ -1848,8 +1745,9 @@ export default function CounterPanel() {
 ```rust
 mod router;
 
-use crate::core::plugin::{Plugin, PluginMetadata};
+use crate::core::plugin::Plugin;
 use crate::core::plugin_context::PluginContext;
+use crate::plugin_metadata;
 use async_trait::async_trait;
 use std::sync::Arc;
 use anyhow::Result;
@@ -1858,16 +1756,7 @@ pub struct CounterPlugin;
 
 #[async_trait]
 impl Plugin for CounterPlugin {
-    fn metadata(&self) -> PluginMetadata {
-        PluginMetadata {
-            id: "counter".to_string(),
-            name: "Counter".to_string(),
-            version: "1.0.0".to_string(),
-            description: "Click counter with persistence".to_string(),
-            author: "WebArcade".to_string(),
-            dependencies: vec![],
-        }
-    }
+    plugin_metadata!("counter", "Counter", "1.0.0", "Click counter with persistence");
 
     async fn init(&self, ctx: &PluginContext) -> Result<()> {
         log::info!("[Counter] Initializing...");
@@ -1927,39 +1816,21 @@ fn current_timestamp() -> i64 {
 ```rust
 use crate::core::plugin_context::PluginContext;
 use crate::core::plugin_router::PluginRouter;
-use hyper::{Method, Response, StatusCode};
-use http_body_util::Full;
+use crate::core::router_utils::*;
+use crate::route;
+use hyper::{Response, StatusCode};
 use hyper::body::Bytes;
-use anyhow::Result;
-
-type BoxBody<T, E> = http_body_util::combinators::BoxBody<T, E>;
+use http_body_util::combinators::BoxBody;
 use std::convert::Infallible;
-
-fn full_body(s: &str) -> BoxBody<Bytes, Infallible> {
-    use http_body_util::BodyExt;
-    Full::new(Bytes::from(s.to_string()))
-        .map_err(|never| match never {})
-        .boxed()
-}
+use anyhow::Result;
 
 pub async fn register_routes(ctx: &PluginContext) -> Result<()> {
     let mut router = PluginRouter::new();
 
-    router.route(Method::GET, "/current", |_path, _query, _req| {
-        Box::pin(async move { get_current().await })
-    });
-
-    router.route(Method::POST, "/increment", |_path, _query, _req| {
-        Box::pin(async move { increment().await })
-    });
-
-    router.route(Method::POST, "/reset", |_path, _query, _req| {
-        Box::pin(async move { reset().await })
-    });
-
-    router.route(Method::GET, "/history", |_path, _query, _req| {
-        Box::pin(async move { get_history().await })
-    });
+    route!(router, GET "/current" => get_current);
+    route!(router, POST "/increment" => increment);
+    route!(router, POST "/reset" => reset);
+    route!(router, GET "/history" => get_history);
 
     ctx.register_router("counter", router).await;
     Ok(())
@@ -2037,16 +1908,6 @@ async fn get_history() -> Response<BoxBody<Bytes, Infallible>> {
       .unwrap();
 
     json_response(&history)
-}
-
-fn json_response<T: serde::Serialize>(data: &T) -> Response<BoxBody<Bytes, Infallible>> {
-    let json = serde_json::to_string(data).unwrap();
-    Response::builder()
-        .status(StatusCode::OK)
-        .header("Content-Type", "application/json")
-        .header("Access-Control-Allow-Origin", "*")
-        .body(full_body(&json))
-        .unwrap()
 }
 
 fn current_timestamp() -> i64 {

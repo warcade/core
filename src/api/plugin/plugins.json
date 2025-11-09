@@ -27,8 +27,15 @@
       "main": "index.jsx",
       "enabled": true,
       "priority": 1
+    },
+    {
+      "id": "test-plugin",
+      "path": "/plugins/test-plugin",
+      "main": "index.jsx",
+      "enabled": true,
+      "priority": 1
     }
   ],
-  "generatedAt": "2025-11-09T03:47:17.282Z",
+  "generatedAt": "2025-11-09T03:57:33.562Z",
   "generator": "discover-plugins.js"
 }
