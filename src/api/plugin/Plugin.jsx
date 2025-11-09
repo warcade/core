@@ -5,6 +5,7 @@ export function createPlugin(config) {
     version,
     description = 'No description provided',
     author = 'Unknown',
+    icon = null,
     onInit = async () => {},
     onStart = async () => {},
     onUpdate = () => {},
@@ -27,6 +28,7 @@ export function createPlugin(config) {
       getVersion: () => version,
       getDescription: () => description,
       getAuthor: () => author,
+      getIcon: () => icon,
 
       async onInit() {
         if (initialized) return;

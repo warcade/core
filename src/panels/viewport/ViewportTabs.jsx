@@ -10,6 +10,7 @@ const ViewportTabs = () => {
   const [overflowDropdown, setOverflowDropdown] = createSignal(false);
   const [dropdownPosition, setDropdownPosition] = createSignal({ top: 0, left: 0 });
   const [visibleTabCount, setVisibleTabCount] = createSignal(99);
+  const [windowWidth, setWindowWidth] = createSignal(0);
   let containerRef;
   let tabsContainerRef;
   let dropdownButtonRef;
@@ -203,7 +204,11 @@ const ViewportTabs = () => {
 
   // Set up resize listener
   onMount(() => {
+    // Initialize window width
+    setWindowWidth(window.innerWidth);
+
     const handleResize = () => {
+      setWindowWidth(window.innerWidth);
       calculateVisibleTabs();
       // Close dropdown on resize to avoid positioning issues
       if (overflowDropdown()) {
@@ -337,7 +342,7 @@ const ViewportTabs = () => {
             className="fixed bg-base-200 backdrop-blur-sm border-l border-r border-b border-base-300 shadow-xl min-w-48 max-h-96 overflow-y-auto"
             style={{
               top: `${dropdownPosition().top - 1}px`,
-              right: `${window.innerWidth - dropdownPosition().left - (dropdownButtonRef?.offsetWidth || 40)}px`,
+              right: `${windowWidth() - dropdownPosition().left - (dropdownButtonRef?.offsetWidth || 40)}px`,
               'z-index': 10000,
               'border-top-left-radius': '0',
               'border-top-right-radius': '0',

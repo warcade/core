@@ -8,6 +8,7 @@ export default createPlugin({
   version: '1.0.0',
   description: 'Dashboard with plugin widgets',
   author: 'WebArcade Team',
+  icon: IconChartLine,
 
   async onInit() {
 

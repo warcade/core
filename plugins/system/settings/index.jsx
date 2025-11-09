@@ -8,6 +8,7 @@ export default createPlugin({
   version: '1.0.0',
   description: 'Application settings and preferences',
   author: 'WebArcade Team',
+  icon: IconSettings,
 
   async onStart(api) {
     console.log('[Settings Plugin] Starting...');
@@ -19,6 +20,8 @@ export default createPlugin({
       icon: IconSettings,
       order: 999 // Put at the end
     });
+
+    // Widgets are auto-loaded from ./widgets/ directory
 
     console.log('[Settings Plugin] Started successfully');
   },

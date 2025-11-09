@@ -9,6 +9,7 @@ export default createPlugin({
   version: '1.0.0',
   description: 'Execute SQL queries and manage the SQLite database',
   author: 'WebArcade Team',
+  icon: IconDatabase,
 
   async onStart(api) {
     console.log('[Webarcade Database Plugin] Starting...');

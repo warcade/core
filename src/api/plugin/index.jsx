@@ -11,6 +11,7 @@ const [viewportTypes, setViewportTypes] = createSignal(new Map());
 const [footerButtons, setFooterButtons] = createSignal(new Map());
 const [leftPanelMenuItems, setLeftPanelMenuItems] = createSignal(new Map());
 const [registeredPlugins, setRegisteredPlugins] = createSignal(new Map());
+const [widgets, setWidgets] = createSignal(new Map());
 const [propertiesPanelVisible, setPropertiesPanelVisible] = createSignal(true);
 const [leftPanelVisible, setLeftPanelVisible] = createSignal(true);
 const [horizontalMenuButtonsEnabled, setHorizontalMenuButtonsEnabled] = createSignal(true);
@@ -287,10 +288,13 @@ class PluginLoader {
       this.setPluginState(pluginId, PLUGIN_STATES.STARTING);
       // Starting plugin
 
+      // Set the plugin context for auto-registration
+      this.PluginAPI.setCurrentPluginContext(pluginId);
+
+      // Auto-load widget if it exists
+      await this.autoLoadWidget(pluginId, plugin);
+
       if (typeof plugin.instance.onStart === 'function') {
-        // Set the plugin context for registration tracking during onStart
-        this.PluginAPI.setCurrentPluginContext(pluginId);
-        
         // Wrap onStart in createRoot to properly handle SolidJS effects
         await new Promise((resolve, reject) => {
           createRoot(async (dispose) => {
@@ -305,20 +309,128 @@ class PluginLoader {
             }
           });
         });
-        
-        // Clear the plugin context after onStart
-        this.PluginAPI.clearCurrentPluginContext();
       }
+
+      // Clear the plugin context after onStart
+      this.PluginAPI.clearCurrentPluginContext();
 
       this.setPluginState(pluginId, PLUGIN_STATES.RUNNING);
       // Plugin started successfully
     } catch (error) {
       this.setPluginError(pluginId, error);
       this.setPluginState(pluginId, PLUGIN_STATES.ERROR);
-      
+
       // Clear the plugin context on error
       this.PluginAPI.clearCurrentPluginContext();
       throw error;
+    }
+  }
+
+  async autoLoadWidget(pluginId, plugin) {
+    try {
+      // Get plugin config to check if it has a widget
+      const pluginConfigs = pluginStore.getPluginConfigs();
+      const pluginConfig = pluginConfigs.get(pluginId);
+
+      if (!pluginConfig || !pluginConfig.widget) {
+        return; // No widget to load
+      }
+
+      // Try to load the widget component
+      const widgetPath = `${plugin.path}/${pluginConfig.widget}`;
+      const relativePath = widgetPath.replace('/plugins', '.');
+
+      try {
+        const pluginContext = require.context('../../../plugins', true, /\.(jsx|js)$/);
+
+        if (pluginContext.keys().includes(relativePath)) {
+          const widgetModule = pluginContext(relativePath);
+          const WidgetComponent = widgetModule.default;
+
+          if (WidgetComponent) {
+            // Auto-register the widget
+            const widgetId = `${pluginId}-widget`;
+            const widgetTitle = plugin.manifest.name || pluginId.split('-').map(w =>
+              w.charAt(0).toUpperCase() + w.slice(1)
+            ).join(' ');
+
+            // Get icon from plugin instance if available
+            let widgetIcon = null;
+            if (plugin.instance && typeof plugin.instance.getIcon === 'function') {
+              widgetIcon = plugin.instance.getIcon();
+            }
+
+            this.PluginAPI.registerWidget(widgetId, {
+              title: widgetTitle,
+              component: WidgetComponent,
+              icon: widgetIcon,
+              description: `${widgetTitle} widget`,
+              defaultSize: { w: 2, h: 3 },
+              order: plugin.manifest.priority || 100
+            });
+          }
+        }
+      } catch (error) {
+        // Widget loading failed, but don't break plugin startup
+      }
+    } catch (error) {
+      // Silently fail widget auto-loading
+    }
+  }
+
+  async autoLoadWidgetsFromDirectory(pluginId) {
+    try {
+      const pluginConfigs = pluginStore.getPluginConfigs();
+      const pluginConfig = pluginConfigs.get(pluginId);
+
+      if (!pluginConfig || !pluginConfig.widgets || pluginConfig.widgets.length === 0) {
+        return; // No widgets directory
+      }
+
+      const pluginContext = require.context('../../../plugins', true, /\.(jsx|js)$/);
+
+      for (const widgetFile of pluginConfig.widgets) {
+        try {
+          const widgetPath = `${pluginConfig.path}/widgets/${widgetFile}`;
+          const relativePath = widgetPath.replace('/plugins', '.');
+
+          if (pluginContext.keys().includes(relativePath)) {
+            const widgetModule = pluginContext(relativePath);
+            const WidgetComponent = widgetModule.default;
+
+            if (WidgetComponent) {
+              // Extract widget name from filename
+              const widgetName = widgetFile.replace('.jsx', '').replace(/Widget$/, '');
+              const widgetId = `${pluginId}-${widgetName.toLowerCase()}`;
+
+              // Try to get icon dynamically
+              const iconName = `Icon${widgetName}`;
+              let widgetIcon = null;
+              try {
+                const icons = require('@tabler/icons-solidjs');
+                widgetIcon = icons[iconName] || icons.IconBox;
+              } catch (e) {
+                // Icon not found, will use default
+              }
+
+              this.PluginAPI.registerWidget(widgetId, {
+                title: widgetName,
+                component: WidgetComponent,
+                icon: widgetIcon,
+                description: `${widgetName} widget`,
+                defaultSize: { w: 1, h: 1 },
+                order: 100
+              });
+
+              console.log(`  ✓ Auto-loaded widget: ${widgetId}`);
+            }
+          }
+        } catch (error) {
+          console.error(`  ✗ Failed to auto-load widget ${widgetFile}:`, error);
+        }
+      }
+    } catch (error) {
+      // Silently fail
     }
   }
 
@@ -388,6 +500,13 @@ class PluginLoader {
     }
 
     await Promise.all(startPromises);
+
+    // Auto-load widgets from widgets directories
+    for (const [id] of plugins()) {
+      if (this.getPluginState(id) === PLUGIN_STATES.RUNNING) {
+        await this.autoLoadWidgetsFromDirectory(id);
+      }
+    }
 
     // Plugin loading completed
   }
@@ -728,7 +847,18 @@ export class PluginAPI {
         }
         return newMap;
       });
-      
+
+      // Remove widgets
+      setWidgets(prev => {
+        const newMap = new Map(prev);
+        for (const [key, widget] of newMap) {
+          if (widget.plugin === pluginId) {
+            newMap.delete(key);
+          }
+        }
+        return newMap;
+      });
+
       // Remove from registered plugins
       setRegisteredPlugins(prev => {
         const newMap = new Map(prev);
@@ -742,18 +872,18 @@ export class PluginAPI {
 
   async initialize() {
     if (this.initialized) return;
-    
+
     // Initializing Plugin API
-    
+
     try {
       await this.pluginLoader.loadAllPlugins();
       this.pluginLoader.startUpdateLoop();
       this.initialized = true;
-      
+
       this.emit('api-initialized', {
         pluginStats: this.pluginLoader.getStats()
       });
-      
+
     } catch (error) {
       throw error;
     }
@@ -864,6 +994,24 @@ export class PluginAPI {
     return true;
   }
 
+  registerWidget(id, config) {
+    const widget = {
+      id,
+      title: config.title,
+      component: config.component,
+      icon: config.icon,
+      description: config.description || '',
+      defaultSize: config.defaultSize || { w: 2, h: 2 },
+      minSize: config.minSize || { w: 1, h: 1 },
+      maxSize: config.maxSize || { w: 12, h: 12 },
+      order: config.order || 100,
+      plugin: config.plugin || this.getCurrentPluginId() || 'unknown'
+    };
+
+    setWidgets(prev => new Map(prev.set(id, widget)));
+    return true;
+  }
+
 
   registerLayoutComponent(region, component) {
     const layoutComponent = {
@@ -917,6 +1065,7 @@ export class PluginAPI {
   tab(id, config) { return this.registerPropertyTab(id, config); }
   viewport(id, config) { return this.registerViewportType(id, config); }
   footer(id, config) { return this.registerFooterButton(id, config); }
+  widget(id, config) { return this.registerWidget(id, config); }
   open(typeId, options) { return this.createViewportTab(typeId, options); }
 
   createViewportTab(typeId, options = {}) {
@@ -1033,6 +1182,10 @@ export class PluginAPI {
 
   getLeftPanelMenuItems() {
     return Array.from(leftPanelMenuItems().values()).sort((a, b) => a.order - b.order);
+  }
+
+  getWidgets() {
+    return Array.from(widgets().values()).sort((a, b) => a.order - b.order);
   }
 
   getPlugins() {
@@ -1171,6 +1324,7 @@ export {
   footerButtons,
   leftPanelMenuItems,
   registeredPlugins,
+  widgets,
   propertiesPanelVisible,
   leftPanelVisible,
   horizontalMenuButtonsEnabled,

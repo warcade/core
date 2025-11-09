@@ -16,6 +16,29 @@ const CORE_PLUGINS = [
   'plugins' // The plugin manager itself
 ];
 
+function scanWidgetsInPlugin(pluginPath) {
+  const widgetsDir = path.join(pluginPath, 'widgets');
+  const widgets = [];
+
+  if (!fs.existsSync(widgetsDir)) {
+    return widgets;
+  }
+
+  try {
+    const files = fs.readdirSync(widgetsDir, { withFileTypes: true });
+
+    for (const file of files) {
+      if (file.isFile() && file.name.endsWith('.jsx')) {
+        widgets.push(file.name);
+      }
+    }
+  } catch (error) {
+    // Ignore errors reading widgets directory
+  }
+
+  return widgets;
+}
+
 function scanPluginsDirectory(baseDir, relativePath = '') {
   const plugins = [];
   const fullPath = path.join(baseDir, relativePath);
@@ -35,6 +58,7 @@ function scanPluginsDirectory(baseDir, relativePath = '') {
     // Check if this directory contains a plugin entry point
     const indexPath = path.join(itemFullPath, 'index.jsx');
     const indexJsPath = path.join(itemFullPath, 'index.js');
+    const widgetPath = path.join(itemFullPath, 'Widget.jsx');
 
     if (fs.existsSync(indexPath) || fs.existsSync(indexJsPath)) {
       // Found a plugin!
@@ -48,10 +72,18 @@ function scanPluginsDirectory(baseDir, relativePath = '') {
       else if (id === 'default') priority = -1;
       else if (isCore) priority = 0;
 
+      // Check if plugin has a legacy Widget.jsx
+      const hasWidget = fs.existsSync(widgetPath);
+
+      // Scan for widgets in widgets subdirectory
+      const widgetFiles = scanWidgetsInPlugin(itemFullPath);
+
       plugins.push({
         id,
         path: `/plugins/${itemPath.replace(/\\/g, '/')}`,
         main: mainFile,
+        widget: hasWidget ? 'Widget.jsx' : null,
+        widgets: widgetFiles.length > 0 ? widgetFiles : null,
         enabled: true,
         priority
       });
