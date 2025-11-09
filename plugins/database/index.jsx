@@ -1,7 +1,7 @@
 import { createPlugin } from '@/api/plugin';
 import { IconDatabase } from '@tabler/icons-solidjs';
-import DatabaseViewport from './DatabaseViewport.jsx';
-import DatabaseMenu from './DatabaseMenu.jsx';
+import DatabaseViewport from './viewport.jsx';
+import DatabaseMenu from './panel.jsx';
 
 export default createPlugin({
   id: 'webarcade-database-plugin',

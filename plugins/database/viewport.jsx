@@ -1,6 +1,6 @@
 import { For, Show, createMemo, createSignal } from 'solid-js';
-import { IconDatabase, IconPlayerPlay, IconAlertCircle, IconCheck, IconX, IconDownload, IconChevronLeft, IconChevronRight, IconEdit, IconTrash, IconPlus, IconColumns, IconDatabaseExport, IconDatabaseImport, IconUpload } from '@tabler/icons-solidjs';
-import { databaseStore } from './databaseStore';
+import { IconDatabase, IconPlayerPlay, IconAlertCircle, IconCheck, IconX, IconDownload, IconChevronLeft, IconChevronRight, IconEdit, IconTrash, IconPlus, IconColumns, IconDatabaseExport, IconDatabaseImport, IconUpload, IconCode } from '@tabler/icons-solidjs';
+import { databaseStore } from './store';
 import { bridgeFetch } from '@/api/bridge.js';
 
 export default function DatabaseViewport() {
@@ -18,20 +18,18 @@ export default function DatabaseViewport() {
   const [importFile, setImportFile] = createSignal(null);
   const [importing, setImporting] = createSignal(false);
   const [exporting, setExporting] = createSignal(false);
+  const [showQueryInput, setShowQueryInput] = createSignal(false);
 
   const exportToCSV = () => {
     const data = databaseStore.results();
     if (!data || data.length === 0) return;
 
-    // Get column names from first row
     const columns = Object.keys(data[0]);
 
-    // Create CSV content
     let csv = columns.join(',') + '\n';
     data.forEach(row => {
       const values = columns.map(col => {
         const val = row[col];
-        // Escape values containing commas or quotes
         if (typeof val === 'string' && (val.includes(',') || val.includes('"'))) {
           return `"${val.replace(/"/g, '""')}"`;
         }
@@ -40,7 +38,6 @@ export default function DatabaseViewport() {
       csv += values.join(',') + '\n';
     });
 
-    // Download
     const blob = new Blob([csv], { type: 'text/csv' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -56,7 +53,6 @@ export default function DatabaseViewport() {
     return Object.keys(data[0]);
   });
 
-  // Pagination computed values
   const totalPages = createMemo(() => {
     const data = databaseStore.results();
     if (!data || data.length === 0) return 0;
@@ -84,7 +80,7 @@ export default function DatabaseViewport() {
   };
 
   const handleEditRow = (row) => {
-    setEditFormData(JSON.parse(JSON.stringify(row))); // Deep copy
+    setEditFormData(JSON.parse(JSON.stringify(row)));
     setEditingRow(row);
   };
 
@@ -94,9 +90,8 @@ export default function DatabaseViewport() {
       return;
     }
 
-    // Find primary key or use first column
     const columns = resultColumns();
-    const pkColumn = columns[0]; // Assuming first column is primary key or unique identifier
+    const pkColumn = columns[0];
 
     if (!confirm(`Are you sure you want to delete this row (${pkColumn}: ${row[pkColumn]})?`)) {
       return;
@@ -105,7 +100,6 @@ export default function DatabaseViewport() {
     try {
       const deleteQuery = `DELETE FROM ${databaseStore.selectedTable()} WHERE ${pkColumn} = ${typeof row[pkColumn] === 'string' ? `'${row[pkColumn]}'` : row[pkColumn]}`;
       await databaseStore.executeQueryWithText(deleteQuery);
-      // Refresh the table
       const refreshQuery = `SELECT * FROM ${databaseStore.selectedTable()} LIMIT 100`;
       await databaseStore.executeQueryWithText(refreshQuery);
     } catch (error) {
@@ -120,9 +114,8 @@ export default function DatabaseViewport() {
 
     try {
       const columns = resultColumns();
-      const pkColumn = columns[0]; // Primary key column
+      const pkColumn = columns[0];
 
-      // Build UPDATE query
       const setClauses = columns
         .filter(col => col !== pkColumn)
         .map(col => {
@@ -136,7 +129,6 @@ export default function DatabaseViewport() {
 
       await databaseStore.executeQueryWithText(updateQuery);
 
-      // Refresh the table
       const refreshQuery = `SELECT * FROM ${databaseStore.selectedTable()} LIMIT 100`;
       await databaseStore.executeQueryWithText(refreshQuery);
 
@@ -166,7 +158,6 @@ export default function DatabaseViewport() {
       const insertQuery = `INSERT INTO ${databaseStore.selectedTable()} (${columns.join(', ')}) VALUES (${values.join(', ')})`;
       await databaseStore.executeQueryWithText(insertQuery);
 
-      // Refresh the table
       const refreshQuery = `SELECT * FROM ${databaseStore.selectedTable()} LIMIT 100`;
       await databaseStore.executeQueryWithText(refreshQuery);
 
@@ -198,14 +189,12 @@ export default function DatabaseViewport() {
       return;
     }
 
-    // Validate column name (alphanumeric and underscores only)
     if (!/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(colData.name)) {
       alert('Invalid column name. Use only letters, numbers, and underscores. Must start with a letter or underscore.');
       return;
     }
 
     try {
-      // Build ALTER TABLE query
       let alterQuery = `ALTER TABLE ${databaseStore.selectedTable()} ADD COLUMN ${colData.name} ${colData.type}`;
 
       if (colData.notNull) {
@@ -221,11 +210,9 @@ export default function DatabaseViewport() {
 
       await databaseStore.executeQueryWithText(alterQuery);
 
-      // Refresh the table
       const refreshQuery = `SELECT * FROM ${databaseStore.selectedTable()} LIMIT 100`;
       await databaseStore.executeQueryWithText(refreshQuery);
 
-      // Reset form and close modal
       setNewColumnData({
         name: '',
         type: 'TEXT',
@@ -291,10 +278,8 @@ export default function DatabaseViewport() {
 
       alert('Database imported successfully! Reloading...');
 
-      // Reload tables
       await databaseStore.loadTables();
 
-      // Clear results
       databaseStore.setQuery('');
 
       setShowImportModal(false);
@@ -317,9 +302,7 @@ export default function DatabaseViewport() {
 
   return (
     <div class="h-full w-full flex bg-base-200 overflow-hidden">
-      {/* Main Content */}
       <div class="flex-1 min-w-0 flex flex-col">
-        {/* Header */}
         <div class="bg-base-100 border-b border-base-300 px-4 py-3 flex-shrink-0">
           <div class="flex items-center justify-between">
             <div class="flex items-center gap-3">
@@ -330,6 +313,14 @@ export default function DatabaseViewport() {
               </div>
             </div>
             <div class="flex items-center gap-2">
+              <button
+                class={`btn btn-sm gap-2 ${showQueryInput() ? 'btn-primary' : 'btn-outline'}`}
+                onClick={() => setShowQueryInput(!showQueryInput())}
+                title="Toggle SQL query input"
+              >
+                <IconCode size={16} />
+                {showQueryInput() ? 'Hide Query' : 'Show Query'}
+              </button>
               <button
                 class="btn btn-sm btn-outline gap-2"
                 onClick={handleExportDatabase}
@@ -351,22 +342,8 @@ export default function DatabaseViewport() {
           </div>
         </div>
 
-        {/* Schema Display */}
-        <Show when={databaseStore.selectedTable() && databaseStore.schema()}>
-          <div class="bg-base-100 border-b border-base-300 px-4 py-2 flex-shrink-0">
-            <details class="collapse collapse-arrow bg-base-200 rounded">
-              <summary class="collapse-title text-sm font-medium min-h-0 py-2">
-                Table Schema: {databaseStore.selectedTable()}
-              </summary>
-              <div class="collapse-content">
-                <pre class="text-xs bg-base-300 p-3 rounded overflow-x-auto max-w-full">{databaseStore.schema()}</pre>
-              </div>
-            </details>
-          </div>
-        </Show>
-
-        {/* Query Editor */}
-        <div class="bg-base-100 border-b border-base-300 p-4 flex-shrink-0">
+        <Show when={showQueryInput()}>
+          <div class="bg-base-100 border-b border-base-300 p-4 flex-shrink-0">
           <div class="space-y-2">
             <div class="flex items-center justify-between">
               <label class="text-sm font-semibold">SQL Query</label>
@@ -388,7 +365,6 @@ export default function DatabaseViewport() {
             />
           </div>
 
-          {/* Status Messages */}
           <Show when={databaseStore.error()}>
             <div class="alert alert-error mt-3">
               <IconX size={20} />
@@ -402,9 +378,9 @@ export default function DatabaseViewport() {
               <span class="text-sm">{databaseStore.success()}</span>
             </div>
           </Show>
-        </div>
+          </div>
+        </Show>
 
-        {/* Results */}
         <div class="flex-1 min-h-0 overflow-hidden flex flex-col">
           <Show
             when={databaseStore.results() && databaseStore.results().length > 0}
@@ -532,7 +508,6 @@ export default function DatabaseViewport() {
         </div>
       </div>
 
-      {/* Edit Modal */}
       <Show when={editingRow()}>
         <div class="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={() => setEditingRow(null)}>
           <div class="bg-base-100 rounded-lg shadow-xl max-w-2xl w-full mx-4 max-h-[80vh] overflow-hidden flex flex-col" onClick={(e) => e.stopPropagation()}>
@@ -578,7 +553,6 @@ export default function DatabaseViewport() {
         </div>
       </Show>
 
-      {/* Add Row Modal */}
       <Show when={showAddModal()}>
         <div class="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={() => setShowAddModal(false)}>
           <div class="bg-base-100 rounded-lg shadow-xl max-w-2xl w-full mx-4 max-h-[80vh] overflow-hidden flex flex-col" onClick={(e) => e.stopPropagation()}>
@@ -625,7 +599,6 @@ export default function DatabaseViewport() {
         </div>
       </Show>
 
-      {/* Import Database Modal */}
       <Show when={showImportModal()}>
         <div class="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={() => setShowImportModal(false)}>
           <div class="bg-base-100 rounded-lg shadow-xl max-w-xl w-full mx-4" onClick={(e) => e.stopPropagation()}>
@@ -641,7 +614,6 @@ export default function DatabaseViewport() {
 
             <div class="p-4">
               <div class="space-y-4">
-                {/* Warning Alert */}
                 <div class="alert alert-error">
                   <IconAlertCircle size={20} />
                   <div>
@@ -650,7 +622,6 @@ export default function DatabaseViewport() {
                   </div>
                 </div>
 
-                {/* File Upload */}
                 <div class="form-control">
                   <label class="label">
                     <span class="label-text font-semibold">Select Database File (.db)</span>
@@ -668,7 +639,6 @@ export default function DatabaseViewport() {
                   </label>
                 </div>
 
-                {/* Instructions */}
                 <div class="bg-base-200 p-3 rounded-lg">
                   <h4 class="font-semibold text-sm mb-2">Before importing:</h4>
                   <ul class="text-xs space-y-1 list-disc list-inside text-base-content/70">
@@ -697,7 +667,6 @@ export default function DatabaseViewport() {
         </div>
       </Show>
 
-      {/* Add Column Modal */}
       <Show when={showAddColumnModal()}>
         <div class="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={() => setShowAddColumnModal(false)}>
           <div class="bg-base-100 rounded-lg shadow-xl max-w-xl w-full mx-4" onClick={(e) => e.stopPropagation()}>
@@ -713,7 +682,6 @@ export default function DatabaseViewport() {
 
             <div class="p-4">
               <div class="space-y-4">
-                {/* Column Name */}
                 <div class="form-control">
                   <label class="label">
                     <span class="label-text font-semibold">Column Name *</span>
@@ -730,7 +698,6 @@ export default function DatabaseViewport() {
                   </label>
                 </div>
 
-                {/* Column Type */}
                 <div class="form-control">
                   <label class="label">
                     <span class="label-text font-semibold">Data Type *</span>
@@ -753,7 +720,6 @@ export default function DatabaseViewport() {
                   </label>
                 </div>
 
-                {/* Default Value */}
                 <div class="form-control">
                   <label class="label">
                     <span class="label-text font-semibold">Default Value (Optional)</span>
@@ -772,7 +738,6 @@ export default function DatabaseViewport() {
                   </label>
                 </div>
 
-                {/* NOT NULL Constraint */}
                 <div class="form-control">
                   <label class="label cursor-pointer justify-start gap-3">
                     <input
@@ -790,7 +755,6 @@ export default function DatabaseViewport() {
                   </label>
                 </div>
 
-                {/* Warning */}
                 <div class="alert alert-warning">
                   <IconAlertCircle size={20} />
                   <div class="text-sm">

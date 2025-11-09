@@ -23,10 +23,7 @@ impl Plugin for DatabasePlugin {
 
     async fn init(&self, ctx: &PluginContext) -> Result<()> {
         log::info!("[Database] Initializing plugin...");
-
-        // Register the router
         router::register_routes(ctx).await?;
-
         log::info!("[Database] Plugin initialized successfully");
         Ok(())
     }
