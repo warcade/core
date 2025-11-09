@@ -4,36 +4,34 @@ import DatabaseViewport from './DatabaseViewport.jsx';
 import DatabaseMenu from './DatabaseMenu.jsx';
 
 export default createPlugin({
-  id: 'twitch-database-plugin',
-  name: 'Twitch Database Manager',
+  id: 'webarcade-database-plugin',
+  name: 'Database',
   version: '1.0.0',
   description: 'Execute SQL queries and manage the SQLite database',
   author: 'WebArcade Team',
 
   async onStart(api) {
-    console.log('[Twitch Database Plugin] Starting...');
+    console.log('[Webarcade Database Plugin] Starting...');
 
-    // Register Database viewport in the main area
-    api.viewport('twitch-database', {
-      label: 'Database Manager',
+    api.viewport('webarcade-database', {
+      label: 'Database',
       component: DatabaseViewport,
       icon: IconDatabase,
       description: 'Execute SQL queries and manage the SQLite database'
     });
 
-    // Register Database menu in the right panel
-    api.tab('twitch-database-menu', {
+    api.tab('webarcade-database-menu', {
       title: 'Database',
       component: DatabaseMenu,
       icon: IconDatabase,
       order: 100,
-      viewport: 'twitch-database'
+      viewport: 'webarcade-database'
     });
 
-    console.log('[Twitch Database Plugin] Started successfully');
+    console.log('[Webarcade Database Plugin] Started successfully');
   },
 
   async onStop() {
-    console.log('[Twitch Database Plugin] Stopping...');
+    console.log('[Webarcade Database Plugin] Stopping...');
   }
 });

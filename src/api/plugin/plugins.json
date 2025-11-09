@@ -1,18 +1,11 @@
 {
   "plugins": [
     {
-      "id": "bridge",
-      "path": "/plugins/bridge",
+      "id": "dashboard",
+      "path": "/plugins/dashboard",
       "main": "index.jsx",
       "enabled": true,
-      "priority": -2
-    },
-    {
-      "id": "default",
-      "path": "/plugins/default",
-      "main": "index.jsx",
-      "enabled": true,
-      "priority": -1
+      "priority": 1
     },
     {
       "id": "database",
@@ -34,15 +27,8 @@
       "main": "index.jsx",
       "enabled": true,
       "priority": 1
-    },
-    {
-      "id": "twitch",
-      "path": "/plugins/twitch",
-      "main": "index.jsx",
-      "enabled": true,
-      "priority": 1
     }
   ],
-  "generatedAt": "2025-11-08T23:12:35.609Z",
+  "generatedAt": "2025-11-09T00:04:18.369Z",
   "generator": "discover-plugins.js"
 }

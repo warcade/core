@@ -73,7 +73,7 @@ export class RspackProgressPlugin {
         this.reportProgress({
           state: 'success',
           progress: 100,
-          message: `Build completed successfully (${duration}ms)`,
+          message: `Build complete (${duration}ms)`,
         });
       }
     });

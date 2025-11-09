@@ -1,6 +1,6 @@
 import { createSignal, createEffect, onCleanup, For } from 'solid-js';
 import { editorStore } from '@/layout/stores/EditorStore';
-import { IconAlertTriangle, IconBrandGithub, IconBrandDiscord, IconBrandTwitch } from '@tabler/icons-solidjs';
+import { IconAlertTriangle, IconBrandGithub, IconBrandDiscord } from '@tabler/icons-solidjs';
 import { footerButtons } from '@/api/plugin';
 import BuildProgress from './BuildProgress';
 import DebugConsole from './DebugConsole';
@@ -181,16 +181,6 @@ const Footer = () => {
             >
               <IconBrandDiscord class="w-3.5 h-3.5" />
               <span>Discord</span>
-            </a>
-            <a
-              href="https://twitch.tv/pianojames"
-              target="_blank"
-              rel="noopener noreferrer"
-              class="flex items-center gap-1 text-base-content/60 hover:text-primary transition-colors"
-              title="Follow on Twitch"
-            >
-              <IconBrandTwitch class="w-3.5 h-3.5" />
-              <span>Twitch</span>
             </a>
           </>
         )}

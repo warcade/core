@@ -364,7 +364,7 @@ const LeftPanelMenu = () => {
             type="text"
             value={searchQuery()}
             onInput={handleSearchInput}
-            placeholder="Search menu items..."
+            placeholder="Search plugins..."
             className="w-full pl-9 pr-8 py-1.5 text-sm bg-base-300 border border-base-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary text-base-content placeholder-base-content/40"
           />
           <Show when={searchQuery()}>
@@ -409,6 +409,21 @@ const LeftPanelMenu = () => {
                   </h3>
                   <Show when={index() === 0}>
                     <div className="flex items-center gap-1">
+                      {/* Description toggle button */}
+                      <button
+                        onClick={toggleDescriptions}
+                        className="flex items-center justify-center w-5 h-5 text-base-content/40 hover:text-base-content hover:bg-base-300 rounded transition-colors"
+                        title={showDescriptions() ? "Hide descriptions" : "Show descriptions"}
+                      >
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" className="w-3 h-3">
+                          {showDescriptions() ? (
+                            <path d="m18 15-6-6-6 6"/>
+                          ) : (
+                            <path d="m6 9 6 6 6-6"/>
+                          )}
+                        </svg>
+                      </button>
+
                       {/* Rearrange mode toggle */}
                       <button
                         onClick={toggleRearrangeMode}
@@ -446,38 +461,13 @@ const LeftPanelMenu = () => {
                       <button
                         onClick={handleAddPlugin}
                         disabled={uploading()}
-                        className="flex items-center justify-center w-5 h-5 text-base-content/40 hover:text-base-content hover:bg-base-300 rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                        className="flex items-center gap-1 px-1.5 h-5 text-base-content/40 hover:text-base-content hover:bg-base-300 rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                         title="Add plugin"
                       >
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" className="w-3 h-3">
                           <path d="M12 5v14M5 12h14"/>
                         </svg>
-                      </button>
-
-                      {/* Description toggle button */}
-                      <button
-                        onClick={toggleDescriptions}
-                        className="flex items-center justify-center w-5 h-5 text-base-content/40 hover:text-base-content hover:bg-base-300 rounded transition-colors"
-                        title={showDescriptions() ? "Hide descriptions" : "Show descriptions"}
-                      >
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" className="w-3 h-3">
-                          {showDescriptions() ? (
-                            <>
-                              <path d="M3 12h18"/>
-                              <path d="M3 6h18"/>
-                              <path d="M3 18h18"/>
-                            </>
-                          ) : (
-                            <>
-                              <path d="M10 6h11"/>
-                              <path d="M10 12h11"/>
-                              <path d="M10 18h11"/>
-                              <rect x="3" y="5" width="2" height="2"/>
-                              <rect x="3" y="11" width="2" height="2"/>
-                              <rect x="3" y="17" width="2" height="2"/>
-                            </>
-                          )}
-                        </svg>
+                        <span className="text-[10px] font-medium">New</span>
                       </button>
                     </div>
                   </Show>

@@ -1,42 +1,33 @@
 import { createPlugin } from '@/api/plugin';
 import { IconChartLine } from '@tabler/icons-solidjs';
-import DashboardViewport from './DashboardViewport.jsx';
+import DashboardViewport from './viewport.jsx';
 
 export default createPlugin({
-  id: 'default-plugin',
-  name: 'Default Plugin',
+  id: 'webarcade-dashboard-plugin',
+  name: 'Dashboard Plugin',
   version: '1.0.0',
-  description: 'Sets up default viewport and panels on startup',
+  description: 'Dashboard with plugin widgets',
   author: 'WebArcade Team',
 
   async onInit() {
-    // Initialization
+
   },
 
   async onStart(api) {
-    // Register dashboard viewport
-    api.viewport('dashboard', {
+    api.viewport('webarcade-dashboard', {
       label: 'Dashboard',
       component: DashboardViewport,
       icon: IconChartLine,
-      description: 'System performance dashboard'
+      description: 'Dashboard with plugin widgets'
     });
 
-    // Show the right panel by default
     api.showProps(true);
-
-    // Show menu
     api.showMenu(true);
-
-    // Show footer
     api.showFooter(true);
-
-    // Show viewport tabs
     api.showTabs(true);
 
-    // Open the dashboard viewport by default
     setTimeout(() => {
-      api.open('dashboard', {
+      api.open('webarcade-dashboard', {
         title: 'Dashboard',
         closable: true
       });
@@ -44,14 +35,14 @@ export default createPlugin({
   },
 
   onUpdate() {
-    // Update logic if needed
+
   },
 
   async onStop() {
-    // Cleanup
+
   },
 
   async onDispose() {
-    // Cleanup
+
   }
 });

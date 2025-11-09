@@ -371,6 +371,29 @@ function TabMenu(props) {
 
   return (
     <div class="relative w-10 h-full bg-base-300 border-l border-r border-black/15 flex flex-col pointer-events-auto no-select">
+      {/* Panel toggle button */}
+      <div class="flex-shrink-0 w-full py-1">
+        <button
+          onClick={() => props.onScenePanelToggle()}
+          class="btn btn-ghost h-7 w-full min-h-0 p-0 rounded-none transition-all duration-200 group relative select-none flex items-center justify-center border-none text-base-content/60 hover:bg-base-300 hover:text-base-content"
+          title={props.isCollapsed ? "Expand panel" : "Collapse panel"}
+        >
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="w-4 h-4">
+            {props.isCollapsed ? (
+              <path d="m15 18-6-6 6-6"/>
+            ) : (
+              <path d="m9 18 6-6-6-6"/>
+            )}
+          </svg>
+
+          <div class={`absolute ${shouldTooltipGoRight() ? 'left-full ml-1' : 'right-full mr-1'} top-1/2 -translate-y-1/2 bg-base-300/95 backdrop-blur-sm border border-base-300 text-base-content text-[11px] px-2 py-1 rounded-md opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap shadow-2xl`}
+               style={{ 'z-index': 999999 }}>
+            {props.isCollapsed ? "Expand panel" : "Collapse panel"}
+            <div class={`absolute ${shouldTooltipGoRight() ? 'right-full' : 'left-full'} top-1/2 -translate-y-1/2 w-0 h-0 ${shouldTooltipGoRight() ? 'border-r-4 border-r-base-300' : 'border-l-4 border-l-base-300'} border-t-4 border-t-transparent border-b-4 border-b-transparent`}></div>
+          </div>
+        </button>
+      </div>
+
       <div class="flex-1 overflow-hidden h-full flex flex-col gap-0.5 py-1">
         <For each={tools()}>
           {(tool) => {
