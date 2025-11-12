@@ -1,8 +1,8 @@
 [package]
-name = "rocket"
+name = "Webarcade"
 version = "1.0.0"
-description = "🚀 Rocket - High-speed development framework for web and desktop applications"
-authors = ["Rocket Framework Team"]
+description = "🚀 Webarcade - High-speed development framework for web and desktop plugins/widgets"
+authors = ["Webarcade Framework Team"]
 license = ""
 repository = ""
 edition = "2021"
@@ -32,7 +32,7 @@ hyper-util = { version = "0.1", features = ["tokio"] }
 http-body-util = "0.1"
 bytes = "1.0"
 futures-util = "0.3"
-tokio-tungstenite = { version = "0.24", features = ["native-tls"] }
+tokio-tungstenite = { version = "0.24" }
 
 # Bridge dependencies - Serialization
 simd-json = "0.13"

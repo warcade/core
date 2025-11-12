@@ -1,0 +1,9 @@
+{
+  "author": "demo",
+  "description": "demo",
+  "name": "demo",
+  "version": "1.0.0",
+  "cargo_dependencies": {
+    "log": "0.4"
+  }
+}

@@ -1,5 +1,6 @@
 import { createSignal, createEffect, onCleanup } from 'solid-js';
 import { IconDatabase } from '@tabler/icons-solidjs';
+import { bridge } from '@/api/bridge';
 
 export default function SizeWidget() {
   const [dbSize, setDbSize] = createSignal('0 KB');
@@ -8,7 +9,7 @@ export default function SizeWidget() {
   createEffect(() => {
     const fetchDbSize = async () => {
       try {
-        const response = await fetch('/database/info');
+        const response = await bridge('/database/info');
         if (response.ok) {
           const data = await response.json();
           const sizeInBytes = data.size || 0;

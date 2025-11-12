@@ -2,6 +2,7 @@ import { createSignal, onMount, onCleanup, Show } from 'solid-js';
 import { CodeEditor } from './components/Editor';
 import { NewPluginWizard } from './components/NewPluginWizard';
 import { IconPlus, IconPackage } from '@tabler/icons-solidjs';
+import { bridge } from '@/api/bridge';
 
 export default function PluginIDE() {
   const [currentPlugin, setCurrentPlugin] = createSignal(null);
@@ -42,7 +43,7 @@ export default function PluginIDE() {
     setBuildStatus({ type: 'loading', message: 'Building plugin...' });
 
     try {
-      const response = await fetch(`/plugin_ide/build/${currentPlugin()}`, {
+      const response = await bridge(`/plugin_ide/build/${currentPlugin()}`, {
         method: 'POST',
       });
 

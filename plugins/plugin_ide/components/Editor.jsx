@@ -1,6 +1,7 @@
 import { createSignal, createEffect, Show } from 'solid-js';
 import { IconDeviceFloppy } from '@tabler/icons-solidjs';
 import MonacoEditor from './MonacoEditor';
+import { bridge } from '@/api/bridge';
 
 export function CodeEditor(props) {
   const [content, setContent] = createSignal('');
@@ -45,12 +46,12 @@ export function CodeEditor(props) {
         relativePath = props.file.name;
       }
 
-      const url = `http://localhost:3001/plugin_ide/file/${props.currentPlugin}/${relativePath}`;
+      const url = `/plugin_ide/file/${props.currentPlugin}/${relativePath}`;
       console.log('[Editor] Fetching file from:', url);
       console.log('[Editor] Full file path:', props.file.path);
       console.log('[Editor] Relative path:', relativePath);
 
-      const response = await fetch(url);
+      const response = await bridge(url);
       console.log('[Editor] Response status:', response.status);
       console.log('[Editor] Response headers:', response.headers.get('content-type'));
 
@@ -96,7 +97,7 @@ export function CodeEditor(props) {
         relativePath = props.file.name;
       }
 
-      await fetch(`http://localhost:3001/plugin_ide/file/${props.currentPlugin}/${relativePath}`, {
+      await bridge(`/plugin_ide/file/${props.currentPlugin}/${relativePath}`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'text/plain',

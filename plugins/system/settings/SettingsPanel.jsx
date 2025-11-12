@@ -1,4 +1,4 @@
-import { createSignal, onMount, For } from 'solid-js';
+import { For } from 'solid-js';
 import { allThemes } from '@/themes';
 import { editorStore, editorActions } from '@/layout/stores/EditorStore.jsx';
 

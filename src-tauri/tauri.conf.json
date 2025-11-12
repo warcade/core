@@ -6,7 +6,7 @@
     "beforeBuildCommand": "bunx rspack build --mode production",
     "beforeDevCommand": "bun x rspack serve",
     "frontendDist": "../dist",
-    "devUrl": "https://localhost:3000"
+    "devUrl": "http://localhost:3000"
   },
   "app": {
     "windows": [

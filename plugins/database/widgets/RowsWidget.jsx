@@ -1,5 +1,6 @@
 import { createSignal, createEffect, onCleanup } from 'solid-js';
 import { IconFileDatabase } from '@tabler/icons-solidjs';
+import { bridge } from '@/api/bridge';
 
 export default function RowsWidget() {
   const [totalRows, setTotalRows] = createSignal(0);
@@ -8,14 +9,14 @@ export default function RowsWidget() {
   createEffect(() => {
     const fetchTotalRows = async () => {
       try {
-        const tablesResponse = await fetch('/database/tables');
+        const tablesResponse = await bridge('/database/tables');
         if (tablesResponse.ok) {
           const tables = await tablesResponse.json();
           let total = 0;
 
           for (const table of tables) {
             try {
-              const countResponse = await fetch('/database/query', {
+              const countResponse = await bridge('/database/query', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({

@@ -1,5 +1,6 @@
 import { createSignal, createEffect, onCleanup } from 'solid-js';
 import { IconActivity } from '@tabler/icons-solidjs';
+import { bridge } from '@/api/bridge'
 
 export default function MemoryWidget() {
   const [memoryUsage, setMemoryUsage] = createSignal(0);
@@ -7,7 +8,7 @@ export default function MemoryWidget() {
   createEffect(() => {
     const fetchSystemStats = async () => {
       try {
-        const response = await fetch('/system/stats');
+        const response = await bridge('/system/stats');
         if (response.ok) {
           const stats = await response.json();
           setMemoryUsage(stats.memory_usage || 0);

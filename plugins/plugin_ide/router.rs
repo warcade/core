@@ -377,7 +377,7 @@ struct CreatePluginRequest {
     location: Option<String>,
 }
 
-async fn handle_build_plugin(path: String) -> Response<BoxBody<Bytes, Infallible>> {
+async fn handle_build_plugin(path: String, _req: Request<Incoming>) -> Response<BoxBody<Bytes, Infallible>> {
     let plugin_id = path.trim_start_matches("/build/");
 
     let plugin_path = match find_plugin_path(plugin_id) {
@@ -413,15 +413,18 @@ async fn handle_build_plugin(path: String) -> Response<BoxBody<Bytes, Infallible
 }
 
 fn create_plugin_zip(source_dir: &Path, zip_path: &Path) -> Result<()> {
-    use std::io::Write;
-
     let file = fs::File::create(zip_path)?;
     let mut zip = zip::ZipWriter::new(file);
     let options = zip::write::FileOptions::default()
         .compression_method(zip::CompressionMethod::Deflated)
         .unix_permissions(0o755);
 
-    let walkdir = |dir: &Path| -> Result<()> {
+    fn walk_directory(
+        dir: &Path,
+        source_dir: &Path,
+        zip: &mut zip::ZipWriter<fs::File>,
+        options: zip::write::FileOptions,
+    ) -> Result<()> {
         for entry in fs::read_dir(dir)? {
             let entry = entry?;
             let path = entry.path();
@@ -436,16 +439,16 @@ fn create_plugin_zip(source_dir: &Path, zip_path: &Path) -> Result<()> {
             if path.is_file() {
                 zip.start_file(name.to_string_lossy().to_string(), options)?;
                 let mut f = fs::File::open(&path)?;
-                std::io::copy(&mut f, &mut zip)?;
+                std::io::copy(&mut f, zip)?;
             } else if path.is_dir() {
                 zip.add_directory(name.to_string_lossy().to_string(), options)?;
-                walkdir(&path)?;
+                walk_directory(&path, source_dir, zip, options)?;
             }
         }
         Ok(())
-    };
+    }
 
-    walkdir(source_dir)?;
+    walk_directory(source_dir, source_dir, &mut zip, options)?;
     zip.finish()?;
     Ok(())
 }

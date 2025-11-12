@@ -1,5 +1,5 @@
 import { createSignal } from 'solid-js';
-import { bridgeFetch } from '@/api/bridge';
+import { bridge } from '@/api/bridge';
 
 const [tables, setTables] = createSignal([]);
 const [selectedTable, setSelectedTable] = createSignal('');
@@ -14,7 +14,7 @@ const [itemsPerPage] = createSignal(50);
 
 const loadTables = async () => {
   try {
-    const response = await bridgeFetch('/database/tables');
+    const response = await bridge('/database/tables');
     const data = await response.json();
     setTables(data || []);
   } catch (e) {
@@ -27,7 +27,7 @@ const loadTableSchema = async (tableName) => {
   if (!tableName) return;
 
   try {
-    const response = await bridgeFetch(`/database/schema?table=${tableName}`);
+    const response = await bridge(`/database/schema?table=${tableName}`);
     const data = await response.json();
     setSchema(data.schema || '');
     const queryText = `SELECT * FROM ${tableName} LIMIT 100`;
@@ -59,7 +59,7 @@ const executeQueryWithText = async (queryText) => {
   setResults(null);
 
   try {
-    const response = await bridgeFetch('/database/query', {
+    const response = await bridge('/database/query', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ query: queryText.trim() }),

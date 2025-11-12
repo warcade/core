@@ -1,5 +1,6 @@
 import { createSignal, Show, For } from 'solid-js';
 import { IconX, IconCheck, IconFile, IconChartBar, IconBrandRust, IconRocket } from '@tabler/icons-solidjs';
+import { bridge } from '@/api/bridge';
 
 export function NewPluginWizard(props) {
   const [step, setStep] = createSignal(1);
@@ -61,7 +62,7 @@ export function NewPluginWizard(props) {
   const createPlugin = async () => {
     setCreating(true);
     try {
-      const response = await fetch('/plugin_ide/create', {
+      const response = await bridge('/plugin_ide/create', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

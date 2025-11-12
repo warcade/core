@@ -15,7 +15,7 @@ pub fn get_database_path() -> PathBuf {
     loop {
         if search_dir.join("package.json").exists() {
             // Found project root
-            return search_dir.join("data").join("counters.db");
+            return search_dir.join("database.db");
         }
 
         // Move up one directory
@@ -27,7 +27,7 @@ pub fn get_database_path() -> PathBuf {
         }
     }
 
-    current_dir.join("data").join("counters.db")
+    current_dir.join("database.db")
 }
 
 /// Ensure the database directory exists

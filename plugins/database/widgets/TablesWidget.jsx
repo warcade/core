@@ -1,5 +1,6 @@
 import { createSignal, createEffect, onCleanup } from 'solid-js';
 import { IconTable } from '@tabler/icons-solidjs';
+import { bridge } from '@/api/bridge';
 
 export default function TablesWidget() {
   const [tableCount, setTableCount] = createSignal(0);
@@ -8,7 +9,7 @@ export default function TablesWidget() {
   createEffect(() => {
     const fetchTableCount = async () => {
       try {
-        const tablesResponse = await fetch('/database/tables');
+        const tablesResponse = await bridge('/database/tables');
         if (tablesResponse.ok) {
           const tables = await tablesResponse.json();
           setTableCount(tables.length);

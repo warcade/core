@@ -1,28 +1,6 @@
 {
   "plugins": [
     {
-      "id": "calendar",
-      "path": "/plugins/calendar",
-      "main": "index.jsx",
-      "widget": null,
-      "widgets": [
-        "CalendarWidget.jsx"
-      ],
-      "enabled": true,
-      "priority": 1
-    },
-    {
-      "id": "crypto",
-      "path": "/plugins/crypto",
-      "main": "index.jsx",
-      "widget": null,
-      "widgets": [
-        "CryptoWidget.jsx"
-      ],
-      "enabled": true,
-      "priority": 1
-    },
-    {
       "id": "dashboard",
       "path": "/plugins/dashboard",
       "main": "index.jsx",
@@ -54,30 +32,8 @@
       "priority": 1
     },
     {
-      "id": "philips_hue",
-      "path": "/plugins/philips_hue",
-      "main": "index.jsx",
-      "widget": null,
-      "widgets": [
-        "HueBridgeSetup.jsx",
-        "LightControl.jsx",
-        "RoomControl.jsx"
-      ],
-      "enabled": true,
-      "priority": 1
-    },
-    {
       "id": "plugin_ide",
       "path": "/plugins/plugin_ide",
-      "main": "index.jsx",
-      "widget": null,
-      "widgets": null,
-      "enabled": true,
-      "priority": 1
-    },
-    {
-      "id": "snake-game",
-      "path": "/plugins/snake-game",
       "main": "index.jsx",
       "widget": null,
       "widgets": null,
@@ -110,54 +66,8 @@
       ],
       "enabled": true,
       "priority": 1
-    },
-    {
-      "id": "twitch",
-      "path": "/plugins/twitch",
-      "main": "index.jsx",
-      "widget": null,
-      "widgets": [
-        "TwitchChat.jsx",
-        "TwitchEvents.jsx",
-        "TwitchTest.jsx"
-      ],
-      "enabled": true,
-      "priority": 1
-    },
-    {
-      "id": "twitch-chat",
-      "path": "/plugins/twitch-chat",
-      "main": "index.jsx",
-      "widget": null,
-      "widgets": [
-        "TwitchChatWidget.jsx"
-      ],
-      "enabled": true,
-      "priority": 1
-    },
-    {
-      "id": "twitch-setup",
-      "path": "/plugins/twitch-setup",
-      "main": "index.jsx",
-      "widget": null,
-      "widgets": null,
-      "enabled": true,
-      "priority": 1
-    },
-    {
-      "id": "withings",
-      "path": "/plugins/withings",
-      "main": "index.jsx",
-      "widget": null,
-      "widgets": [
-        "BodyWater.jsx",
-        "MuscleMass.jsx",
-        "Weight.jsx"
-      ],
-      "enabled": true,
-      "priority": 1
     }
   ],
-  "generatedAt": "2025-11-10T17:59:34.983Z",
+  "generatedAt": "2025-11-12T18:57:37.523Z",
   "generator": "discover-plugins.js"
 }

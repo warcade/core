@@ -1,7 +1,7 @@
 import { For, Show, createMemo, createSignal } from 'solid-js';
 import { IconDatabase, IconPlayerPlay, IconAlertCircle, IconCheck, IconX, IconDownload, IconChevronLeft, IconChevronRight, IconEdit, IconTrash, IconPlus, IconColumns, IconDatabaseExport, IconDatabaseImport, IconUpload, IconCode } from '@tabler/icons-solidjs';
 import { databaseStore } from './store';
-import { bridgeFetch } from '@/api/bridge.js';
+import { bridge } from '@/api/bridge';
 
 export default function DatabaseViewport() {
   const [editingRow, setEditingRow] = createSignal(null);
@@ -228,7 +228,7 @@ export default function DatabaseViewport() {
   const handleExportDatabase = async () => {
     setExporting(true);
     try {
-      const response = await bridgeFetch('/database/export');
+      const response = await bridge('/database/export');
 
       if (!response.ok) {
         throw new Error('Failed to export database');
@@ -266,7 +266,7 @@ export default function DatabaseViewport() {
       const formData = new FormData();
       formData.append('database', file);
 
-      const response = await bridgeFetch('/database/import', {
+      const response = await bridge('/database/import', {
         method: 'POST',
         body: formData,
       });

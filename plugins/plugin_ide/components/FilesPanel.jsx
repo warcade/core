@@ -1,5 +1,6 @@
 import { createSignal, createEffect, Show, For } from 'solid-js';
 import { ProjectTree } from './ProjectTree';
+import { bridge } from '@/api/bridge';
 
 export default function FilesPanel(props) {
   const [currentPlugin, setCurrentPlugin] = createSignal(null);
@@ -11,7 +12,7 @@ export default function FilesPanel(props) {
 
   const loadPlugins = async () => {
     try {
-      const response = await fetch('http://localhost:3001/plugin_ide/plugins');
+      const response = await bridge('/plugin_ide/plugins');
       const data = await response.json();
       setPlugins(data);
 
@@ -44,7 +45,7 @@ export default function FilesPanel(props) {
         relativePath = parentPath.split(pluginPath + '/')[1] || parentPath.split(pluginPath + '\\')[1] || '';
       }
 
-      await fetch(`http://localhost:3001/plugin_ide/file/${currentPlugin()}`, {
+      await bridge(`/plugin_ide/file/${currentPlugin()}`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -70,7 +71,7 @@ export default function FilesPanel(props) {
         relativePath = relativePath.split(pluginPath + '/')[1] || relativePath.split(pluginPath + '\\')[1];
       }
 
-      await fetch(`http://localhost:3001/plugin_ide/file/${currentPlugin()}/${relativePath}`, {
+      await bridge(`/plugin_ide/file/${currentPlugin()}/${relativePath}`, {
         method: 'DELETE',
       });
     } catch (error) {

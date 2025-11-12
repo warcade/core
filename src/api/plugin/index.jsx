@@ -1,5 +1,5 @@
 import { createSignal, createContext, useContext, onMount, onCleanup, createRoot } from 'solid-js';
-import pluginStore, { PLUGIN_STATES as STORE_PLUGIN_STATES } from '../../../plugins/plugins/PluginStore.jsx';
+import pluginStore, { PLUGIN_STATES as STORE_PLUGIN_STATES } from './store.jsx';
 
 const PLUGIN_STATES = STORE_PLUGIN_STATES;
 

@@ -201,7 +201,7 @@ if (!isProduction) {
       logging: 'error',
       progress: false,
       webSocketURL: {
-        protocol: 'wss',
+        protocol: 'ws',
         hostname: 'localhost',
         port: 3000,
       },
@@ -247,25 +247,7 @@ if (!isProduction) {
       
       console.log(`\n🎮 WebArcade Development Server\n   Running at: ${url}\n`);
     },
-    server: (() => {
-      try {
-        const keyPath = resolve(import.meta.dirname, 'localhost+2-key.pem')
-        const certPath = resolve(import.meta.dirname, 'localhost+2.pem')
-        
-        if (fs.existsSync(keyPath) && fs.existsSync(certPath)) {
-          return {
-            type: 'https',
-            options: {
-              key: fs.readFileSync(keyPath),
-              cert: fs.readFileSync(certPath),
-            }
-          }
-        }
-      } catch {
-        console.warn('HTTPS certificates not found, falling back to HTTP')
-      }
-      return 'http'
-    })(),
+    server: 'http',
   };
 }
 

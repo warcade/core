@@ -1,6 +1,6 @@
 import { createSignal, createMemo, For, Show } from 'solid-js';
 import { leftPanelMenuItems, registeredPlugins, viewportTypes, propertyTabs } from '@/api/plugin';
-import pluginStore from '../../../plugins/plugins/PluginStore.jsx';
+import pluginStore from '@/api/plugin/store';
 import { IconSearch, IconStar } from '@tabler/icons-solidjs';
 import { editorActions } from '@/layout/stores/EditorStore';
 
