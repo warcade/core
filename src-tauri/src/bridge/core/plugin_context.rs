@@ -16,7 +16,6 @@ pub struct PluginContext {
     event_bus: Arc<EventBus>,
     service_registry: Arc<ServiceRegistry>,
     router_registry: RouterRegistry,
-    config: Value,
     db_path: String,
 }
 
@@ -26,7 +25,6 @@ impl PluginContext {
         event_bus: Arc<EventBus>,
         service_registry: Arc<ServiceRegistry>,
         router_registry: RouterRegistry,
-        config: Value,
         db_path: String,
     ) -> Self {
         Self {
@@ -34,7 +32,6 @@ impl PluginContext {
             event_bus,
             service_registry,
             router_registry,
-            config,
             db_path,
         }
     }
@@ -42,11 +39,6 @@ impl PluginContext {
     /// Get plugin ID
     pub fn plugin_id(&self) -> &str {
         &self.plugin_id
-    }
-
-    /// Get plugin configuration
-    pub fn config(&self) -> &Value {
-        &self.config
     }
 
     // ==================== Database ====================

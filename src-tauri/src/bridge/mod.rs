@@ -6,7 +6,6 @@ pub mod core;
 pub mod plugins;
 
 use std::env;
-use std::fs;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use hyper::server::conn::http1;
@@ -48,9 +47,6 @@ pub async fn run_server() -> Result<()> {
 
     info!("💾 Database: {}", db_path.display());
 
-    // Load plugin configuration
-    let plugin_config = load_plugin_config()?;
-
     // Create router registry
     let router_registry = RouterRegistry::new();
 
@@ -59,7 +55,6 @@ pub async fn run_server() -> Result<()> {
         event_bus.clone(),
         service_registry.clone(),
         router_registry.clone_registry(),
-        plugin_config,
         db_path.to_string_lossy().to_string(),
     );
 
@@ -190,60 +185,4 @@ fn full_body(s: &str) -> BoxBody<Bytes, Infallible> {
     use http_body_util::combinators::BoxBody;
     use http_body_util::BodyExt;
     BoxBody::new(Full::new(Bytes::from(s.to_string())).map_err(|err: Infallible| match err {}))
-}
-
-pub fn load_plugin_config() -> Result<std::collections::HashMap<String, serde_json::Value>> {
-    let config_path = std::path::Path::new("plugins.json");
-
-    if !config_path.exists() {
-        // Create default config with all plugins enabled
-        let default_config = serde_json::json!({
-            "plugins": [
-                {"id": "currency", "enabled": true, "config": {"starting_balance": 1000}},
-                {"id": "notes", "enabled": true, "config": {}},
-                {"id": "goals", "enabled": true, "config": {}},
-                {"id": "todos", "enabled": true, "config": {}},
-                {"id": "auction", "enabled": true, "config": {}},
-                {"id": "roulette", "enabled": true, "config": {}},
-                {"id": "levels", "enabled": true, "config": {"xp_per_message": 5}},
-                {"id": "wheel", "enabled": true, "config": {}},
-                {"id": "packs", "enabled": true, "config": {}},
-                {"id": "files", "enabled": true, "config": {}},
-                {"id": "system", "enabled": true, "config": {}},
-                {"id": "ticker", "enabled": true, "config": {}},
-                {"id": "text_commands", "enabled": true, "config": {}},
-                {"id": "user_profiles", "enabled": true, "config": {}},
-                {"id": "tts", "enabled": true, "config": {}},
-                {"id": "confessions", "enabled": true, "config": {}},
-                {"id": "household", "enabled": true, "config": {}},
-                {"id": "twitch", "enabled": true, "config": {}},
-                {"id": "hue", "enabled": false, "config": {}},
-                {"id": "withings", "enabled": false, "config": {}}
-            ]
-        });
-
-        fs::write(config_path, serde_json::to_string_pretty(&default_config)?)?;
-        info!("📝 Created default plugins.json");
-    }
-
-    let config_content = fs::read_to_string(config_path)?;
-    let config: serde_json::Value = serde_json::from_str(&config_content)?;
-
-    let mut plugin_configs = std::collections::HashMap::new();
-
-    if let Some(plugins) = config["plugins"].as_array() {
-        for plugin in plugins {
-            if let (Some(id), Some(enabled)) = (
-                plugin["id"].as_str(),
-                plugin["enabled"].as_bool(),
-            ) {
-                if enabled {
-                    let plugin_config = plugin["config"].clone();
-                    plugin_configs.insert(id.to_string(), plugin_config);
-                }
-            }
-        }
-    }
-
-    Ok(plugin_configs)
 }

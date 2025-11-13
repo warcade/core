@@ -19,8 +19,8 @@
       "priority": 1
     },
     {
-      "id": "menu",
-      "path": "/src/plugins/menu",
+      "id": "developer",
+      "path": "/src/plugins/developer",
       "main": "index.jsx",
       "widget": null,
       "widgets": null,
@@ -28,8 +28,8 @@
       "priority": 1
     },
     {
-      "id": "plugin_ide",
-      "path": "/src/plugins/plugin_ide",
+      "id": "menu",
+      "path": "/src/plugins/menu",
       "main": "index.jsx",
       "widget": null,
       "widgets": null,
@@ -61,6 +61,6 @@
       "priority": 1
     }
   ],
-  "generatedAt": "2025-11-12T22:51:40.025Z",
+  "generatedAt": "2025-11-13T01:31:13.800Z",
   "generator": "discover-plugins.js"
 }

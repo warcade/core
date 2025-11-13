@@ -32,7 +32,7 @@ export function ProjectTree(props) {
 
   const loadTree = async () => {
     try {
-      const response = await bridge(`/plugin_ide/tree/${props.currentPlugin}`);
+      const response = await bridge(`/developer/tree/${props.currentPlugin}`);
       const data = await response.json();
       setTree(data);
       // Auto-expand root

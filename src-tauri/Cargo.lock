@@ -57,6 +57,7 @@ dependencies = [
  "twitch-irc",
  "url",
  "urlencoding",
+ "webarcade_api",
  "zip",
 ]
 
@@ -6385,6 +6386,22 @@ checksum = "33b6dd2ef9186f1f2072e409e99cd22a975331a6b3591b12c764e0e55c60d5d2"
 dependencies = [
  "js-sys",
  "wasm-bindgen",
+]
+
+[[package]]
+name = "webarcade_api"
+version = "1.0.0"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "http-body-util",
+ "hyper 1.6.0",
+ "hyper-util",
+ "log",
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "tokio",
 ]
 
 [[package]]

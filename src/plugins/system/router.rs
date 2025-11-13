@@ -344,16 +344,15 @@ async fn handle_plugin_upload(req: Request<Incoming>) -> Response<BoxBody<Bytes,
 
     log::info!("[System] Successfully installed plugin: {}", plugin_name);
 
-    // Run discovery scripts to regenerate plugins.json and backend generated.rs
-    log::info!("[System] Running plugin discovery scripts...");
+    // Run discovery script to regenerate both plugins.json and backend generated.rs
+    log::info!("[System] Running plugin discovery script...");
     let workspace_root = PathBuf::from("..");
 
-    // Run frontend discovery
-    let frontend_script = workspace_root.join("scripts").join("discover-plugins.js");
-    if frontend_script.exists() {
+    let discovery_script = workspace_root.join("scripts").join("discover-plugins.js");
+    if discovery_script.exists() {
         match std::process::Command::new("bun")
             .arg("run")
-            .arg(&frontend_script)
+            .arg(&discovery_script)
             .current_dir(&workspace_root)
             .output()
         {
@@ -362,47 +361,19 @@ async fn handle_plugin_upload(req: Request<Incoming>) -> Response<BoxBody<Bytes,
                 let stderr = String::from_utf8_lossy(&output.stderr);
 
                 if output.status.success() {
-                    log::info!("[System] Frontend plugin discovery completed:");
-                    if !stdout.is_empty() {
-                        log::info!("{}", stdout);
-                    }
-                } else {
-                    log::warn!("[System] Frontend discovery error: {}", stderr);
-                }
-            }
-            Err(e) => log::warn!("[System] Could not run frontend discovery: {}", e),
-        }
-    } else {
-        log::warn!("[System] Frontend discovery script not found at {:?}", frontend_script);
-    }
-
-    // Run backend discovery
-    let backend_script = workspace_root.join("scripts").join("discover-backend-plugins.js");
-    if backend_script.exists() {
-        match std::process::Command::new("bun")
-            .arg("run")
-            .arg(&backend_script)
-            .current_dir(&workspace_root)
-            .output()
-        {
-            Ok(output) => {
-                let stdout = String::from_utf8_lossy(&output.stdout);
-                let stderr = String::from_utf8_lossy(&output.stderr);
-
-                if output.status.success() {
-                    log::info!("[System] Backend plugin discovery completed:");
+                    log::info!("[System] Plugin discovery completed:");
                     if !stdout.is_empty() {
                         log::info!("{}", stdout);
                     }
                     log::info!("[System] Cargo watch will auto-rebuild the backend");
                 } else {
-                    log::warn!("[System] Backend discovery error: {}", stderr);
+                    log::warn!("[System] Plugin discovery error: {}", stderr);
                 }
             }
-            Err(e) => log::warn!("[System] Could not run backend discovery: {}", e),
+            Err(e) => log::warn!("[System] Could not run plugin discovery: {}", e),
         }
     } else {
-        log::warn!("[System] Backend discovery script not found at {:?}", backend_script);
+        log::warn!("[System] Plugin discovery script not found at {:?}", discovery_script);
     }
 
     json_response(&serde_json::json!({
@@ -443,15 +414,14 @@ async fn handle_plugin_delete(path: String) -> Response<BoxBody<Bytes, Infallibl
         }
     }
 
-    // Run discovery scripts to regenerate plugins.json and backend generated.rs
-    log::info!("[System] Running plugin discovery scripts...");
+    // Run discovery script to regenerate both plugins.json and backend generated.rs
+    log::info!("[System] Running plugin discovery script...");
 
-    // Run frontend discovery
-    let frontend_script = workspace_root.join("scripts").join("discover-plugins.js");
-    if frontend_script.exists() {
+    let discovery_script = workspace_root.join("scripts").join("discover-plugins.js");
+    if discovery_script.exists() {
         match std::process::Command::new("bun")
             .arg("run")
-            .arg(&frontend_script)
+            .arg(&discovery_script)
             .current_dir(&workspace_root)
             .output()
         {
@@ -460,47 +430,19 @@ async fn handle_plugin_delete(path: String) -> Response<BoxBody<Bytes, Infallibl
                 let stderr = String::from_utf8_lossy(&output.stderr);
 
                 if output.status.success() {
-                    log::info!("[System] Frontend plugin discovery completed:");
-                    if !stdout.is_empty() {
-                        log::info!("{}", stdout);
-                    }
-                } else {
-                    log::warn!("[System] Frontend discovery error: {}", stderr);
-                }
-            }
-            Err(e) => log::warn!("[System] Could not run frontend discovery: {}", e),
-        }
-    } else {
-        log::warn!("[System] Frontend discovery script not found at {:?}", frontend_script);
-    }
-
-    // Run backend discovery
-    let backend_script = workspace_root.join("scripts").join("discover-backend-plugins.js");
-    if backend_script.exists() {
-        match std::process::Command::new("bun")
-            .arg("run")
-            .arg(&backend_script)
-            .current_dir(&workspace_root)
-            .output()
-        {
-            Ok(output) => {
-                let stdout = String::from_utf8_lossy(&output.stdout);
-                let stderr = String::from_utf8_lossy(&output.stderr);
-
-                if output.status.success() {
-                    log::info!("[System] Backend plugin discovery completed:");
+                    log::info!("[System] Plugin discovery completed:");
                     if !stdout.is_empty() {
                         log::info!("{}", stdout);
                     }
                     log::info!("[System] Cargo watch will auto-rebuild the backend");
                 } else {
-                    log::warn!("[System] Backend discovery error: {}", stderr);
+                    log::warn!("[System] Plugin discovery error: {}", stderr);
                 }
             }
-            Err(e) => log::warn!("[System] Could not run backend discovery: {}", e),
+            Err(e) => log::warn!("[System] Could not run plugin discovery: {}", e),
         }
     } else {
-        log::warn!("[System] Backend discovery script not found at {:?}", backend_script);
+        log::warn!("[System] Plugin discovery script not found at {:?}", discovery_script);
     }
 
     log::info!("[System] Successfully removed plugin: {}", plugin_name);

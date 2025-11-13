@@ -12,7 +12,7 @@ export default function FilesPanel(props) {
 
   const loadPlugins = async () => {
     try {
-      const response = await bridge('/plugin_ide/plugins');
+      const response = await bridge('/developer/plugins');
       const data = await response.json();
       setPlugins(data);
 
@@ -45,7 +45,7 @@ export default function FilesPanel(props) {
         relativePath = parentPath.split(pluginPath + '/')[1] || parentPath.split(pluginPath + '\\')[1] || '';
       }
 
-      await bridge(`/plugin_ide/file/${currentPlugin()}`, {
+      await bridge(`/developer/file/${currentPlugin()}`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -71,7 +71,7 @@ export default function FilesPanel(props) {
         relativePath = relativePath.split(pluginPath + '/')[1] || relativePath.split(pluginPath + '\\')[1];
       }
 
-      await bridge(`/plugin_ide/file/${currentPlugin()}/${relativePath}`, {
+      await bridge(`/developer/file/${currentPlugin()}/${relativePath}`, {
         method: 'DELETE',
       });
     } catch (error) {

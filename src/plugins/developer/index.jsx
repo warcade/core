@@ -1,7 +1,7 @@
 import { createPlugin } from '@/api/plugin';
-import { IconCode, IconFiles } from '@tabler/icons-solidjs';
-import PluginIDEViewport from './viewport.jsx';
-import FilesPanel from './components/FilesPanel.jsx';
+import { IconCode } from '@tabler/icons-solidjs';
+import PluginIDEViewport from './viewport';
+import FilesPanel from './components/FilesPanel';
 
 export default createPlugin({
   id: 'plugin-ide',
@@ -29,20 +29,9 @@ export default createPlugin({
     api.tab('plugin-ide-files', {
       title: 'Files',
       component: FilesPanel,
-      icon: IconFiles,
+      icon: IconCode,
       order: 1,
       viewport: 'plugin-ide-viewport'
-    });
-
-    // Register menu item to open the IDE
-    api.menu('plugin-ide-menu', {
-      label: 'Plugin IDE',
-      icon: IconCode,
-      onClick: () => {
-        api.open('plugin-ide-viewport', {
-          label: 'Plugin IDE'
-        });
-      }
     });
 
     // Show all UI elements

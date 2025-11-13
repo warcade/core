@@ -46,7 +46,7 @@ export function CodeEditor(props) {
         relativePath = props.file.name;
       }
 
-      const url = `/plugin_ide/file/${props.currentPlugin}/${relativePath}`;
+      const url = `/developer/file/${props.currentPlugin}/${relativePath}`;
       console.log('[Editor] Fetching file from:', url);
       console.log('[Editor] Full file path:', props.file.path);
       console.log('[Editor] Relative path:', relativePath);
@@ -97,7 +97,7 @@ export function CodeEditor(props) {
         relativePath = props.file.name;
       }
 
-      await bridge(`/plugin_ide/file/${props.currentPlugin}/${relativePath}`, {
+      await bridge(`/developer/file/${props.currentPlugin}/${relativePath}`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'text/plain',

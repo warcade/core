@@ -5,7 +5,7 @@ import fs from 'fs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
-const rootDir = resolve(__dirname, '..');
+const rootDir = resolve(__dirname, '../../..');
 
 /**
  * Bundle a plugin's frontend code (JSX) into a standalone JavaScript module
@@ -154,7 +154,7 @@ export async function bundlePluginFrontend(pluginDir, outputDir) {
 
 // CLI usage - check if this script is being run directly
 const isMainModule = process.argv[1] && (
-  process.argv[1].includes('bundle-plugin-frontend.js') ||
+  process.argv[1].includes('build_plugin.js') ||
   import.meta.url === `file://${process.argv[1]}`
 );
 
@@ -163,7 +163,7 @@ if (isMainModule) {
   const outputDir = process.argv[3];
 
   if (!pluginDir || !outputDir) {
-    console.error('Usage: node bundle-plugin-frontend.js <plugin-dir> <output-dir>');
+    console.error('Usage: node build_plugin.js <plugin-dir> <output-dir>');
     process.exit(1);
   }
 

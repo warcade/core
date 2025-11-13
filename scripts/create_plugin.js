@@ -7,8 +7,8 @@ const path = require('path');
 const pluginName = process.argv[2];
 
 if (!pluginName) {
-  console.error('Usage: bun run scripts/create-plugin.js <plugin-name>');
-  console.error('Example: bun run scripts/create-plugin.js my-plugin');
+  console.error('Usage: bun run scripts/create_plugin.js <plugin-name>');
+  console.error('Example: bun run scripts/create_plugin.js my-plugin');
   process.exit(1);
 }
 
@@ -19,7 +19,7 @@ if (!/^[a-z][a-z0-9-]*$/.test(pluginName)) {
   process.exit(1);
 }
 
-const pluginDir = path.join(__dirname, '..', 'plugins', pluginName);
+const pluginDir = path.join(__dirname, '..', 'src', 'plugins', pluginName);
 
 // Check if plugin already exists
 if (fs.existsSync(pluginDir)) {
@@ -142,9 +142,9 @@ export default function ${pascalName}Viewport() {
       </div>
 
       <div style={{ 'margin-top': '20px', 'font-size': '14px', color: '#666' }}>
-        <p>Edit <code>plugins/${pluginName}/viewport.jsx</code> to customize this view</p>
-        <p>Edit <code>plugins/${pluginName}/index.jsx</code> to add more functionality</p>
-        <p>Edit <code>plugins/${pluginName}/mod.rs</code> to add backend endpoints</p>
+        <p>Edit <code>src/plugins/${pluginName}/viewport.jsx</code> to customize this view</p>
+        <p>Edit <code>src/plugins/${pluginName}/index.jsx</code> to add more functionality</p>
+        <p>Edit <code>src/plugins/${pluginName}/mod.rs</code> to add backend endpoints</p>
       </div>
     </div>
   );
@@ -285,8 +285,8 @@ The backend uses Rust. Edit \`router.rs\` to add HTTP endpoints.
 
 ### API Endpoints
 
-- \`GET /api/${pluginName}/hello\` - Returns a hello message
-- \`POST /api/${pluginName}/data\` - Accepts JSON data
+- \`GET /${pluginName}/hello\` - Returns a hello message
+- \`POST /${pluginName}/data\` - Accepts JSON data
 
 ## Usage
 
@@ -311,16 +311,15 @@ console.log('');
 console.log('Plugin created at:', pluginDir);
 console.log('');
 console.log('Next steps:');
-console.log('  1. Run plugin discovery scripts:');
+console.log('  1. Run plugin discovery script:');
 console.log('     bun run scripts/discover-plugins.js');
-console.log('     bun run scripts/discover-backend-plugins.js');
 console.log('');
 console.log('  2. Restart the development server to load the plugin');
 console.log('');
 console.log('  3. Customize your plugin:');
-console.log('     - Edit plugins/' + pluginName + '/index.jsx for frontend logic');
-console.log('     - Edit plugins/' + pluginName + '/viewport.jsx for UI');
-console.log('     - Edit plugins/' + pluginName + '/mod.rs for backend logic');
-console.log('     - Edit plugins/' + pluginName + '/router.rs for HTTP endpoints');
+console.log('     - Edit src/plugins/' + pluginName + '/index.jsx for frontend logic');
+console.log('     - Edit src/plugins/' + pluginName + '/viewport.jsx for UI');
+console.log('     - Edit src/plugins/' + pluginName + '/mod.rs for backend logic');
+console.log('     - Edit src/plugins/' + pluginName + '/router.rs for HTTP endpoints');
 console.log('');
 console.log('Happy coding! 🚀');

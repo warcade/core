@@ -37,9 +37,9 @@ impl PluginBuilder {
             cwd.clone()
         };
 
-        // Check for plugin in plugin_ide subfolder first (for dev plugins)
-        let plugin_dir_ide = project_root.join("plugins").join("plugin_ide").join(plugin_id);
-        let plugin_dir_root = project_root.join("plugins").join(plugin_id);
+        // Check for plugin in developer subfolder first (for dev plugins)
+        let plugin_dir_ide = project_root.join("src").join("plugins").join("developer").join(plugin_id);
+        let plugin_dir_root = project_root.join("src").join("plugins").join(plugin_id);
 
         let plugin_dir = if plugin_dir_ide.exists() {
             plugin_dir_ide
@@ -410,7 +410,7 @@ pub extern "C" fn plugin_metadata() -> *const u8 {{
     fn compile_backend(&self, progress_callback: &impl Fn(BuildProgress), log_callback: &impl Fn(String)) -> Result<()> {
         let rust_build_dir = self.build_dir.join("rust_build");
 
-        log::info!("[plugin_ide] Compiling {} as cdylib...", self.plugin_id);
+        log::info!("[Developer] Compiling {} as cdylib...", self.plugin_id);
         log_callback(format!("Compiling {} as cdylib...\n", self.plugin_id));
 
         // Build for current platform
@@ -479,7 +479,7 @@ pub extern "C" fn plugin_metadata() -> *const u8 {{
         let status = child.wait().context("Failed to wait for cargo build")?;
 
         if !status.success() {
-            log::error!("[plugin_ide] Cargo build failed");
+            log::error!("[Developer] Cargo build failed");
             log_callback("Cargo build failed!\n".to_string());
             anyhow::bail!("Cargo build failed");
         }
@@ -530,7 +530,7 @@ pub extern "C" fn plugin_metadata() -> *const u8 {{
                 let dest_path = dest_dir.join(&pattern);
                 fs::copy(&src_path, &dest_path)?;
 
-                log::info!("[plugin_ide] Copied {} binary: {}", platform, pattern);
+                log::info!("[Developer] Copied {} binary: {}", platform, pattern);
                 return Ok(());
             }
         }
@@ -544,7 +544,7 @@ pub extern "C" fn plugin_metadata() -> *const u8 {{
             || self.plugin_dir.join("index.js").exists();
 
         if !has_frontend {
-            log::info!("[plugin_ide] No frontend files found, skipping frontend bundling");
+            log::info!("[Developer] No frontend files found, skipping frontend bundling");
             return Ok(());
         }
 
@@ -552,9 +552,9 @@ pub extern "C" fn plugin_metadata() -> *const u8 {{
         fs::create_dir_all(&frontend_dir)?;
 
         // Use Node.js bundler to bundle frontend code
-        log::info!("[plugin_ide] Bundling frontend with RSpack...");
+        log::info!("[Developer] Bundling frontend with RSpack...");
 
-        let bundler_script = self.project_root.join("scripts/bundle-plugin-frontend.js");
+        let bundler_script = self.project_root.join("scripts/build_plugin.js");
         let plugin_dir_str = self.plugin_dir.to_string_lossy();
         let build_dir_str = self.build_dir.to_string_lossy();
 
@@ -579,14 +579,14 @@ pub extern "C" fn plugin_metadata() -> *const u8 {{
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
             let stdout = String::from_utf8_lossy(&output.stdout);
-            log::error!("[plugin_ide] Frontend bundling failed:");
+            log::error!("[Developer] Frontend bundling failed:");
             log::error!("    STDOUT:\n{}", stdout);
             log::error!("    STDERR:\n{}", stderr);
             anyhow::bail!("Frontend bundling failed: {}", stderr);
         }
 
         let stdout = String::from_utf8_lossy(&output.stdout);
-        log::info!("[plugin_ide] Frontend bundling output:\n{}", stdout);
+        log::info!("[Developer] Frontend bundling output:\n{}", stdout);
 
         Ok(())
     }

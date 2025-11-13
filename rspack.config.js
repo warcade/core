@@ -34,7 +34,7 @@ const config = {
     extensions: ['.js', '.jsx', '.ts', '.tsx', '.json'],
     fullySpecified: false
   },
-  
+
   module: {
     rules: [
       {

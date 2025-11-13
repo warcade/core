@@ -7,31 +7,31 @@ use async_trait::async_trait;
 use std::sync::Arc;
 use anyhow::Result;
 
-pub struct PluginIdePlugin;
+pub struct DeveloperPlugin;
 
 #[async_trait]
-impl Plugin for PluginIdePlugin {
-    plugin_metadata!("plugin_ide", "Plugin IDE", "1.0.0", "Integrated development environment for building WebArcade plugins", author: "WebArcade");
+impl Plugin for DeveloperPlugin {
+    plugin_metadata!("developer", "Developer", "1.0.0", "Developer tools for building WebArcade plugins", author: "WebArcade");
 
     async fn init(&self, ctx: &PluginContext) -> Result<()> {
-        log::info!("[plugin_ide] Initializing Plugin IDE v2.0 - UPDATED CODE");
+        log::info!("[Developer] Initializing Developer plugin...");
 
-        // No database tables needed for the IDE
+        // No database tables needed
 
         // Register HTTP routes
         router::register_routes(ctx).await?;
 
-        log::info!("[plugin_ide] Initialized successfully");
+        log::info!("[Developer] Initialized successfully");
         Ok(())
     }
 
     async fn start(&self, _ctx: Arc<PluginContext>) -> Result<()> {
-        log::info!("[plugin_ide] Started");
+        log::info!("[Developer] Started");
         Ok(())
     }
 
     async fn stop(&self) -> Result<()> {
-        log::info!("[plugin_ide] Stopped");
+        log::info!("[Developer] Stopped");
         Ok(())
     }
 }

@@ -23,7 +23,7 @@ pub async fn register_routes(ctx: &PluginContext) -> Result<()> {
     route!(router, POST "/build/:plugin", path => handle_build_plugin);
     route!(router, POST "/create" => handle_create_plugin);
 
-    ctx.register_router("plugin_ide", router).await;
+    ctx.register_router("developer", router).await;
 
     Ok(())
 }
@@ -49,10 +49,10 @@ struct FileNode {
 
 fn get_plugins_dirs() -> Vec<PathBuf> {
     let cwd = std::env::current_dir().unwrap();
-    // Go up one level from src-tauri to project root, then into plugins/plugin_ide
+    // Go up one level from src-tauri to project root, then into src/plugins/developer
     let project_root = cwd.parent().unwrap_or(&cwd);
     vec![
-        project_root.join("plugins").join("plugin_ide"),
+        project_root.join("src").join("plugins").join("developer"),
     ]
 }
 
@@ -65,8 +65,8 @@ async fn handle_debug() -> Response<BoxBody<Bytes, Infallible>> {
         "cwd": cwd.to_string_lossy(),
         "project_root": project_root.to_string_lossy(),
         "plugins_dirs": plugins_dirs.iter().map(|p| p.to_string_lossy().to_string()).collect::<Vec<_>>(),
-        "test_path_exists": project_root.join("plugins").join("plugin_ide").join("test").exists(),
-        "test_has_index": project_root.join("plugins").join("plugin_ide").join("test").join("index.jsx").exists(),
+        "test_path_exists": project_root.join("src").join("plugins").join("developer").join("test").exists(),
+        "test_has_index": project_root.join("src").join("plugins").join("developer").join("test").join("index.jsx").exists(),
     });
 
     json_response(&debug_info)
@@ -77,7 +77,7 @@ async fn handle_list_plugins() -> Response<BoxBody<Bytes, Infallible>> {
     let mut plugins = Vec::new();
 
     for plugins_dir in plugins_dirs {
-        log::info!("[plugin_ide] Scanning directory: {:?}", plugins_dir);
+        log::info!("[Developer] Scanning directory: {:?}", plugins_dir);
         if let Ok(entries) = fs::read_dir(&plugins_dir) {
             for entry in entries.flatten() {
                 if entry.file_type().map(|ft| ft.is_dir()).unwrap_or(false) {
@@ -90,7 +90,7 @@ async fn handle_list_plugins() -> Response<BoxBody<Bytes, Infallible>> {
 
                     // Only include directories that have plugin files
                     if has_backend || has_frontend {
-                        log::info!("[plugin_ide] Found plugin: {} (backend: {}, frontend: {})", plugin_id, has_backend, has_frontend);
+                        log::info!("[Developer] Found plugin: {} (backend: {}, frontend: {})", plugin_id, has_backend, has_frontend);
                         plugins.push(PluginInfo {
                             id: plugin_id.clone(),
                             name: plugin_id,
@@ -104,7 +104,7 @@ async fn handle_list_plugins() -> Response<BoxBody<Bytes, Infallible>> {
         }
     }
 
-    log::info!("[plugin_ide] Total plugins found: {}", plugins.len());
+    log::info!("[Developer] Total plugins found: {}", plugins.len());
     json_response(&plugins)
 }
 
@@ -196,10 +196,10 @@ async fn handle_get_file(path: String) -> Response<BoxBody<Bytes, Infallible>> {
 
     let full_path = plugin_path.join(file_path);
 
-    log::info!("[plugin_ide] Current dir: {:?}", std::env::current_dir().unwrap());
-    log::info!("[plugin_ide] Plugin path: {:?}", plugin_path);
-    log::info!("[plugin_ide] Looking for file: {:?}", full_path);
-    log::info!("[plugin_ide] File exists: {}", full_path.exists());
+    log::info!("[Developer] Current dir: {:?}", std::env::current_dir().unwrap());
+    log::info!("[Developer] Plugin path: {:?}", plugin_path);
+    log::info!("[Developer] Looking for file: {:?}", full_path);
+    log::info!("[Developer] File exists: {}", full_path.exists());
 
     if !full_path.exists() {
         return error_response(StatusCode::NOT_FOUND, &format!("File not found: {:?}", full_path));
@@ -372,7 +372,7 @@ async fn handle_build_plugin(path: String, _req: Request<Incoming>) -> Response<
         None => return error_response(StatusCode::NOT_FOUND, "Plugin not found"),
     };
 
-    log::info!("[plugin_ide] Building plugin: {}", plugin_id);
+    log::info!("[Developer] Building plugin: {}", plugin_id);
 
     // Create a zip file of the plugin
     let cwd = std::env::current_dir().unwrap();
@@ -451,10 +451,10 @@ async fn handle_create_plugin(req: Request<Incoming>) -> Response<BoxBody<Bytes,
         Err(e) => return error_response(StatusCode::BAD_REQUEST, &format!("Invalid JSON: {}", e)),
     };
 
-    // All plugins are created in the plugin_ide directory
+    // All plugins are created in the developer directory
     let cwd = std::env::current_dir().unwrap();
     let project_root = cwd.parent().unwrap_or(&cwd);
-    let base_dir = project_root.join("plugins").join("plugin_ide");
+    let base_dir = project_root.join("src").join("plugins").join("developer");
 
     let plugin_path = base_dir.join(&create_req.id);
 

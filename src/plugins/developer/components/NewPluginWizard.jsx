@@ -62,7 +62,7 @@ export function NewPluginWizard(props) {
   const createPlugin = async () => {
     setCreating(true);
     try {
-      const response = await bridge('/plugin_ide/create', {
+      const response = await bridge('/developer/create', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

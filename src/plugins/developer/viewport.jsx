@@ -43,7 +43,7 @@ export default function PluginIDE() {
     setBuildStatus({ type: 'loading', message: 'Building plugin...' });
 
     try {
-      const response = await bridge(`/plugin_ide/build/${currentPlugin()}`, {
+      const response = await bridge(`/developer/build/${currentPlugin()}`, {
         method: 'POST',
       });
 
