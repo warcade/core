@@ -21,6 +21,7 @@ pub async fn register_routes(ctx: &PluginContext) -> Result<()> {
     route!(router, POST "/file/:plugin", path => handle_create_file);
     route!(router, DELETE "/file/*", path => handle_delete_file);
     route!(router, POST "/build/:plugin", path => handle_build_plugin);
+    route!(router, POST "/install/:plugin", path => handle_install_plugin);
     route!(router, POST "/create" => handle_create_plugin);
 
     ctx.register_router("developer", router).await;
@@ -365,6 +366,9 @@ struct CreatePluginRequest {
 }
 
 async fn handle_build_plugin(path: String, _req: Request<Incoming>) -> Response<BoxBody<Bytes, Infallible>> {
+    use tokio_stream::wrappers::UnboundedReceiverStream;
+    use tokio_stream::StreamExt;
+
     let plugin_id = path.trim_start_matches("/build/");
 
     let plugin_path = match find_plugin_path(plugin_id) {
@@ -380,31 +384,104 @@ async fn handle_build_plugin(path: String, _req: Request<Incoming>) -> Response<
         Err(e) => return error_response(StatusCode::INTERNAL_SERVER_ERROR, &format!("Failed to initialize builder: {}", e)),
     };
 
-    // Run the build
-    let result = builder.build(
-        |progress| {
-            log::info!("[Developer] Build progress: {} - {}", progress.step, progress.message);
-        },
-        |log_msg| {
-            log::info!("[Developer] {}", log_msg);
-        },
-    );
+    // Create a tokio channel for streaming build output (unbounded to avoid blocking)
+    let (tx, rx) = tokio::sync::mpsc::unbounded_channel::<String>();
 
-    match result {
-        Ok(build_result) => {
-            if build_result.success {
-                let response = serde_json::json!({
-                    "success": true,
-                    "plugin": plugin_id,
-                    "output": build_result.output_path.unwrap_or_default(),
+    // Run the build in a separate thread
+    std::thread::spawn(move || {
+        let result = builder.build(
+            |progress| {
+                log::info!("[Developer] Build progress: {} - {}", progress.step, progress.message);
+
+                // Send progress as JSON event
+                let event = serde_json::json!({
+                    "type": "progress",
+                    "step": progress.step,
+                    "progress": progress.progress,
+                    "message": progress.message
                 });
-                json_response(&response)
-            } else {
-                error_response(StatusCode::INTERNAL_SERVER_ERROR, &build_result.error.unwrap_or_else(|| "Build failed".to_string()))
+
+                if let Ok(json) = serde_json::to_string(&event) {
+                    let _ = tx.send(format!("{}\n", json));
+                }
+            },
+            |log_msg| {
+                log::info!("[Developer] {}", log_msg);
+
+                // Determine log type based on content
+                let log_type = if log_msg.contains("error") || log_msg.contains("failed") {
+                    "error"
+                } else if log_msg.contains("warning") {
+                    "warning"
+                } else {
+                    "info"
+                };
+
+                // Send log as JSON event
+                let event = serde_json::json!({
+                    "type": log_type,
+                    "message": log_msg.trim()
+                });
+
+                if let Ok(json) = serde_json::to_string(&event) {
+                    let _ = tx.send(format!("{}\n", json));
+                }
+            },
+        );
+
+        // Send final result
+        match result {
+            Ok(build_result) => {
+                if build_result.success {
+                    let event = serde_json::json!({
+                        "type": "success",
+                        "step": "complete",
+                        "progress": 1.0,
+                        "message": format!("Build successful: {}", build_result.output_path.unwrap_or_default())
+                    });
+
+                    if let Ok(json) = serde_json::to_string(&event) {
+                        let _ = tx.send(format!("{}\n", json));
+                    }
+                } else {
+                    let event = serde_json::json!({
+                        "type": "error",
+                        "step": "error",
+                        "message": build_result.error.unwrap_or_else(|| "Build failed".to_string())
+                    });
+
+                    if let Ok(json) = serde_json::to_string(&event) {
+                        let _ = tx.send(format!("{}\n", json));
+                    }
+                }
+            }
+            Err(e) => {
+                let event = serde_json::json!({
+                    "type": "error",
+                    "step": "error",
+                    "message": format!("Build failed: {}", e)
+                });
+
+                if let Ok(json) = serde_json::to_string(&event) {
+                    let _ = tx.send(format!("{}\n", json));
+                }
             }
         }
-        Err(e) => error_response(StatusCode::INTERNAL_SERVER_ERROR, &format!("Build failed: {}", e)),
-    }
+    });
+
+    // Convert the receiver into a stream
+    let stream = UnboundedReceiverStream::new(rx)
+        .map(|msg| Ok::<_, Infallible>(hyper::body::Frame::data(Bytes::from(msg))));
+
+    let body = http_body_util::StreamBody::new(stream);
+
+    Response::builder()
+        .status(StatusCode::OK)
+        .header("Content-Type", "application/x-ndjson")
+        .header("Cache-Control", "no-cache")
+        .header("Access-Control-Allow-Origin", "*")
+        .body(BoxBody::new(body))
+        .unwrap()
 }
 
 fn create_plugin_zip(source_dir: &Path, zip_path: &Path) -> Result<()> {
@@ -1147,6 +1224,99 @@ strip = true
     fs::write(path.join("Cargo.toml"), cargo_toml)?;
 
     Ok(())
+}
+
+async fn handle_install_plugin(path: String, _req: Request<Incoming>) -> Response<BoxBody<Bytes, Infallible>> {
+    let plugin_id = path.trim_start_matches("/install/");
+
+    let cwd = std::env::current_dir().unwrap();
+    let project_root = cwd.parent().unwrap_or(&cwd);
+    let dist_root = project_root.join("dist");
+    let zip_path = dist_root.join(format!("{}.zip", plugin_id));
+
+    if !zip_path.exists() {
+        return error_response(StatusCode::NOT_FOUND, "Plugin zip file not found. Please build first.");
+    }
+
+    // Get AppData directory
+    let appdata_dir = match dirs::data_local_dir() {
+        Some(dir) => dir,
+        None => return error_response(StatusCode::INTERNAL_SERVER_ERROR, "Could not find AppData directory"),
+    };
+
+    let plugins_dir = appdata_dir.join("WebArcade").join("plugins");
+    let install_dir = plugins_dir.join(plugin_id);
+
+    // Create plugins directory if it doesn't exist
+    if let Err(e) = fs::create_dir_all(&plugins_dir) {
+        return error_response(StatusCode::INTERNAL_SERVER_ERROR, &format!("Failed to create plugins directory: {}", e));
+    }
+
+    // Remove existing installation if present
+    if install_dir.exists() {
+        if let Err(e) = fs::remove_dir_all(&install_dir) {
+            return error_response(StatusCode::INTERNAL_SERVER_ERROR, &format!("Failed to remove old installation: {}", e));
+        }
+    }
+
+    // Create install directory
+    if let Err(e) = fs::create_dir_all(&install_dir) {
+        return error_response(StatusCode::INTERNAL_SERVER_ERROR, &format!("Failed to create install directory: {}", e));
+    }
+
+    // Extract zip file
+    let zip_file = match fs::File::open(&zip_path) {
+        Ok(file) => file,
+        Err(e) => return error_response(StatusCode::INTERNAL_SERVER_ERROR, &format!("Failed to open zip file: {}", e)),
+    };
+
+    let mut archive = match zip::ZipArchive::new(zip_file) {
+        Ok(archive) => archive,
+        Err(e) => return error_response(StatusCode::INTERNAL_SERVER_ERROR, &format!("Failed to read zip archive: {}", e)),
+    };
+
+    for i in 0..archive.len() {
+        let mut file = match archive.by_index(i) {
+            Ok(file) => file,
+            Err(e) => return error_response(StatusCode::INTERNAL_SERVER_ERROR, &format!("Failed to read file from archive: {}", e)),
+        };
+
+        let outpath = match file.enclosed_name() {
+            Some(path) => install_dir.join(path),
+            None => continue,
+        };
+
+        if file.name().ends_with('/') {
+            if let Err(e) = fs::create_dir_all(&outpath) {
+                return error_response(StatusCode::INTERNAL_SERVER_ERROR, &format!("Failed to create directory: {}", e));
+            }
+        } else {
+            if let Some(p) = outpath.parent() {
+                if !p.exists() {
+                    if let Err(e) = fs::create_dir_all(p) {
+                        return error_response(StatusCode::INTERNAL_SERVER_ERROR, &format!("Failed to create parent directory: {}", e));
+                    }
+                }
+            }
+            let mut outfile = match fs::File::create(&outpath) {
+                Ok(f) => f,
+                Err(e) => return error_response(StatusCode::INTERNAL_SERVER_ERROR, &format!("Failed to create file: {}", e)),
+            };
+            if let Err(e) = std::io::copy(&mut file, &mut outfile) {
+                return error_response(StatusCode::INTERNAL_SERVER_ERROR, &format!("Failed to extract file: {}", e));
+            }
+        }
+    }
+
+    log::info!("[Developer] Plugin {} installed to {:?}", plugin_id, install_dir);
+
+    let response = serde_json::json!({
+        "success": true,
+        "plugin_id": plugin_id,
+        "install_path": install_dir.to_string_lossy()
+    });
+
+    json_response(&response)
 }
 
 fn capitalize_plugin_name(id: &str) -> String {

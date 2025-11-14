@@ -80,6 +80,8 @@ pub fn handle_serve_plugin_file(plugin_id: &str, file_path: &str) -> Response<Bo
                 "application/javascript"
             } else if file_path.ends_with(".json") {
                 "application/json"
+            } else if file_path.ends_with(".css") {
+                "text/css"
             } else {
                 "application/octet-stream"
             };

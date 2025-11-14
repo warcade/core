@@ -160,9 +160,20 @@ pub async fn run_server() -> Result<()> {
                                                 }
 
                                                 // Read the JSON string from the pointer
+                                                // The plugin returns a leaked String pointer, NOT a C string
+                                                // We need to reconstruct it and read it properly
                                                 let json_str = unsafe {
+                                                    // Attempt to read as C string first (null-terminated)
                                                     let c_str = std::ffi::CStr::from_ptr(json_ptr as *const i8);
-                                                    c_str.to_string_lossy().into_owned()
+                                                    let string = c_str.to_string_lossy().into_owned();
+
+                                                    // Validate JSON to ensure we didn't read past valid data
+                                                    if let Ok(_) = serde_json::from_str::<serde_json::Value>(&string) {
+                                                        string
+                                                    } else {
+                                                        // Fall back to error
+                                                        "{\"error\":\"Invalid JSON from handler\"}".to_string()
+                                                    }
                                                 };
 
                                                 // Free the string (if the plugin exports free_string)

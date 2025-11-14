@@ -164,12 +164,12 @@ impl PluginBuilder {
 
         let cargo_toml = if plugin_cargo_toml.exists() {
             // Read existing Cargo.toml and update webarcade_api path to absolute
-            let content = fs::read_to_string(&plugin_cargo_toml)?;
+            let mut content = fs::read_to_string(&plugin_cargo_toml)?;
 
             // Check if webarcade_api is already present
             let re = regex::Regex::new(r#"webarcade_api\s*=\s*\{[^}]*path\s*=\s*"[^"]*"[^}]*\}"#).unwrap();
 
-            let content = if re.is_match(&content) {
+            content = if re.is_match(&content) {
                 // Replace existing webarcade_api path
                 re.replace(&content, format!("webarcade_api = {{ path = \"{}\" }}", api_path_str)).to_string()
             } else {
@@ -186,10 +186,20 @@ impl PluginBuilder {
                 }
             };
 
+            // Also inject lazy_static if not present
+            if !content.contains("lazy_static") {
+                let deps_re = regex::Regex::new(r"(?m)^\[dependencies\]\s*$").unwrap();
+                if let Some(mat) = deps_re.find(&content) {
+                    let insert_pos = mat.end();
+                    content.insert_str(insert_pos, "\nlazy_static = \"1.5\"");
+                }
+            }
+
             content
         } else {
             // Create default Cargo.toml
             let mut deps = format!("webarcade_api = {{ path = \"{}\" }}\n", api_path_str);
+            deps.push_str("lazy_static = \"1.5\"\n");
 
             // Add additional dependencies from package.json
             for (dep_name, dep_version) in &additional_deps {
@@ -257,14 +267,11 @@ rustflags = ["-C", "link-args=-undefined dynamic_lookup"]
 #[no_mangle]
 pub extern \"C\" fn {}() -> *const u8 {{
     use std::panic;
+    use std::ffi::CString;
 
     let result = panic::catch_unwind(|| {{
-        let rt = tokio::runtime::Builder::new_current_thread()
-            .enable_all()
-            .build()
-            .unwrap();
-
-        rt.block_on(async {{
+        // Use the shared runtime instead of creating a new one
+        RUNTIME.block_on(async {{
             use webarcade_api::http_body_util::BodyExt;
 
             // Call the handler and get the HttpResponse
@@ -280,10 +287,14 @@ pub extern \"C\" fn {}() -> *const u8 {{
     }});
 
     match result {{
-        Ok(json_string) => Box::leak(Box::new(json_string)).as_ptr(),
+        Ok(json_string) => {{
+            // Convert to CString to ensure null-termination for C FFI
+            let c_string = CString::new(json_string).unwrap();
+            Box::leak(Box::new(c_string)).as_ptr() as *const u8
+        }}
         Err(_) => {{
-            let error = String::from(\"{{\\\"error\\\": \\\"Handler panicked\\\"}}\");
-            Box::leak(Box::new(error)).as_ptr()
+            let error = CString::new(\"{{\\\"error\\\": \\\"Handler panicked\\\"}}\").unwrap();
+            Box::leak(Box::new(error)).as_ptr() as *const u8
         }}
     }}
 }}
@@ -299,6 +310,18 @@ pub mod plugin_mod;
 // Re-export plugin
 pub use plugin_mod::*;
 use webarcade_api::tokio;
+use std::sync::Arc;
+
+// Shared runtime for all handler calls to avoid creating multiple runtimes
+lazy_static::lazy_static! {{
+    static ref RUNTIME: Arc<tokio::runtime::Runtime> = Arc::new(
+        tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .worker_threads(2)
+            .build()
+            .expect("Failed to create tokio runtime")
+    );
+}}
 
 // Export plugin lifecycle functions for dynamic loading
 // Note: These are no-ops since we use manifest-based routing

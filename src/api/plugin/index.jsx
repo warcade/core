@@ -167,7 +167,7 @@ class PluginLoader {
 
         console.log(`[PluginLoader] Loading runtime plugin "${id}" from ${pluginUrl}`);
 
-        // Dynamically import the plugin.js file from the backend
+        // Dynamically import the plugin.js file (CSS is bundled inside)
         const pluginModule = await import(/* webpackIgnore: true */ pluginUrl);
         console.log(`[PluginLoader] Successfully loaded runtime plugin "${id}"`, pluginModule);
         console.log(`[PluginLoader] Module keys for "${id}":`, Object.keys(pluginModule));

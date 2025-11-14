@@ -2,6 +2,8 @@ import { rspack } from '@rspack/core';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import fs from 'fs';
+import postcss from 'postcss';
+import tailwindcss from '@tailwindcss/postcss';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -31,6 +33,26 @@ export async function bundlePluginFrontend(pluginDir, outputDir) {
 
   // Ensure output directory exists (output directly to root)
   fs.mkdirSync(outputDir, { recursive: true });
+
+  // Process Tailwind CSS v4 - scan all files in plugin directory
+  console.log(`   🔍 Scanning for Tailwind classes in: ${pluginDir}`);
+
+  // Tailwind v4 CSS with content scanning
+  const cssContent = `@import "tailwindcss";
+
+@source "${pluginDir.replace(/\\/g, '/')}/**/*.{js,jsx,ts,tsx}";
+@source "${pluginDir.replace(/\\/g, '/')}/*.{js,jsx,ts,tsx}";
+`;
+
+  const result = await postcss([
+    tailwindcss()
+  ]).process(cssContent, {
+    from: undefined,
+    map: false
+  });
+
+  const processedCss = result.css;
+  console.log(`   📊 Generated CSS size: ${processedCss.length} bytes`);
 
   const config = {
     mode: 'production',
@@ -80,23 +102,6 @@ export async function bundlePluginFrontend(pluginDir, outputDir) {
             },
           ],
         },
-        {
-          test: /\.css$/,
-          use: [
-            'style-loader',
-            'css-loader',
-            {
-              loader: 'postcss-loader',
-              options: {
-                postcssOptions: {
-                  plugins: [
-                    '@tailwindcss/postcss',
-                  ]
-                }
-              }
-            }
-          ]
-        }
       ],
     },
 
@@ -108,17 +113,23 @@ export async function bundlePluginFrontend(pluginDir, outputDir) {
         'import.meta.env.MODE': JSON.stringify('production'),
         '__DEV__': JSON.stringify(false),
       }),
+      // Inject CSS at the top of the bundle
+      new rspack.BannerPlugin({
+        banner: `if (typeof document !== 'undefined') {
+  const style = document.createElement('style');
+  style.setAttribute('data-plugin', '${pluginName}');
+  style.textContent = ${JSON.stringify(processedCss)};
+  document.head.appendChild(style);
+}`,
+        raw: true,
+        entryOnly: true,
+      }),
     ],
 
     optimization: {
       minimize: true,
       minimizer: [
         new rspack.SwcJsMinimizerRspackPlugin(),
-        new rspack.LightningCssMinimizerRspackPlugin({
-          minimizerOptions: {
-            targets: 'defaults',
-          },
-        }),
       ],
       // Disable all code splitting - force single file output
       splitChunks: false,

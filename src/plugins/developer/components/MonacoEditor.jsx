@@ -252,15 +252,132 @@ function MonacoEditor({
       },
     });
 
+    // Add WebArcade API type definitions
+    const webarcadeAPITypes = `
+      declare module '@/api/bridge' {
+        export function bridge(url: string, options?: RequestInit): Promise<Response>;
+      }
+
+      declare module '@/api/plugin' {
+        export function createPlugin(config: PluginConfig): Plugin;
+        export interface PluginConfig {
+          id: string;
+          name: string;
+          version: string;
+          description: string;
+          author: string;
+          onInit?: () => Promise<void>;
+          onStart?: (api: PluginAPI) => Promise<void>;
+          onStop?: () => Promise<void>;
+          onDispose?: () => Promise<void>;
+        }
+        export interface PluginAPI {
+          viewport(id: string, options: ViewportOptions): void;
+          tab(id: string, options: TabOptions): void;
+          showProps(show: boolean): void;
+          showMenu(show: boolean): void;
+          showFooter(show: boolean): void;
+          showTabs(show: boolean): void;
+        }
+        export interface ViewportOptions {
+          label: string;
+          component: any;
+          icon?: any;
+          description?: string;
+        }
+        export interface TabOptions {
+          title: string;
+          component: any;
+          icon?: any;
+          order?: number;
+          viewport?: string;
+        }
+      }
+
+      declare module 'webarcade_api::prelude' {
+        export type Result<T> = { Ok: T } | { Err: string };
+        export interface Context {
+          register_router(name: string, router: Router): Promise<void>;
+        }
+        export interface Router {
+          new(): Router;
+        }
+        export interface HttpResponse {}
+        export function json_response(data: any): HttpResponse;
+        export function error_response(message: string): HttpResponse;
+        export const route: any;
+      }
+    `;
+
+    monaco.languages.typescript.javascriptDefaults.addExtraLib(webarcadeAPITypes, 'ts:webarcade-api.d.ts');
+    monaco.languages.typescript.typescriptDefaults.addExtraLib(webarcadeAPITypes, 'ts:webarcade-api.d.ts');
+
     // Add completion provider for scripting API - with higher priority
     const customSuggestions = [
+      // WebArcade API
+      {
+        label: 'createPlugin',
+        kind: monaco.languages.CompletionItemKind.Function,
+        documentation: 'WebArcade: Create a plugin',
+        insertText: 'createPlugin({\n\tid: \'${1:plugin-id}\',\n\tname: \'${2:Plugin Name}\',\n\tversion: \'${3:1.0.0}\',\n\tdescription: \'${4}\',\n\tauthor: \'${5}\',\n\tasync onInit() {\n\t\t${6}\n\t},\n\tasync onStart(api) {\n\t\t${7}\n\t}\n})',
+        insertTextRules: monaco.languages.CompletionItemKind.InsertAsSnippet,
+        sortText: '0000'
+      },
+      {
+        label: 'bridge',
+        kind: monaco.languages.CompletionItemKind.Function,
+        documentation: 'WebArcade: Make HTTP request to backend bridge',
+        insertText: 'bridge(\'${1:/api/endpoint}\')',
+        insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
+        sortText: '0001'
+      },
+      {
+        label: 'api.viewport',
+        kind: monaco.languages.CompletionItemKind.Method,
+        documentation: 'WebArcade: Register a viewport',
+        insertText: 'api.viewport(\'${1:viewport-id}\', {\n\tlabel: \'${2:Label}\',\n\tcomponent: ${3:Component},\n\ticon: ${4:Icon},\n\tdescription: \'${5}\'\n})',
+        insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
+        sortText: '0002'
+      },
+      {
+        label: 'api.tab',
+        kind: monaco.languages.CompletionItemKind.Method,
+        documentation: 'WebArcade: Register a tab',
+        insertText: 'api.tab(\'${1:tab-id}\', {\n\ttitle: \'${2:Title}\',\n\tcomponent: ${3:Component},\n\ticon: ${4:Icon},\n\torder: ${5:1},\n\tviewport: \'${6:viewport-id}\'\n})',
+        insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
+        sortText: '0003'
+      },
+      {
+        label: 'json_response',
+        kind: monaco.languages.CompletionItemKind.Function,
+        documentation: 'WebArcade Rust API: Return JSON response',
+        insertText: 'json_response(&json!({\n\t${1}\n}))',
+        insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
+        sortText: '0004'
+      },
+      {
+        label: 'route!',
+        kind: monaco.languages.CompletionItemKind.Snippet,
+        documentation: 'WebArcade Rust API: Define a route',
+        insertText: 'route!(router, ${1:GET} "${2:/path}" => ${3:handler_name});',
+        insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
+        sortText: '0005'
+      },
+      {
+        label: 'register_routes',
+        kind: monaco.languages.CompletionItemKind.Function,
+        documentation: 'WebArcade Rust API: Register routes function',
+        insertText: 'pub async fn register_routes(ctx: &Context) -> Result<()> {\n\tlet mut router = Router::new();\n\t\n\troute!(router, GET "${1:/path}" => ${2:handler_name});\n\t\n\tctx.register_router("${3:plugin_name}", router).await;\n\tOk(())\n}',
+        insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
+        sortText: '0006'
+      },
       // SolidJS specific
       {
         label: 'props',
         kind: monaco.languages.CompletionItemKind.Variable,
         documentation: 'Component properties',
         insertText: 'props',
-        sortText: '0000'
+        sortText: '0100'
       },
       {
         label: 'children',
