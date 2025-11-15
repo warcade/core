@@ -24,7 +24,7 @@ const Viewport = () => {
 
     return (
       <div
-        className="absolute inset-0 bg-base-100 flex items-center justify-center"
+        className="absolute inset-0 flex items-center justify-center"
         style={{ display: viewportStore.activeTabId === tab.id ? 'flex' : 'none' }}
       >
         <div className="text-center">
@@ -41,7 +41,7 @@ const Viewport = () => {
     >
       <div className="w-full h-full flex flex-col gap-0">
         <div className="flex-1 relative overflow-hidden">
-          <div className="w-full bg-base-100 h-full overflow-hidden">
+          <div className="w-full h-full overflow-hidden">
             {/* Render all viewports, hide inactive ones */}
             <For each={viewportStore.tabs}>
               {(tab) => renderViewportPanel(tab)}

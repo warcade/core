@@ -1,7 +1,7 @@
 import { For, Show, createMemo, createSignal } from 'solid-js';
 import { IconDatabase, IconPlayerPlay, IconAlertCircle, IconCheck, IconX, IconDownload, IconChevronLeft, IconChevronRight, IconEdit, IconTrash, IconPlus, IconColumns, IconDatabaseExport, IconDatabaseImport, IconUpload, IconCode } from '@tabler/icons-solidjs';
 import { databaseStore } from './store';
-import { bridge } from '@/api/bridge';
+import { api } from '@/api/bridge';
 
 export default function DatabaseViewport() {
   const [editingRow, setEditingRow] = createSignal(null);
@@ -228,7 +228,7 @@ export default function DatabaseViewport() {
   const handleExportDatabase = async () => {
     setExporting(true);
     try {
-      const response = await bridge('/database/export');
+      const response = await api('database/export');
 
       if (!response.ok) {
         throw new Error('Failed to export database');
@@ -266,7 +266,7 @@ export default function DatabaseViewport() {
       const formData = new FormData();
       formData.append('database', file);
 
-      const response = await bridge('/database/import', {
+      const response = await api('database/import', {
         method: 'POST',
         body: formData,
       });
@@ -301,9 +301,9 @@ export default function DatabaseViewport() {
   };
 
   return (
-    <div class="h-full w-full flex bg-base-200 overflow-hidden">
+    <div class="h-full w-full flex overflow-hidden">
       <div class="flex-1 min-w-0 flex flex-col">
-        <div class="bg-base-100 border-b border-base-300 px-4 py-3 flex-shrink-0">
+        <div class="border-b border-base-300 px-4 py-3 flex-shrink-0">
           <div class="flex items-center justify-between">
             <div class="flex items-center gap-3">
               <IconDatabase size={20} class="text-primary" />

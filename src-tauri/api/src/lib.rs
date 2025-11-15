@@ -28,9 +28,10 @@ pub mod database;
 pub mod events;
 pub mod macros;
 pub mod vtable;
+pub mod time;
 
-// Prelude for easy imports
-pub mod prelude;
+// Core module - import everything you need with one line
+pub mod core;
 
 // Re-export commonly used types at the root
 pub use plugin::{Plugin, PluginMetadata};
@@ -40,11 +41,14 @@ pub use http::{HttpResponse, HttpRequest, json_response, error_response};
 pub use database::Database;
 pub use events::Event;
 
-// Re-export from dependencies
+// Re-export from dependencies (both as items and as modules for derive macros)
 pub use async_trait::async_trait;
 pub use anyhow::{Result, Error};
 pub use serde::{Serialize, Deserialize};
 pub use serde_json::{json, Value};
+
+// Re-export as modules so derive macros can find them
+pub use serde;
 pub use serde_json;
 
 // Re-export HTTP and async runtime dependencies
@@ -52,3 +56,12 @@ pub use hyper;
 pub use http_body_util;
 pub use tokio;
 pub use log;
+
+// Re-export time utilities
+pub use chrono;
+
+// Re-export common utilities
+pub use regex;
+pub use uuid;
+pub use base64;
+pub use rand;

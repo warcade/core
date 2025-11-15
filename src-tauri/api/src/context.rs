@@ -65,8 +65,8 @@ impl Context {
     /// # }
     /// ```
     pub async fn register_router(&self, plugin_id: &str, router: Router) {
+        let vtable = unsafe { self.vtable() };
         unsafe {
-            let vtable = self.vtable();
             (vtable.register_router)(self._internal, plugin_id.as_ptr(), plugin_id.len(), router._internal);
         }
     }
@@ -87,28 +87,26 @@ impl Context {
     /// # }
     /// ```
     pub fn migrate(&self, migrations: &[&str]) -> Result<()> {
-        unsafe {
-            let vtable = self.vtable();
-            let result = (vtable.migrate)(
+        let vtable = unsafe { self.vtable() };
+        let result = unsafe {
+            (vtable.migrate)(
                 self._internal,
                 migrations.as_ptr() as *const *const u8,
                 migrations.len(),
-            );
-            if result == 0 {
-                Ok(())
-            } else {
-                Err(anyhow::anyhow!("Migration failed"))
-            }
+            )
+        };
+        if result == 0 {
+            Ok(())
+        } else {
+            Err(anyhow::anyhow!("Migration failed"))
         }
     }
 
     /// Get database connection
     pub fn db(&self) -> Database {
-        unsafe {
-            let vtable = self.vtable();
-            let db_ptr = (vtable.get_database)(self._internal);
-            Database::new_with_vtable(db_ptr, self.vtable)
-        }
+        let vtable = unsafe { self.vtable() };
+        let db_ptr = unsafe { (vtable.get_database)(self._internal) };
+        Database::new_with_vtable(db_ptr, self.vtable)
     }
 
     /// Emit an event
@@ -123,9 +121,9 @@ impl Context {
     /// # }
     /// ```
     pub async fn emit(&self, event_name: &str, data: serde_json::Value) {
+        let vtable = unsafe { self.vtable() };
+        let data_str = serde_json::to_string(&data).unwrap();
         unsafe {
-            let vtable = self.vtable();
-            let data_str = serde_json::to_string(&data).unwrap();
             (vtable.emit_event)(
                 self._internal,
                 event_name.as_ptr(),

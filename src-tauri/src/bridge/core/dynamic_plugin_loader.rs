@@ -52,30 +52,34 @@ impl DynamicPluginLoader {
     }
 
     fn load_plugin_from_dir(&mut self, plugin_dir: &Path) -> Result<PluginInfo> {
-        // Read manifest.json
-        let metadata_path = plugin_dir.join("manifest.json");
-        if !metadata_path.exists() {
-            return Err(anyhow!("No manifest.json found"));
+        // Read package.json
+        let package_json_path = plugin_dir.join("package.json");
+        if !package_json_path.exists() {
+            return Err(anyhow!("No package.json found"));
         }
 
-        let metadata_str = fs::read_to_string(metadata_path)?;
-        let metadata: serde_json::Value = serde_json::from_str(&metadata_str)?;
+        let package_str = fs::read_to_string(&package_json_path)?;
+        let package_json: serde_json::Value = serde_json::from_str(&package_str)?;
 
-        let plugin_id = metadata["id"].as_str()
-            .ok_or_else(|| anyhow!("Missing plugin id in metadata"))?
+        let webarcade_config = package_json.get("webarcade")
+            .ok_or_else(|| anyhow!("package.json missing 'webarcade' section"))?;
+
+        let plugin_id = webarcade_config["id"].as_str()
+            .ok_or_else(|| anyhow!("Missing plugin id in package.json webarcade.id"))?
             .to_string();
 
-        let has_backend = metadata["has_backend"].as_bool().unwrap_or(false);
+        // Auto-detect has_backend and has_frontend based on file presence
+        let has_backend = plugin_dir.join(format!("{}.dll", plugin_id)).exists()
+            || plugin_dir.join(format!("lib{}.so", plugin_id)).exists()
+            || plugin_dir.join(format!("lib{}.dylib", plugin_id)).exists();
 
-        // Read routes configuration if it exists
-        let routes_path = plugin_dir.join("routes.json");
-        let routes = if routes_path.exists() {
-            let routes_str = fs::read_to_string(routes_path)?;
-            let routes_config: serde_json::Value = serde_json::from_str(&routes_str)?;
-            routes_config["routes"].as_array().cloned().unwrap_or_default()
-        } else {
-            Vec::new()
-        };
+        let has_frontend = plugin_dir.join("plugin.js").exists();
+
+        // Get routes from package.json webarcade.routes
+        let routes = webarcade_config.get("routes")
+            .and_then(|r| r.as_array())
+            .cloned()
+            .unwrap_or_default();
 
         // Only load backend if it exists
         if has_backend {
@@ -91,7 +95,7 @@ impl DynamicPluginLoader {
                 id: plugin_id.clone(),
                 dir: plugin_dir.to_path_buf(),
                 has_backend,
-                has_frontend: metadata["has_frontend"].as_bool().unwrap_or(false),
+                has_frontend,
                 routes: routes.clone(),
             };
 
@@ -111,7 +115,7 @@ impl DynamicPluginLoader {
                 id: plugin_id,
                 dir: plugin_dir.to_path_buf(),
                 has_backend,
-                has_frontend: metadata["has_frontend"].as_bool().unwrap_or(false),
+                has_frontend,
                 routes,
             })
         }

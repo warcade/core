@@ -1,7 +1,7 @@
 import { createSignal, createEffect, Show } from 'solid-js';
-import { IconDeviceFloppy } from '@tabler/icons-solidjs';
+import { IconDeviceFloppy, IconPackage } from '@tabler/icons-solidjs';
 import MonacoEditor from './MonacoEditor';
-import { bridge } from '@/api/bridge';
+import { api } from '@/api/bridge';
 
 export function CodeEditor(props) {
   const [content, setContent] = createSignal('');
@@ -61,7 +61,7 @@ export function CodeEditor(props) {
       console.log('[Editor] Full file path:', props.file.path);
       console.log('[Editor] Relative path:', relativePath);
 
-      const response = await bridge(url);
+      const response = await api(url);
       console.log('[Editor] Response status:', response.status);
       console.log('[Editor] Response headers:', response.headers.get('content-type'));
 
@@ -117,7 +117,7 @@ export function CodeEditor(props) {
         relativePath = props.file.name;
       }
 
-      await bridge(`/developer/file/${props.currentPlugin}/${relativePath}`, {
+      await api(`developer/file/${props.currentPlugin}/${relativePath}`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'text/plain',
@@ -201,6 +201,16 @@ export function CodeEditor(props) {
             {modified() && <span class="text-primary text-xl">●</span>}
           </span>
           <div class="flex items-center gap-2">
+            <Show when={props.buildStatus}>
+              <div class={`alert alert-sm ${
+                props.buildStatus.type === 'success' ? 'alert-success' :
+                props.buildStatus.type === 'error' ? 'alert-error' :
+                'alert-info'
+              } py-1 px-3`}>
+                <span class="text-xs">{props.buildStatus.message}</span>
+              </div>
+            </Show>
+
             <button
               onClick={handleSave}
               disabled={!modified() || saving()}
@@ -209,7 +219,42 @@ export function CodeEditor(props) {
               <IconDeviceFloppy size={16} />
               {saving() ? 'Saving...' : 'Save'}
             </button>
-            <span class="text-xs text-base-content/60">Ctrl+S</span>
+
+            <Show when={props.currentPlugin}>
+              <div class="dropdown dropdown-end">
+                <button
+                  onClick={props.onBuild}
+                  disabled={props.isBuilding}
+                  class="btn btn-sm btn-success gap-2"
+                >
+                  {props.isBuilding ? (
+                    <>
+                      <span class="loading loading-spinner loading-xs"></span>
+                      Building...
+                    </>
+                  ) : (
+                    <>
+                      <IconPackage size={16} />
+                      Build
+                    </>
+                  )}
+                </button>
+                <ul tabindex="0" class="dropdown-content menu bg-base-200 rounded-box z-[1] w-52 p-2 shadow-xl border border-base-content/10 mt-1">
+                  <li>
+                    <a onClick={props.onBuild}>
+                      <IconPackage size={16} />
+                      Build Only
+                    </a>
+                  </li>
+                  <li>
+                    <a onClick={props.onBuildAndInstall}>
+                      <IconPackage size={16} />
+                      Build & Install
+                    </a>
+                  </li>
+                </ul>
+              </div>
+            </Show>
           </div>
         </div>
 

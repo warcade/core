@@ -130,16 +130,21 @@ async fn handle_get_tree(path: String) -> Response<BoxBody<Bytes, Infallible>> {
         None => return error_response(StatusCode::NOT_FOUND, "Plugin not found"),
     };
 
-    match build_file_tree(&plugin_path, plugin_id) {
+    match build_file_tree_relative(&plugin_path, plugin_id, "", &plugin_path) {
         Ok(tree) => json_response(&tree),
         Err(e) => error_response(StatusCode::INTERNAL_SERVER_ERROR, &format!("Failed to build tree: {}", e)),
     }
 }
 
-fn build_file_tree(path: &Path, name: &str) -> Result<FileNode> {
+fn build_file_tree_relative(path: &Path, name: &str, relative_path: &str, plugin_root: &Path) -> Result<FileNode> {
     let mut node = FileNode {
         name: name.to_string(),
-        path: path.to_string_lossy().to_string(),
+        // Use relative path from plugin root, not absolute path
+        path: if relative_path.is_empty() {
+            name.to_string()
+        } else {
+            relative_path.to_string()
+        },
         node_type: if path.is_dir() { "folder".to_string() } else { "file".to_string() },
         children: None,
     };
@@ -157,7 +162,14 @@ fn build_file_tree(path: &Path, name: &str) -> Result<FileNode> {
                     continue;
                 }
 
-                if let Ok(child) = build_file_tree(&entry_path, &entry_name) {
+                // Build relative path for child
+                let child_relative = if relative_path.is_empty() {
+                    entry_name.clone()
+                } else {
+                    format!("{}/{}", relative_path, entry_name)
+                };
+
+                if let Ok(child) = build_file_tree_relative(&entry_path, &entry_name, &child_relative, plugin_root) {
                     children.push(child);
                 }
             }
@@ -194,7 +206,9 @@ async fn handle_get_file(path: String) -> Response<BoxBody<Bytes, Infallible>> {
         None => return error_response(StatusCode::NOT_FOUND, "Plugin not found"),
     };
 
-    let full_path = plugin_path.join(file_path);
+    // Replace forward slashes with platform-specific separators
+    let file_path = file_path.replace("/", std::path::MAIN_SEPARATOR_STR);
+    let full_path = plugin_path.join(&file_path);
 
     log::info!("[Developer] Current dir: {:?}", std::env::current_dir().unwrap());
     log::info!("[Developer] Plugin path: {:?}", plugin_path);
@@ -232,7 +246,9 @@ async fn handle_save_file(path: String, req: Request<Incoming>) -> Response<BoxB
         None => return error_response(StatusCode::NOT_FOUND, "Plugin not found"),
     };
 
-    let full_path = plugin_path.join(file_path);
+    // Replace forward slashes with platform-specific separators
+    let file_path = file_path.replace("/", std::path::MAIN_SEPARATOR_STR);
+    let full_path = plugin_path.join(&file_path);
 
     // Read request body
     let body = match req.collect().await {
@@ -331,7 +347,9 @@ async fn handle_delete_file(path: String) -> Response<BoxBody<Bytes, Infallible>
         None => return error_response(StatusCode::NOT_FOUND, "Plugin not found"),
     };
 
-    let full_path = plugin_path.join(file_path);
+    // Replace forward slashes with platform-specific separators
+    let file_path = file_path.replace("/", std::path::MAIN_SEPARATOR_STR);
+    let full_path = plugin_path.join(&file_path);
 
     if !full_path.exists() {
         return error_response(StatusCode::NOT_FOUND, "File not found");
@@ -911,16 +929,12 @@ async fn handle_hello() -> HttpResponse {{
     fs::write(path.join("router.rs"), router_content)?;
 
     // Create Cargo.toml
-    // Note: webarcade_api dependency is automatically added by the build system
+    // Note: webarcade_api dependency and [lib] section are automatically added by the build system
     let cargo_toml = format!(
         r#"[package]
 name = "{}"
 version = "1.0.0"
 edition = "2021"
-
-[lib]
-crate-type = ["cdylib"]
-path = "mod.rs"
 
 [dependencies]
 # webarcade_api is automatically injected by the plugin builder
@@ -1200,16 +1214,12 @@ export default function MainWidget() {{
     )?;
 
     // Create Cargo.toml
-    // Note: webarcade_api dependency is automatically added by the build system
+    // Note: webarcade_api dependency and [lib] section are automatically added by the build system
     let cargo_toml = format!(
         r#"[package]
 name = "{}"
 version = "1.0.0"
 edition = "2021"
-
-[lib]
-crate-type = ["cdylib"]
-path = "mod.rs"
 
 [dependencies]
 # webarcade_api is automatically injected by the plugin builder

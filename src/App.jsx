@@ -4,18 +4,96 @@ import './themes'
 import { Engine, layoutComponents } from '@/api/plugin'
 import Layout from './layout'
 import DevNotice from './components/DevNotice'
-import KeyboardShortcuts from './components/KeyboardShortcuts'
+import KeyboardShortcuts, { keyboardShortcuts } from './components/KeyboardShortcuts'
 import PluginInstaller from './components/PluginInstaller'
 import { usePluginAPI } from '@/api/plugin'
-import { editorStore } from '@/layout/stores/EditorStore.jsx'
-import {
-  IconSettings as SettingsIcon, IconMaximize
-} from '@tabler/icons-solidjs'
+import { editorStore, editorActions } from '@/layout/stores/EditorStore.jsx'
+import { IconSettings as SettingsIcon, IconMaximize } from '@tabler/icons-solidjs'
+
 export default function App() {
   onMount(async () => {
     // Apply theme on startup
     const theme = editorStore.theme || 'dark';
     document.documentElement.setAttribute('data-theme', theme);
+
+    // Initialize glass theme CSS variables
+    editorActions.updateGlassThemeCSS();
+
+    // Apply background image/video to body
+    let videoElement = null;
+    let currentBackgroundUrl = null;
+    let currentBackgroundType = null;
+
+    const updateBodyBackground = () => {
+      const bgUrl = editorStore.backgroundImage;
+      const bgType = editorStore.backgroundType;
+
+      // Only update if something actually changed
+      if (bgUrl === currentBackgroundUrl && bgType === currentBackgroundType) {
+        return;
+      }
+
+      currentBackgroundUrl = bgUrl;
+      currentBackgroundType = bgType;
+
+      if (bgUrl) {
+        if (bgType === 'video') {
+          // Remove image background if present
+          document.body.style.backgroundImage = 'none';
+
+          // Create or update video element
+          if (!videoElement) {
+            videoElement = document.createElement('video');
+            videoElement.id = 'background-video';
+            videoElement.style.position = 'fixed';
+            videoElement.style.top = '50%';
+            videoElement.style.left = '50%';
+            videoElement.style.transform = 'translate(-50%, -50%)';
+            videoElement.style.width = '100vw';
+            videoElement.style.height = '100vh';
+            videoElement.style.zIndex = '-1';
+            videoElement.style.objectFit = 'fill';
+            videoElement.autoplay = true;
+            videoElement.loop = true;
+            videoElement.muted = true;
+            videoElement.playsInline = true;
+            document.body.insertBefore(videoElement, document.body.firstChild);
+          }
+
+          // Only update src if it changed
+          if (videoElement.src !== bgUrl) {
+            videoElement.src = bgUrl;
+            videoElement.play().catch(err => console.error('Video playback failed:', err));
+          }
+        } else {
+          // Remove video element if present
+          if (videoElement) {
+            videoElement.remove();
+            videoElement = null;
+          }
+
+          // Set image background
+          document.body.style.backgroundImage = `url(${bgUrl})`;
+          document.body.style.backgroundSize = 'cover';
+          document.body.style.backgroundPosition = 'center';
+          document.body.style.backgroundRepeat = 'no-repeat';
+          document.body.style.backgroundAttachment = 'fixed';
+        }
+      } else {
+        // Remove both video and image backgrounds
+        if (videoElement) {
+          videoElement.remove();
+          videoElement = null;
+        }
+        document.body.style.backgroundImage = 'none';
+      }
+    };
+
+    // Initial update
+    updateBodyBackground();
+
+    // Watch for background changes (using a simple interval check)
+    const interval = setInterval(updateBodyBackground, 100);
 
 
     // Wait for plugin API to be initialized
@@ -45,6 +123,7 @@ export default function App() {
             }
           }
         });
+        
       } catch (error) {
       }
     }, 100);
@@ -66,7 +145,16 @@ export default function App() {
     };
     
     setupWindowCloseHandler();
-    
+
+    // Register keyboard shortcut for background mode (Ctrl+B)
+    const unregisterBackgroundMode = keyboardShortcuts.register(
+      keyboardShortcuts.createHandler({
+        'ctrl+b': async () => {
+          await editorActions.toggleBackgroundMode();
+        }
+      })
+    );
+
     // Show window immediately
     setTimeout(async () => {
       if (typeof window !== 'undefined' && window.__TAURI_INTERNALS__) {
@@ -88,7 +176,7 @@ export default function App() {
     <Engine>
       <KeyboardShortcuts />
       <PluginInstaller />
-      <div class="w-full h-full">
+      <div class="w-full h-full relative">
         <Layout />
         <DevNotice />
 

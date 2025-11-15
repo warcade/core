@@ -18,7 +18,16 @@ export default createPlugin({
       label: 'Database',
       component: DatabaseViewport,
       icon: IconDatabase,
-      description: 'Execute SQL queries and manage the SQLite database'
+      description: 'Execute SQL queries and manage the SQLite database',
+      onActivate: (api, tab) => {
+        api.showProps(true);
+        api.showMenu(true);
+        api.showFooter(true);
+        api.showTabs(true);
+      },
+      onDeactivate: (api, tab) => {
+
+      }
     });
 
     api.tab('webarcade-database-menu', {

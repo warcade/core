@@ -7,9 +7,27 @@ const [viewportStore, setViewportStore] = createStore({
 })
 
 export const viewportActions = {
-  
+
   setActiveViewportTab: (tabId) => {
-    setViewportStore('activeTabId', tabId)
+    const previousTabId = viewportStore.activeTabId;
+
+    // Emit deactivation event for previous tab
+    if (previousTabId && previousTabId !== tabId) {
+      const event = new CustomEvent('viewport:tab-deactivated', {
+        detail: { tabId: previousTabId }
+      });
+      document.dispatchEvent(event);
+    }
+
+    setViewportStore('activeTabId', tabId);
+
+    // Emit activation event for new tab
+    if (tabId) {
+      const event = new CustomEvent('viewport:tab-activated', {
+        detail: { tabId }
+      });
+      document.dispatchEvent(event);
+    }
   },
   
   addViewportTab: (tab) => {

@@ -173,73 +173,6 @@ export default function PluginIDE() {
 
   return (
     <div class="flex flex-col h-full bg-base-100">
-      {/* Toolbar */}
-      <div class="flex items-center justify-between px-4 py-2 bg-base-200 border-b border-base-content/10">
-        <div class="flex items-center gap-2">
-          <Show when={currentFile()}>
-            <span class="text-sm text-base-content/60">
-              {currentPlugin()} / {currentFile()?.name}
-            </span>
-          </Show>
-        </div>
-
-        <div class="flex items-center gap-2">
-          <Show when={buildStatus()}>
-            <div class={`alert alert-sm ${
-              buildStatus().type === 'success' ? 'alert-success' :
-              buildStatus().type === 'error' ? 'alert-error' :
-              'alert-info'
-            } py-1 px-3`}>
-              <span class="text-xs">{buildStatus().message}</span>
-            </div>
-          </Show>
-
-          <Show when={currentPlugin()}>
-            <div class="dropdown dropdown-end">
-              <button
-                onClick={handleBuild}
-                disabled={isBuilding()}
-                class="btn btn-sm btn-success gap-2"
-              >
-                {isBuilding() ? (
-                  <>
-                    <span class="loading loading-spinner loading-xs"></span>
-                    Building...
-                  </>
-                ) : (
-                  <>
-                    <IconPackage size={16} />
-                    Build
-                  </>
-                )}
-              </button>
-              <ul tabindex="0" class="dropdown-content menu bg-base-200 rounded-box z-[1] w-52 p-2 shadow-xl border border-base-content/10 mt-1">
-                <li>
-                  <a onClick={handleBuild}>
-                    <IconPackage size={16} />
-                    Build Only
-                  </a>
-                </li>
-                <li>
-                  <a onClick={handleBuildAndInstall}>
-                    <IconPackage size={16} />
-                    Build & Install
-                  </a>
-                </li>
-              </ul>
-            </div>
-          </Show>
-
-          <button
-            onClick={() => setShowWizard(true)}
-            class="btn btn-sm btn-primary gap-2"
-          >
-            <IconPlus size={16} />
-            New Plugin
-          </button>
-        </div>
-      </div>
-
       {/* Monaco Editor */}
       <div class="flex-1 overflow-hidden">
         <CodeEditor
@@ -248,6 +181,10 @@ export default function PluginIDE() {
           onSave={(file) => {
             console.log('File saved:', file.name);
           }}
+          onBuild={handleBuild}
+          onBuildAndInstall={handleBuildAndInstall}
+          isBuilding={isBuilding()}
+          buildStatus={buildStatus()}
         />
       </div>
 

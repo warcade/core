@@ -118,12 +118,6 @@ const config = {
     splitChunks: {
       chunks: 'all',
       cacheGroups: {
-        babylon: {
-          test: /[\\/]node_modules[\\/]@babylonjs[\\/]/,
-          name: 'babylon',
-          chunks: 'all',
-          priority: 30,
-        },
         solidjs: {
           test: /[\\/]node_modules[\\/]solid-js/,
           name: 'solid',
@@ -188,12 +182,7 @@ if (!isProduction) {
       {
         directory: resolve(import.meta.dirname, 'dist'),
         publicPath: '/',
-      },
-      {
-        directory: resolve(import.meta.dirname, 'dist/overlays'),
-        publicPath: '/overlay',
-        watch: true,
-      },
+      }
     ],
     headers: {
       'Access-Control-Allow-Origin': '*',
@@ -223,7 +212,7 @@ if (!isProduction) {
         context: (pathname) => {
           // Proxy all paths starting with plugin-like names (lowercase with dashes/underscores)
           // Skip HMR, webpack, and static assets
-          if (pathname.match(/^\/(hot|__webpack|assets|overlay\/[^l]|favicon)/)) {
+          if (pathname.match(/^\/(hot|__webpack|assets\/[^l]|favicon)/)) {
             return false;
           }
           // Proxy if it looks like an API endpoint (not a file extension)

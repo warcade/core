@@ -2,21 +2,23 @@ import { render } from 'solid-js/web'
 import * as SolidJS from 'solid-js'
 import * as SolidJSWeb from 'solid-js/web'
 import * as SolidJSStore from 'solid-js/store'
+import * as TablerIconsSolidJS from '@tabler/icons-solidjs'
 import { createPlugin, usePluginAPI, viewportTypes } from './api/plugin'
-import { bridge, BRIDGE_API, WEBARCADE_WS } from './api/bridge'
+import { api, BRIDGE_API, WEBARCADE_WS } from './api/bridge'
 import App from './App'
 
 // Expose SolidJS globally for runtime plugins
 window.SolidJS = SolidJS
 window.SolidJSWeb = SolidJSWeb
 window.SolidJSStore = SolidJSStore
+window.TablerIconsSolidJS = TablerIconsSolidJS
 
 // Expose plugin API globally
 window.WebArcadeAPI = {
   createPlugin,
   usePluginAPI,
   viewportTypes,
-  bridge,
+  api,
   BRIDGE_API,
   WEBARCADE_WS
 }

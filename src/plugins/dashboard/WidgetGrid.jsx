@@ -363,7 +363,7 @@ export default function WidgetGrid(props) {
   };
 
   return (
-    <div class="h-full overflow-y-auto bg-gradient-to-br from-base-300 to-base-200 p-4">
+    <div class="h-full overflow-y-auto p-4">
       <div class="max-w-7xl mx-auto">
         {/* Header with Controls */}
         <div class="mb-4 flex items-center justify-end gap-2">
@@ -472,100 +472,150 @@ export default function WidgetGrid(props) {
         </Show>
       </div>
 
-      {/* Add Widget Modal */}
+      {/* Add Widget Modal - Redesigned */}
       <Show when={showAddWidget()}>
         <div class="modal modal-open">
-          <div class="modal-box max-w-5xl max-h-[90vh] flex flex-col p-0">
-            {/* Header */}
-            <div class="p-6 pb-4 border-b border-base-300">
-              <h3 class="font-bold text-2xl mb-4">Add Widget</h3>
-
-              {/* Search Bar */}
-              <div class="relative">
-                <input
-                  type="text"
-                  placeholder="Search widgets..."
-                  class="input input-bordered w-full pr-10"
-                  value={widgetSearchQuery()}
-                  onInput={(e) => setWidgetSearchQuery(e.target.value)}
-                  autofocus
-                />
-                <svg
-                  class="absolute right-3 top-1/2 -translate-y-1/2 w-5 h-5 opacity-50"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                >
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-                </svg>
+          <div class="modal-box max-w-6xl max-h-[90vh] flex flex-col p-0 bg-gradient-to-br from-base-100 via-base-100 to-base-200">
+            {/* Animated Header with Gradient */}
+            <div class="relative p-8 pb-6 overflow-hidden">
+              {/* Animated background elements */}
+              <div class="absolute inset-0 overflow-hidden opacity-10">
+                <div class="absolute -top-4 -left-4 w-32 h-32 bg-primary rounded-full blur-3xl animate-pulse"></div>
+                <div class="absolute top-8 right-8 w-24 h-24 bg-secondary rounded-full blur-2xl animate-pulse" style="animation-delay: 0.5s"></div>
+                <div class="absolute bottom-4 left-1/2 w-28 h-28 bg-accent rounded-full blur-3xl animate-pulse" style="animation-delay: 1s"></div>
               </div>
 
-              <Show when={widgetSearchQuery()}>
-                <div class="mt-2 text-sm opacity-70">
-                  Found {filteredWidgets().length} widget{filteredWidgets().length !== 1 ? 's' : ''}
+              <div class="relative z-10">
+                <div class="flex items-center gap-3 mb-6">
+                  <div class="w-14 h-14 rounded-2xl bg-gradient-to-br from-primary to-secondary flex items-center justify-center shadow-lg">
+                    <IconLayoutGridAdd size={28} class="text-primary-content" />
+                  </div>
+                  <div>
+                    <h3 class="font-bold text-3xl bg-gradient-to-r from-primary via-secondary to-accent bg-clip-text text-transparent">
+                      Add Widget
+                    </h3>
+                    <p class="text-sm opacity-60 mt-1">
+                      Choose from {availableWidgets().length} available widgets
+                    </p>
+                  </div>
                 </div>
-              </Show>
+
+                {/* Enhanced Search Bar */}
+                <div class="relative group">
+                  <div class="absolute -inset-0.5 bg-gradient-to-r from-primary to-secondary rounded-xl blur opacity-20 group-hover:opacity-40 transition duration-300"></div>
+                  <div class="relative">
+                    <input
+                      type="text"
+                      placeholder="Search widgets by name, description, or plugin..."
+                      class="input input-bordered w-full pr-12 pl-12 h-14 bg-base-100/80 backdrop-blur-sm border-2 focus:border-primary/50 transition-all duration-300"
+                      value={widgetSearchQuery()}
+                      onInput={(e) => setWidgetSearchQuery(e.target.value)}
+                      autofocus
+                    />
+                    <svg
+                      class="absolute left-4 top-1/2 -translate-y-1/2 w-6 h-6 text-primary/60"
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                    >
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                    </svg>
+                    <Show when={widgetSearchQuery()}>
+                      <button
+                        class="absolute right-4 top-1/2 -translate-y-1/2 btn btn-ghost btn-circle btn-xs"
+                        onClick={() => setWidgetSearchQuery('')}
+                      >
+                        <IconX size={16} />
+                      </button>
+                    </Show>
+                  </div>
+                </div>
+
+                <Show when={widgetSearchQuery()}>
+                  <div class="mt-3 flex items-center gap-2">
+                    <div class="badge badge-primary badge-lg gap-2">
+                      <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 20l4-16m2 16l4-16M6 9h14M4 15h14" />
+                      </svg>
+                      {filteredWidgets().length} result{filteredWidgets().length !== 1 ? 's' : ''}
+                    </div>
+                  </div>
+                </Show>
+              </div>
             </div>
 
-            {/* Widget Grid */}
-            <div class="flex-1 overflow-y-auto p-6">
+            {/* Widget Grid with enhanced cards */}
+            <div class="flex-1 overflow-y-auto px-8 pb-8">
               <Show when={filteredWidgets().length > 0} fallback={
-                <div class="text-center py-12 opacity-50">
-                  <svg class="w-16 h-16 mx-auto mb-4 opacity-30" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4" />
-                  </svg>
-                  <p class="text-lg">No widgets found</p>
-                  <p class="text-sm mt-2">Try a different search term</p>
+                <div class="text-center py-20">
+                  <div class="relative inline-block">
+                    <div class="absolute inset-0 bg-gradient-to-r from-primary/20 to-secondary/20 rounded-full blur-2xl"></div>
+                    <svg class="relative w-24 h-24 mx-auto mb-6 text-primary/30" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4" />
+                    </svg>
+                  </div>
+                  <p class="text-xl font-semibold mb-2">No widgets found</p>
+                  <p class="text-sm opacity-60">Try adjusting your search or browse all widgets</p>
                 </div>
               }>
-                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
                   <For each={filteredWidgets()}>
                     {(widget) => (
                       <button
-                        class="card bg-base-200 hover:bg-base-300 transition-all duration-200 hover:shadow-lg group text-left"
+                        class="relative card bg-base-200/50 backdrop-blur-sm hover:bg-base-200 transition-all duration-300 hover:shadow-2xl hover:shadow-primary/20 hover:-translate-y-1 group text-left border border-base-300/50 hover:border-primary/30 overflow-hidden"
                         onClick={() => addWidget(widget.id)}
                       >
-                        <div class="card-body p-4">
-                          {/* Widget Icon/Preview */}
-                          <div class="flex items-center gap-3 mb-3">
-                            <div class="w-12 h-12 rounded-lg bg-primary/10 flex items-center justify-center flex-shrink-0">
-                              <Show when={widget.icon} fallback={
-                                <svg class="w-6 h-6 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 5a1 1 0 011-1h4a1 1 0 011 1v7a1 1 0 01-1 1H5a1 1 0 01-1-1V5zM14 5a1 1 0 011-1h4a1 1 0 011 1v7a1 1 0 01-1 1h-4a1 1 0 01-1-1V5zM4 16a1 1 0 011-1h4a1 1 0 011 1v3a1 1 0 01-1 1H5a1 1 0 01-1-1v-3zM14 16a1 1 0 011-1h4a1 1 0 011 1v3a1 1 0 01-1 1h-4a1 1 0 01-1-1v-3z" />
-                                </svg>
-                              }>
-                                {widget.icon && <widget.icon size={24} class="text-primary" />}
-                              </Show>
+                        {/* Animated gradient on hover */}
+                        <div class="absolute inset-0 bg-gradient-to-br from-primary/5 via-transparent to-secondary/5 opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
+
+                        <div class="card-body p-5 relative z-10">
+                          {/* Widget Icon with gradient background */}
+                          <div class="flex items-start gap-3 mb-3">
+                            <div class="relative">
+                              <div class="absolute inset-0 bg-gradient-to-br from-primary to-secondary rounded-xl blur-md opacity-40 group-hover:opacity-70 transition-opacity"></div>
+                              <div class="relative w-14 h-14 rounded-xl bg-gradient-to-br from-primary/20 to-secondary/20 flex items-center justify-center ring-2 ring-primary/20 group-hover:ring-primary/40 transition-all">
+                                <Show when={widget.icon} fallback={
+                                  <svg class="w-7 h-7 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 5a1 1 0 011-1h4a1 1 0 011 1v7a1 1 0 01-1 1H5a1 1 0 01-1-1V5zM14 5a1 1 0 011-1h4a1 1 0 011 1v7a1 1 0 01-1 1h-4a1 1 0 01-1-1V5zM4 16a1 1 0 011-1h4a1 1 0 011 1v3a1 1 0 01-1 1H5a1 1 0 01-1-1v-3zM14 16a1 1 0 011-1h4a1 1 0 011 1v3a1 1 0 01-1 1h-4a1 1 0 01-1-1v-3z" />
+                                  </svg>
+                                }>
+                                  {widget.icon && <widget.icon size={28} class="text-primary" />}
+                                </Show>
+                              </div>
                             </div>
 
                             <div class="flex-1 min-w-0">
-                              <h4 class="font-semibold text-base truncate group-hover:text-primary transition-colors">
-                                {widget.name || widget.id}
+                              <h4 class="font-bold text-base truncate group-hover:text-primary transition-colors mb-1">
+                                {widget.title || widget.name || widget.id}
                               </h4>
                               <Show when={widget.plugin}>
-                                <p class="text-xs opacity-50 truncate">{widget.plugin}</p>
+                                <div class="flex items-center gap-1">
+                                  <div class="w-1.5 h-1.5 rounded-full bg-primary/50"></div>
+                                  <p class="text-xs opacity-50 truncate">{widget.plugin}</p>
+                                </div>
                               </Show>
-                            </div>
-
-                            <div class="w-8 h-8 rounded-full bg-primary text-primary-content flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0">
-                              <IconPlus size={18} />
                             </div>
                           </div>
 
                           {/* Widget Description */}
                           <Show when={widget.description}>
-                            <p class="text-sm opacity-70 line-clamp-2">
+                            <p class="text-sm opacity-70 line-clamp-2 mb-3">
                               {widget.description}
                             </p>
                           </Show>
 
-                          {/* Widget Info */}
-                          <div class="flex items-center gap-2 mt-2 text-xs opacity-50">
+                          {/* Widget Info Tags */}
+                          <div class="flex items-center gap-2 flex-wrap">
                             <Show when={widget.defaultSize}>
-                              <span class="badge badge-sm badge-ghost">
+                              <span class="badge badge-sm bg-primary/10 text-primary border-primary/20">
                                 {widget.defaultSize.w}×{widget.defaultSize.h}
                               </span>
                             </Show>
+                          </div>
+
+                          {/* Add button overlay */}
+                          <div class="absolute top-3 right-3 w-10 h-10 rounded-full bg-gradient-to-br from-primary to-secondary text-primary-content flex items-center justify-center opacity-0 group-hover:opacity-100 transform scale-75 group-hover:scale-100 transition-all duration-300 shadow-lg">
+                            <IconPlus size={20} />
                           </div>
                         </div>
                       </button>
@@ -575,17 +625,31 @@ export default function WidgetGrid(props) {
               </Show>
             </div>
 
-            {/* Footer */}
-            <div class="p-4 border-t border-base-300 flex justify-end">
-              <button class="btn btn-ghost" onClick={() => {
-                setShowAddWidget(false);
-                setWidgetSearchQuery('');
-              }}>
-                Close
-              </button>
+            {/* Gradient Footer */}
+            <div class="relative p-6 border-t border-base-300/50 bg-gradient-to-t from-base-200/50 to-transparent backdrop-blur-sm">
+              <div class="flex items-center justify-between">
+                <div class="text-sm opacity-60">
+                  <Show when={!widgetSearchQuery()}>
+                    Browse and click to add widgets to your dashboard
+                  </Show>
+                  <Show when={widgetSearchQuery()}>
+                    Showing {filteredWidgets().length} of {availableWidgets().length} widgets
+                  </Show>
+                </div>
+                <button
+                  class="btn btn-ghost gap-2 hover:gap-3 transition-all"
+                  onClick={() => {
+                    setShowAddWidget(false);
+                    setWidgetSearchQuery('');
+                  }}
+                >
+                  <IconX size={18} />
+                  Close
+                </button>
+              </div>
             </div>
           </div>
-          <div class="modal-backdrop bg-black/50" onClick={() => {
+          <div class="modal-backdrop bg-black/60 backdrop-blur-sm" onClick={() => {
             setShowAddWidget(false);
             setWidgetSearchQuery('');
           }}></div>

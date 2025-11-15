@@ -1,4 +1,4 @@
-import { createSignal, onMount, onCleanup, Show } from 'solid-js';
+import { createSignal, onMount, onCleanup, Show, For } from 'solid-js';
 import TopMenu from '@/panels/topMenu';
 import Viewport from '@/panels/viewport';
 import Footer from '@/panels/footer';
@@ -6,22 +6,22 @@ import RightPanel from '@/panels/rightPanel';
 import LeftPanel from '@/panels/leftPanel';
 import { ViewportContextMenuProvider } from '@/ui/ViewportContextMenu.jsx';
 import { keyboardShortcuts } from '@/components/KeyboardShortcuts';
-import { editorActions } from './stores/EditorStore.jsx';
-import { propertiesPanelVisible, leftPanelVisible, footerVisible } from '@/api/plugin';
+import { editorActions, editorStore } from './stores/EditorStore.jsx';
+import { propertiesPanelVisible, leftPanelVisible, footerVisible, backgroundLayers } from '@/api/plugin';
 
 const Layout = () => {
   const [globalTooltip, setGlobalTooltip] = createSignal(null);
   const [contextMenuAPI, setContextMenuAPI] = createSignal(null);
 
   onMount(() => {
-    
+
     // Listen for global tooltip events
     const handleTooltipShow = (e) => setGlobalTooltip(e.detail);
     const handleTooltipHide = () => setGlobalTooltip(null);
-    
+
     document.addEventListener('global:tooltip-show', handleTooltipShow);
     document.addEventListener('global:tooltip-hide', handleTooltipHide);
-    
+
     // Setup context menu shortcuts once the context menu API is available
     setTimeout(() => {
       const api = contextMenuAPI();
@@ -29,17 +29,52 @@ const Layout = () => {
         keyboardShortcuts.enableContextMenu(api.showContextMenu);
       }
     }, 100);
-    
+
+    // Register keyboard shortcut for toggling right panel (P key)
+    const unregisterPanelToggle = keyboardShortcuts.register((event) => {
+      // Toggle right panel with 'P' key
+      if (event.key.toLowerCase() === 'p' && !event.ctrlKey && !event.altKey && !event.shiftKey && !event.metaKey) {
+        event.preventDefault();
+        event.stopPropagation();
+        const isOpen = editorStore.panels.isScenePanelOpen;
+        editorActions.setScenePanelOpen(!isOpen);
+      }
+    });
+
     onCleanup(() => {
       document.removeEventListener('global:tooltip-show', handleTooltipShow);
       document.removeEventListener('global:tooltip-hide', handleTooltipHide);
       keyboardShortcuts.disableContextMenu();
+      if (unregisterPanelToggle) {
+        unregisterPanelToggle();
+      }
     });
   });
 
   return (
     <ViewportContextMenuProvider editorActions={editorActions} onAPIReady={setContextMenuAPI}>
-      <div class="fixed inset-0 flex flex-col pointer-events-none z-10" onContextMenu={(e) => e.preventDefault()}>
+      {/* Background Layers - render behind the main UI */}
+      <For each={Array.from(backgroundLayers().values()).sort((a, b) => a.order - b.order)}>
+        {(layer) => {
+          const LayerComponent = layer.component;
+          return (
+            <div
+              class="fixed inset-0 pointer-events-auto"
+              style={{ 'z-index': layer.zIndex || 0 }}
+            >
+              <LayerComponent />
+            </div>
+          );
+        }}
+      </For>
+
+      <div
+        class="fixed bg-base-100 inset-0 flex flex-col pointer-events-none z-10 transition-opacity duration-300"
+        onContextMenu={(e) => e.preventDefault()}
+        style={{
+          opacity: editorStore.backgroundImage ? '0.95' : '1'
+        }}
+      >
         <div class="flex-shrink-0 pointer-events-auto z-50">
           <TopMenu />
         </div>

@@ -69,6 +69,7 @@ export async function bundlePluginFrontend(pluginDir, outputDir) {
       'solid-js/store': 'SolidJSStore',
       '@/api/plugin': 'WebArcadeAPI',
       '@/api/bridge': 'WebArcadeAPI',
+      '@tabler/icons-solidjs': 'TablerIconsSolidJS',
     },
 
     // Configure output to access externals from global scope
@@ -79,7 +80,12 @@ export async function bundlePluginFrontend(pluginDir, outputDir) {
         '@': resolve(rootDir, 'src')
       },
       extensions: ['.js', '.jsx', '.ts', '.tsx', '.json'],
-      fullySpecified: false
+      fullySpecified: false,
+      modules: [
+        resolve(pluginDir, 'node_modules'),  // Check plugin's node_modules first
+        resolve(rootDir, 'node_modules'),     // Then check main project's node_modules
+        'node_modules'                        // Finally, check standard node resolution
+      ]
     },
 
     module: {

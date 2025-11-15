@@ -1,8 +1,11 @@
 import { createSignal, createEffect, Show, For, onMount, onCleanup } from 'solid-js';
 import { ProjectTree } from './ProjectTree';
-import { bridge } from '@/api/bridge';
+import { NewPluginWizard } from './NewPluginWizard';
+import { IconPlus } from '@tabler/icons-solidjs';
+import { api } from '@/api/bridge';
 
 export default function FilesPanel(props) {
+  const [showWizard, setShowWizard] = createSignal(false);
   const [currentPlugin, setCurrentPlugin] = createSignal(null);
   const [plugins, setPlugins] = createSignal([]);
 
@@ -18,26 +21,28 @@ export default function FilesPanel(props) {
     });
   });
 
-  const handlePluginCreated = async (event) => {
-    const { pluginId } = event.detail;
-    console.log('[FilesPanel] Plugin created:', pluginId);
+  const handlePluginCreated = async (plugin) => {
+    console.log('[FilesPanel] Plugin created:', plugin);
 
     // Reload plugins
     await loadPlugins();
 
     // Select the new plugin
-    setCurrentPlugin(pluginId);
+    setCurrentPlugin(plugin.id);
+
+    // Close wizard
+    setShowWizard(false);
 
     // Trigger file selection for index.jsx
     setTimeout(() => {
       window.dispatchEvent(new CustomEvent('plugin-ide:file-select', {
         detail: {
           file: {
-            path: `plugins/developer/projects/${pluginId}/index.jsx`,
+            path: `plugins/developer/projects/${plugin.id}/index.jsx`,
             name: 'index.jsx',
             type: 'file'
           },
-          plugin: pluginId
+          plugin: plugin.id
         }
       }));
     }, 100);
@@ -45,7 +50,7 @@ export default function FilesPanel(props) {
 
   const loadPlugins = async () => {
     try {
-      const response = await bridge('/developer/plugins');
+      const response = await api('developer/plugins');
       const data = await response.json();
       setPlugins(data);
 
@@ -78,7 +83,7 @@ export default function FilesPanel(props) {
         relativePath = parentPath.split(pluginPath + '/')[1] || parentPath.split(pluginPath + '\\')[1] || '';
       }
 
-      await bridge(`/developer/file/${currentPlugin()}`, {
+      await api(`developer/file/${currentPlugin()}`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -104,7 +109,7 @@ export default function FilesPanel(props) {
         relativePath = relativePath.split(pluginPath + '/')[1] || relativePath.split(pluginPath + '\\')[1];
       }
 
-      await bridge(`/developer/file/${currentPlugin()}/${relativePath}`, {
+      await api(`developer/file/${currentPlugin()}/${relativePath}`, {
         method: 'DELETE',
       });
     } catch (error) {
@@ -119,7 +124,7 @@ export default function FilesPanel(props) {
       <div class="p-3 border-b border-base-content/10 bg-base-200">
         <label class="text-xs font-semibold text-base-content/60 mb-1 block">Plugin</label>
         <select
-          class="select select-bordered select-sm w-full"
+          class="select select-bordered select-sm w-full mb-2"
           value={currentPlugin() || ''}
           onChange={(e) => {
             setCurrentPlugin(e.target.value);
@@ -136,6 +141,13 @@ export default function FilesPanel(props) {
             )}
           </For>
         </select>
+        <button
+          onClick={() => setShowWizard(true)}
+          class="btn btn-sm btn-primary w-full gap-2"
+        >
+          <IconPlus size={16} />
+          New Plugin
+        </button>
       </div>
 
       {/* File Tree */}
@@ -156,6 +168,14 @@ export default function FilesPanel(props) {
           />
         </Show>
       </div>
+
+      {/* New Plugin Wizard */}
+      <Show when={showWizard()}>
+        <NewPluginWizard
+          onClose={() => setShowWizard(false)}
+          onCreate={handlePluginCreated}
+        />
+      </Show>
     </div>
   );
 }

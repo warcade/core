@@ -51,16 +51,26 @@
       "main": null,
       "widget": null,
       "widgets": [
+        "Base64Widget.jsx",
         "CalculatorWidget.jsx",
         "ClockWidget.jsx",
         "ColorPickerWidget.jsx",
         "CpuWidget.jsx",
-        "MemoryWidget.jsx"
+        "CurrencyConverterWidget.jsx",
+        "GoalTrackerWidget.jsx",
+        "JokeGeneratorWidget.jsx",
+        "MemoryWidget.jsx",
+        "NotesWidget.jsx",
+        "PasswordGeneratorWidget.jsx",
+        "TranslateWidget.jsx",
+        "UnitConverterWidget.jsx",
+        "WaterTrackerWidget.jsx",
+        "WeatherWidget.jsx"
       ],
       "enabled": true,
       "priority": 1
     }
   ],
-  "generatedAt": "2025-11-14T13:09:17.435Z",
+  "generatedAt": "2025-11-15T17:34:58.713Z",
   "generator": "discover-plugins.js"
 }

@@ -64,7 +64,7 @@ export default function DatabaseMenu() {
   };
 
   return (
-    <div class="h-full bg-base-100 flex flex-col">
+    <div class="h-full flex flex-col">
       <div class="p-4 border-b border-base-300">
         <div class="flex items-center gap-2">
           <IconDatabase size={20} class="text-primary" />

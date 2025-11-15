@@ -330,10 +330,13 @@ function TopMenu() {
           </button>
         </div>
 
-        {/* Tauri Window Controls - Only show in desktop app */}
+        {/* Tauri Window Controls - Only show in desktop app and hide in background mode */}
         {typeof window !== 'undefined' && window.__TAURI_INTERNALS__ && (
           <div
             class="flex items-center gap-3 text-xs text-gray-500"
+            classList={{
+              'hidden': editorStore.backgroundMode
+            }}
             style={{
               '-webkit-app-region': 'no-drag'
             }}

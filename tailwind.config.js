@@ -45,7 +45,15 @@ export default {
       "sunset",
       "caramellatte",
       "abyss",
-      "silk"
+      "silk",
+      {
+        "dark-glass": {
+          ...require("daisyui/src/theming/themes")["dark"],
+          "base-100": "oklch(0.15 0.02 240 / 0.7)",
+          "base-200": "oklch(0.13 0.02 240 / 0.75)",
+          "base-300": "oklch(0.11 0.02 240 / 0.85)",
+        }
+      }
     ],
   },
 }

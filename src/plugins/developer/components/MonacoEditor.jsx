@@ -1,11 +1,13 @@
 import { createSignal, onMount, onCleanup, createEffect, untrack } from 'solid-js';
 import loader from '@monaco-editor/loader';
 import { keyboardShortcuts } from '@/components/KeyboardShortcuts';
+import { editorStore } from '@/layout/stores/EditorStore.jsx';
+import PowerMode from '@/components/PowerMode';
 
-function MonacoEditor({ 
-  value, 
-  onChange, 
-  language = 'javascript', 
+function MonacoEditor({
+  value,
+  onChange,
+  language = 'javascript',
   theme = 'vs-dark',
   height = '100%',
   width = '100%',
@@ -14,6 +16,8 @@ function MonacoEditor({
 }) {
   const [editor, setEditor] = createSignal(null);
   let containerRef = null;
+  let powerModeInstance = null;
+  let powerModeDisposable = null;
 
   const defaultOptions = {
     automaticLayout: true,
@@ -825,6 +829,45 @@ function MonacoEditor({
 
       setEditor(editorInstance);
 
+      // Initialize power mode manually (without using the hook to avoid Solid.js context issues)
+      powerModeInstance = new PowerMode({
+        enabled: editorStore.powerMode.enabled,
+        shake: editorStore.powerMode.shake,
+        particles: editorStore.powerMode.particles,
+        maxParticles: editorStore.powerMode.maxParticles,
+        particleSize: editorStore.powerMode.particleSize,
+        shakeIntensity: editorStore.powerMode.shakeIntensity
+      });
+
+      // Initialize power mode
+      powerModeInstance.init(containerRef);
+
+      // Listen to content changes
+      powerModeDisposable = editorInstance.onDidChangeModelContent((e) => {
+        if (!editorStore.powerMode.enabled || !e.changes || e.changes.length === 0) return;
+
+        // Get cursor position
+        const position = editorInstance.getPosition();
+        if (!position) return;
+
+        // Convert editor position to screen coordinates
+        const coords = editorInstance.getScrolledVisiblePosition(position);
+        if (!coords) return;
+
+        const containerRect = containerRef.getBoundingClientRect();
+        const editorDom = editorInstance.getDomNode();
+        const editorRect = editorDom.getBoundingClientRect();
+
+        const x = coords.left + editorRect.left - containerRect.left;
+        const y = coords.top + editorRect.top - containerRect.top + coords.height / 2;
+
+        // Create particles at cursor position
+        powerModeInstance.createParticles(x, y);
+
+        // Shake the editor
+        powerModeInstance.shake(containerRef);
+      });
+
       // Disable application shortcuts when Monaco Editor is focused
       editorInstance.onDidFocusEditorText(() => {
         keyboardShortcuts.disable();
@@ -853,7 +896,7 @@ function MonacoEditor({
       resizeObserver.observe(containerRef);
 
       onCleanup(() => {
-        
+
         // Clean up drag/drop event listeners
         if (dragEventListeners) {
           dragEventListeners.forEach(({ element, event, handler }) => {
@@ -864,13 +907,27 @@ function MonacoEditor({
           });
           dragEventListeners = [];
         }
-        
+
+        // Clean up power mode
+        if (powerModeDisposable) {
+          try {
+            powerModeDisposable.dispose();
+          } catch (error) {
+          }
+        }
+        if (powerModeInstance) {
+          try {
+            powerModeInstance.dispose();
+          } catch (error) {
+          }
+        }
+
         // Clean up resize observer
         resizeObserver.disconnect();
-        
+
         // Re-enable shortcuts if they were disabled
         keyboardShortcuts.enable();
-        
+
         // Dispose of editor instance
         try {
           editorInstance.dispose();
@@ -920,6 +977,33 @@ function MonacoEditor({
           monaco.editor.setModelLanguage(model, language);
         });
       }
+    }
+  });
+
+  // Watch for power mode settings changes and update the instance
+  createEffect(() => {
+    // Access each property individually to ensure reactivity
+    const enabled = editorStore.powerMode.enabled;
+    const shake = editorStore.powerMode.shake;
+    const particles = editorStore.powerMode.particles;
+    const maxParticles = editorStore.powerMode.maxParticles;
+    const particleSize = editorStore.powerMode.particleSize;
+    const shakeIntensity = editorStore.powerMode.shakeIntensity;
+
+    if (powerModeInstance) {
+      console.log('[MonacoEditor] Updating power mode settings:', {
+        enabled, shake, particles, maxParticles, particleSize, shakeIntensity
+      });
+
+      // Update settings when editorStore.powerMode changes
+      powerModeInstance.updateSettings({
+        enabled,
+        shakeEnabled: shake,
+        particlesEnabled: particles,
+        maxParticles,
+        particleSize,
+        shakeIntensity
+      });
     }
   });
 

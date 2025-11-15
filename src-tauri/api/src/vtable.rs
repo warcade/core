@@ -2,8 +2,6 @@
 ///
 /// This struct contains function pointers passed from the main binary.
 
-use std::os::raw::c_char;
-
 /// Function pointer types for the VTable
 pub type RouterNewFn = extern "C" fn() -> *const ();
 pub type RouterAddRouteFn = extern "C" fn(*mut (), *const u8, usize, *const u8, usize, *const u8, usize) -> i32;
@@ -13,6 +11,7 @@ pub type GetDatabaseFn = extern "C" fn(*const ()) -> *const ();
 pub type EmitEventFn = extern "C" fn(*const (), *const u8, usize, *const u8, usize);
 pub type DbQueryFn = extern "C" fn(*const (), *const u8, usize, *const u8, usize) -> *const u8;
 pub type DbExecuteFn = extern "C" fn(*const (), *const u8, usize, *const u8, usize) -> i32;
+pub type DbLastInsertRowidFn = extern "C" fn(*const ()) -> i64;
 
 /// VTable struct that contains all function pointers
 #[repr(C)]
@@ -25,6 +24,7 @@ pub struct PluginVTable {
     pub emit_event: EmitEventFn,
     pub db_query: DbQueryFn,
     pub db_execute: DbExecuteFn,
+    pub db_last_insert_rowid: DbLastInsertRowidFn,
 }
 
 /// FFI context that combines the PluginContext pointer with the VTable

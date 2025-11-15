@@ -10,6 +10,7 @@ const [footerButtons, setFooterButtons] = createSignal(new Map());
 const [leftPanelMenuItems, setLeftPanelMenuItems] = createSignal(new Map());
 const [registeredPlugins, setRegisteredPlugins] = createSignal(new Map());
 const [widgets, setWidgets] = createSignal(new Map());
+const [backgroundLayers, setBackgroundLayers] = createSignal(new Map());
 const [propertiesPanelVisible, setPropertiesPanelVisible] = createSignal(true);
 const [leftPanelVisible, setLeftPanelVisible] = createSignal(true);
 const [horizontalMenuButtonsEnabled, setHorizontalMenuButtonsEnabled] = createSignal(true);
@@ -435,15 +436,19 @@ class PluginLoader {
   }
 
   // Helper method to load and register a widget
-  loadWidgetComponent(pluginId, widgetPath, widgetConfig) {
+  async loadWidgetComponent(pluginId, widgetPath, widgetConfig) {
     try {
       // Exclude developer/projects directory from context
       const pluginContext = require.context('../../plugins', true, /\.(jsx|js)$/, 'lazy');
       const allKeys = pluginContext.keys().filter(key => !key.includes('/developer/projects/'));
       const relativePath = widgetPath.replace('/src/plugins', '.');
 
+      console.log(`[loadWidgetComponent] Looking for: ${relativePath}`);
+      console.log(`[loadWidgetComponent] Available keys: ${allKeys.filter(k => k.includes('system/widgets')).join(', ')}`);
+
       if (allKeys.includes(relativePath)) {
-        const widgetModule = pluginContext(relativePath);
+        console.log(`[loadWidgetComponent] Found widget file: ${relativePath}`);
+        const widgetModule = await pluginContext(relativePath);
         const WidgetComponent = widgetModule.default;
 
         if (WidgetComponent) {
@@ -451,11 +456,17 @@ class PluginLoader {
             ...widgetConfig,
             component: WidgetComponent
           });
+          console.log(`[loadWidgetComponent] Successfully registered widget: ${widgetConfig.id}`);
           return true;
+        } else {
+          console.error(`[loadWidgetComponent] Widget module has no default export: ${relativePath}`);
         }
+      } else {
+        console.error(`[loadWidgetComponent] Widget file not found in context: ${relativePath}`);
       }
       return false;
     } catch (error) {
+      console.error(`[loadWidgetComponent] Error loading widget ${widgetPath}:`, error);
       return false;
     }
   }
@@ -826,13 +837,24 @@ export class PluginAPI {
         return newMap;
       });
 
+      // Remove background layers
+      setBackgroundLayers(prev => {
+        const newMap = new Map(prev);
+        for (const [key, layer] of newMap) {
+          if (layer.plugin === pluginId) {
+            newMap.delete(key);
+          }
+        }
+        return newMap;
+      });
+
       // Remove from registered plugins
       setRegisteredPlugins(prev => {
         const newMap = new Map(prev);
         newMap.delete(pluginId);
         return newMap;
       });
-      
+
     } catch (error) {
     }
   }
@@ -924,11 +946,45 @@ export class PluginAPI {
       component: config.component,
       icon: config.icon,
       description: config.description || `${config.label} viewport`,
+      onActivate: config.onActivate || null,
+      onDeactivate: config.onDeactivate || null,
       plugin: config.plugin || this.getCurrentPluginId() || 'unknown'
     };
 
     setViewportTypes(prev => new Map(prev.set(id, viewportType)));
+
+    // Set up event listeners for this viewport type's lifecycle
+    if (config.onActivate || config.onDeactivate) {
+      this.setupViewportLifecycleListeners(id, config.onActivate, config.onDeactivate);
+    }
+
     return true;
+  }
+
+  setupViewportLifecycleListeners(viewportTypeId, onActivate, onDeactivate) {
+    // Listen for tab activation
+    if (onActivate) {
+      document.addEventListener('viewport:tab-activated', (event) => {
+        const { tabId } = event.detail;
+        // Check if the activated tab is of this viewport type
+        const tab = viewportStore.tabs.find(t => t.id === tabId);
+        if (tab && tab.type === viewportTypeId) {
+          onActivate(this, tab);
+        }
+      });
+    }
+
+    // Listen for tab deactivation
+    if (onDeactivate) {
+      document.addEventListener('viewport:tab-deactivated', (event) => {
+        const { tabId } = event.detail;
+        // Check if the deactivated tab is of this viewport type
+        const tab = viewportStore.tabs.find(t => t.id === tabId);
+        if (tab && tab.type === viewportTypeId) {
+          onDeactivate(this, tab);
+        }
+      });
+    }
   }
 
   registerFooterButton(id, config) {
@@ -979,6 +1035,18 @@ export class PluginAPI {
     return true;
   }
 
+  registerBackgroundLayer(id, config) {
+    const layer = {
+      id,
+      component: config.component,
+      order: config.order || 100, // Lower order = further back
+      zIndex: config.zIndex || 0,
+      plugin: config.plugin || this.getCurrentPluginId() || 'unknown'
+    };
+
+    setBackgroundLayers(prev => new Map(prev.set(id, layer)));
+    return true;
+  }
 
   registerLayoutComponent(region, component) {
     const layoutComponent = {
@@ -1033,6 +1101,7 @@ export class PluginAPI {
   viewport(id, config) { return this.registerViewportType(id, config); }
   footer(id, config) { return this.registerFooterButton(id, config); }
   widget(id, config) { return this.registerWidget(id, config); }
+  bg(id, config) { return this.registerBackgroundLayer(id, config); }
   open(typeId, options) { return this.createViewportTab(typeId, options); }
 
   createViewportTab(typeId, options = {}) {
@@ -1153,6 +1222,10 @@ export class PluginAPI {
 
   getWidgets() {
     return Array.from(widgets().values()).sort((a, b) => a.order - b.order);
+  }
+
+  getBackgroundLayers() {
+    return Array.from(backgroundLayers().values()).sort((a, b) => a.order - b.order);
   }
 
   getPlugins() {
@@ -1293,6 +1366,7 @@ export {
   leftPanelMenuItems,
   registeredPlugins,
   widgets,
+  backgroundLayers,
   propertiesPanelVisible,
   leftPanelVisible,
   horizontalMenuButtonsEnabled,

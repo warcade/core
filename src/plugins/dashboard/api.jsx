@@ -1,16 +1,16 @@
 // Dashboard API Client
-import { bridge } from '@/api/bridge';
+import { api } from '@/api/bridge';
 
 export const dashboardAPI = {
   // Dashboard CRUD
   async getDashboards() {
-    const response = await bridge('/dashboard/dashboards');
+    const response = await api('dashboard/dashboards');
     if (!response.ok) throw new Error('Failed to fetch dashboards');
     return response.json();
   },
 
   async createDashboard(name) {
-    const response = await bridge('/dashboard/dashboards', {
+    const response = await api('dashboard/dashboards', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ name }),
@@ -20,7 +20,7 @@ export const dashboardAPI = {
   },
 
   async updateDashboard(id, name) {
-    const response = await bridge(`/dashboard/dashboards/${id}`, {
+    const response = await api(`dashboard/dashboards/${id}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ name }),
@@ -30,7 +30,7 @@ export const dashboardAPI = {
   },
 
   async deleteDashboard(id) {
-    const response = await bridge(`/dashboard/dashboards/${id}`, {
+    const response = await api(`dashboard/dashboards/${id}`, {
       method: 'DELETE',
     });
     if (!response.ok) throw new Error('Failed to delete dashboard');
@@ -39,13 +39,13 @@ export const dashboardAPI = {
 
   // Widget Instance CRUD
   async getWidgets(dashboardId) {
-    const response = await bridge(`/dashboard/dashboards/${dashboardId}/widgets`);
+    const response = await api(`dashboard/dashboards/${dashboardId}/widgets`);
     if (!response.ok) throw new Error('Failed to fetch widgets');
     return response.json();
   },
 
   async createWidget(dashboardId, widgetId, orderIndex = 0, columns = 1, config = null) {
-    const response = await bridge(`/dashboard/dashboards/${dashboardId}/widgets`, {
+    const response = await api(`dashboard/dashboards/${dashboardId}/widgets`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -60,7 +60,7 @@ export const dashboardAPI = {
   },
 
   async updateWidget(id, updates) {
-    const response = await bridge(`/dashboard/widgets/${id}`, {
+    const response = await api(`dashboard/widgets/${id}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(updates),
@@ -70,7 +70,7 @@ export const dashboardAPI = {
   },
 
   async deleteWidget(id) {
-    const response = await bridge(`/dashboard/widgets/${id}`, {
+    const response = await api(`dashboard/widgets/${id}`, {
       method: 'DELETE',
     });
     if (!response.ok) throw new Error('Failed to delete widget');
@@ -78,7 +78,7 @@ export const dashboardAPI = {
   },
 
   async reorderWidgets(dashboardId, widgetIds) {
-    const response = await bridge(`/dashboard/dashboards/${dashboardId}/widgets/reorder`, {
+    const response = await api(`dashboard/dashboards/${dashboardId}/widgets/reorder`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ widget_ids: widgetIds }),

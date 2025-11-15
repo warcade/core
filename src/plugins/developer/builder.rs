@@ -65,8 +65,13 @@ impl PluginBuilder {
     }
 
     pub fn build(&self, progress_callback: impl Fn(BuildProgress), log_callback: impl Fn(String)) -> Result<BuildResult> {
-        // Check if plugin has Rust backend
-        let has_backend = self.plugin_dir.join("mod.rs").exists();
+        // Auto-detect if plugin has Rust backend (check for mod.rs or Cargo.toml)
+        let has_backend = self.plugin_dir.join("mod.rs").exists()
+            || self.plugin_dir.join("Cargo.toml").exists();
+
+        // Auto-detect if plugin has frontend (check for index.jsx or index.js)
+        let has_frontend = self.plugin_dir.join("index.jsx").exists()
+            || self.plugin_dir.join("index.js").exists();
 
         progress_callback(BuildProgress {
             step: "prepare".to_string(),
@@ -115,7 +120,7 @@ impl PluginBuilder {
             message: "Creating distribution package...".to_string(),
         });
 
-        let zip_path = self.create_package(has_backend)?;
+        let zip_path = self.create_package()?;
 
         progress_callback(BuildProgress {
             step: "complete".to_string(),
@@ -130,25 +135,6 @@ impl PluginBuilder {
         })
     }
 
-    fn read_cargo_dependencies_from_package_json(&self) -> Result<std::collections::HashMap<String, String>> {
-        let package_json_path = self.plugin_dir.join("package.json");
-        let mut deps = std::collections::HashMap::new();
-
-        if package_json_path.exists() {
-            let content = fs::read_to_string(&package_json_path)?;
-            if let Ok(json) = serde_json::from_str::<serde_json::Value>(&content) {
-                if let Some(cargo_deps) = json.get("cargo_dependencies").and_then(|v| v.as_object()) {
-                    for (key, value) in cargo_deps {
-                        if let Some(version) = value.as_str() {
-                            deps.insert(key.clone(), version.to_string());
-                        }
-                    }
-                }
-            }
-        }
-
-        Ok(deps)
-    }
 
     fn setup_backend_build(&self) -> Result<()> {
         // Create a temporary build directory for Rust compilation
@@ -163,72 +149,71 @@ impl PluginBuilder {
         let api_path = self.project_root.join("src-tauri").join("api");
         let api_path_str = api_path.to_string_lossy().replace("\\", "/");
 
-        // Read cargo_dependencies from package.json if it exists
-        let additional_deps = self.read_cargo_dependencies_from_package_json()?;
-
         let cargo_toml = if plugin_cargo_toml.exists() {
-            // Read existing Cargo.toml and update webarcade_api path to absolute
+            // Read existing Cargo.toml and update api path to absolute
             let mut content = fs::read_to_string(&plugin_cargo_toml)?;
 
-            // Check if webarcade_api is already present
-            let re = regex::Regex::new(r#"webarcade_api\s*=\s*\{[^}]*path\s*=\s*"[^"]*"[^}]*\}"#).unwrap();
+            // Check if api is already present
+            let re = regex::Regex::new(r#"api\s*=\s*\{[^}]*path\s*=\s*"[^"]*"[^}]*\}"#).unwrap();
 
             content = if re.is_match(&content) {
-                // Replace existing webarcade_api path
-                re.replace(&content, format!("webarcade_api = {{ path = \"{}\" }}", api_path_str)).to_string()
+                // Replace existing api path
+                re.replace(&content, format!("api = {{ path = \"{}\" }}", api_path_str)).to_string()
             } else {
-                // Inject webarcade_api if not present
+                // Inject api if not present
                 // Find [dependencies] section and add it there
                 let deps_re = regex::Regex::new(r"(?m)^\[dependencies\]\s*$").unwrap();
                 if let Some(mat) = deps_re.find(&content) {
                     let insert_pos = mat.end();
                     let mut new_content = content.clone();
-                    new_content.insert_str(insert_pos, &format!("\nwebarcade_api = {{ path = \"{}\" }}", api_path_str));
+                    new_content.insert_str(insert_pos, &format!("\napi = {{ path = \"{}\" }}", api_path_str));
                     new_content
                 } else {
-                    content
+                    // No [dependencies] section found, add it before [profile.release] or at the end
+                    let profile_re = regex::Regex::new(r"(?m)^\[profile\.release\]").unwrap();
+                    if let Some(mat) = profile_re.find(&content) {
+                        let insert_pos = mat.start();
+                        let mut new_content = content.clone();
+                        new_content.insert_str(insert_pos, &format!("[dependencies]\napi = {{ path = \"{}\" }}\n\n", api_path_str));
+                        new_content
+                    } else {
+                        // Add at the end
+                        format!("{}\n[dependencies]\napi = {{ path = \"{}\" }}\n", content, api_path_str)
+                    }
                 }
             };
 
-            // Also inject lazy_static if not present
-            if !content.contains("lazy_static") {
-                let deps_re = regex::Regex::new(r"(?m)^\[dependencies\]\s*$").unwrap();
-                if let Some(mat) = deps_re.find(&content) {
-                    let insert_pos = mat.end();
-                    content.insert_str(insert_pos, "\nlazy_static = \"1.5\"");
-                }
+            // Ensure [lib] section exists with correct configuration
+            // Remove any existing [lib] section first (match from [lib] to next section or end of file)
+            let lib_section_re = regex::Regex::new(r"(?m)\n?\[lib\][^\[]*").unwrap();
+            content = lib_section_re.replace(&content, "").to_string();
+
+            // Find [package] section and insert [lib] after it
+            // Match [package] and everything until the next section
+            let package_re = regex::Regex::new(r"(?m)(\[package\][^\[]+)").unwrap();
+            if let Some(mat) = package_re.find(&content) {
+                let insert_pos = mat.end();
+                content.insert_str(insert_pos, "\n[lib]\ncrate-type = [\"cdylib\"]\npath = \"lib.rs\"\n");
             }
 
             content
         } else {
             // Create default Cargo.toml
-            let mut deps = format!("webarcade_api = {{ path = \"{}\" }}\n", api_path_str);
-            deps.push_str("lazy_static = \"1.5\"\n");
-
-            // Add additional dependencies from package.json
-            for (dep_name, dep_version) in &additional_deps {
-                deps.push_str(&format!("{} = \"{}\"\n", dep_name, dep_version));
-            }
-
             format!(
                 r#"[package]
 name = "{}"
 version = "1.0.0"
 edition = "2021"
 
-[lib]
-crate-type = ["cdylib"]
-path = "lib.rs"
-
 [dependencies]
-{}
+
 [profile.release]
 opt-level = "z"
 lto = true
 codegen-units = 1
 strip = true
 "#,
-                self.plugin_id, deps
+                self.plugin_id
             )
         };
 
@@ -262,11 +247,60 @@ rustflags = ["-C", "link-args=-undefined dynamic_lookup"]
         // Get plugin struct name (e.g., "MyPlugin" from plugin dir name)
         let plugin_struct = self.get_plugin_struct_name();
 
-        // Extract handler functions from router.rs
-        let handlers = self.extract_handlers()?;
+        // Extract handler functions from router.rs with their signatures
+        let handlers = self.extract_handler_signatures()?;
 
         // Generate handler wrapper functions
-        let handler_wrappers = handlers.iter().map(|handler_name| {
+        let handler_wrappers = handlers.iter().map(|(handler_name, params)| {
+            // Determine what arguments to pass based on the parameters
+            let (handler_args, needs_request) = if params.is_empty() {
+                (String::new(), false)
+            } else if params.len() == 1 && params[0].1.contains("HttpRequest") {
+                // Handler takes only HttpRequest
+                ("dummy_req".to_string(), true)
+            } else if params.len() == 2 && params[0].1.contains("HttpRequest") && params[1].1.contains("String") {
+                // Handler takes HttpRequest and path String
+                ("dummy_req, String::new()".to_string(), true)
+            } else {
+                // Unknown parameter pattern - try to pass dummy values
+                let has_req = params.iter().any(|(_, ty)| ty.contains("HttpRequest"));
+                let args = params.iter().map(|(_, ty)| {
+                    if ty.contains("HttpRequest") {
+                        "dummy_req"
+                    } else if ty.contains("String") {
+                        "String::new()"
+                    } else {
+                        "Default::default()"
+                    }
+                }).collect::<Vec<_>>().join(", ");
+                (args, has_req)
+            };
+
+            // Create dummy request if needed - we need to transmute an empty body to Incoming
+            // This is safe because we're just creating a request that will be immediately consumed
+            let create_dummy_req = if needs_request {
+                r#"
+            // Create a dummy HTTP request with an empty body
+            // SAFETY: We're creating an empty request for handlers that will ignore the body
+            use api::http_body_util::Empty;
+            use api::hyper::body::Bytes;
+            let empty_body = Empty::<Bytes>::new();
+
+            // We need to convert Empty to Incoming, which is tricky
+            // For now, we'll use an unsafe transmute since the handler shouldn't read the body
+            let dummy_req: api::hyper::Request<api::hyper::body::Incoming> = unsafe {
+                std::mem::transmute(
+                    api::hyper::Request::builder()
+                        .method("GET")
+                        .uri("/")
+                        .body(empty_body)
+                        .unwrap()
+                )
+            };"#
+            } else {
+                ""
+            };
+
             format!("
 #[no_mangle]
 pub extern \"C\" fn {}() -> *const u8 {{
@@ -275,11 +309,11 @@ pub extern \"C\" fn {}() -> *const u8 {{
 
     let result = panic::catch_unwind(|| {{
         // Use the shared runtime instead of creating a new one
-        RUNTIME.block_on(async {{
-            use webarcade_api::http_body_util::BodyExt;
-
+        get_runtime().block_on(async {{
+            use api::http_body_util::BodyExt;
+{}
             // Call the handler and get the HttpResponse
-            let response = plugin_mod::router::{}().await;
+            let response = plugin_mod::router::{}({}).await;
 
             // Extract the body bytes from the response
             let (_parts, body) = response.into_parts();
@@ -302,29 +336,33 @@ pub extern \"C\" fn {}() -> *const u8 {{
         }}
     }}
 }}
-", handler_name, handler_name)
+", handler_name, create_dummy_req, handler_name, handler_args)
         }).collect::<Vec<_>>().join("\n");
 
         let lib_content = format!(r#"// Auto-generated plugin library
-// This file uses the webarcade_api to provide a clean plugin interface
+// This file uses the api crate to provide a clean plugin interface
 
 // Include plugin modules
 pub mod plugin_mod;
 
 // Re-export plugin
 pub use plugin_mod::*;
-use webarcade_api::tokio;
-use std::sync::Arc;
+use api::tokio;
+use std::sync::{{Arc, OnceLock}};
 
 // Shared runtime for all handler calls to avoid creating multiple runtimes
-lazy_static::lazy_static! {{
-    static ref RUNTIME: Arc<tokio::runtime::Runtime> = Arc::new(
-        tokio::runtime::Builder::new_multi_thread()
-            .enable_all()
-            .worker_threads(2)
-            .build()
-            .expect("Failed to create tokio runtime")
-    );
+static RUNTIME: OnceLock<Arc<tokio::runtime::Runtime>> = OnceLock::new();
+
+fn get_runtime() -> &'static Arc<tokio::runtime::Runtime> {{
+    RUNTIME.get_or_init(|| {{
+        Arc::new(
+            tokio::runtime::Builder::new_multi_thread()
+                .enable_all()
+                .worker_threads(2)
+                .build()
+                .expect("Failed to create tokio runtime")
+        )
+    }})
 }}
 
 // Export plugin lifecycle functions for dynamic loading
@@ -349,7 +387,7 @@ pub extern "C" fn plugin_stop() -> i32 {{
 
 #[no_mangle]
 pub extern "C" fn plugin_metadata() -> *const u8 {{
-    use webarcade_api::{{Plugin, serde_json}};
+    use api::{{Plugin, serde_json}};
     let plugin = plugin_mod::{};
     let metadata = plugin.metadata();
     let json = serde_json::to_string(&metadata).unwrap_or_default();
@@ -376,11 +414,64 @@ pub extern "C" fn plugin_metadata() -> *const u8 {{
 
         // Look for route! macro usages to extract handler names
         // Pattern: route!(router, METHOD "/path" => handler_name);
-        let re = regex::Regex::new(r"route!\s*\([^,]+,\s*\w+\s+[^=]+=>\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*\)").unwrap();
+        // Pattern: route!(router, METHOD "/path", path => handler_name);
+        let re = regex::Regex::new(r"route!\s*\([^,]+,\s*\w+\s+[^=]+(?:,\s*path\s*)?=>\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*\)").unwrap();
 
         for cap in re.captures_iter(&content) {
             if let Some(handler_name) = cap.get(1) {
                 handlers.push(handler_name.as_str().to_string());
+            }
+        }
+
+        Ok(handlers)
+    }
+
+    fn extract_handler_signatures(&self) -> Result<Vec<(String, Vec<(String, String)>)>> {
+        let router_path = self.plugin_dir.join("router.rs");
+        if !router_path.exists() {
+            return Ok(Vec::new());
+        }
+
+        let content = fs::read_to_string(&router_path)?;
+        let mut handlers = Vec::new();
+
+        // First get handler names from route! macros
+        let handler_names = self.extract_handlers()?;
+
+        // For each handler, find its function signature
+        for handler_name in handler_names {
+            // Match: pub async fn handler_name(param1: Type1, param2: Type2) -> HttpResponse
+            let pattern = format!(
+                r"(?:pub\s+)?async\s+fn\s+{}\s*\(([^)]*)\)\s*->\s*HttpResponse",
+                regex::escape(&handler_name)
+            );
+            let re = regex::Regex::new(&pattern).unwrap();
+
+            if let Some(cap) = re.captures(&content) {
+                if let Some(params_str) = cap.get(1) {
+                    let params_str = params_str.as_str().trim();
+                    let mut params = Vec::new();
+
+                    if !params_str.is_empty() {
+                        // Split by comma and parse each parameter
+                        for param in params_str.split(',') {
+                            let param = param.trim();
+                            if let Some(colon_pos) = param.find(':') {
+                                let name = param[..colon_pos].trim().to_string();
+                                let ty = param[colon_pos + 1..].trim().to_string();
+                                params.push((name, ty));
+                            }
+                        }
+                    }
+
+                    handlers.push((handler_name.clone(), params));
+                } else {
+                    // No parameters
+                    handlers.push((handler_name.clone(), Vec::new()));
+                }
+            } else {
+                // Couldn't find signature, assume no parameters
+                handlers.push((handler_name.clone(), Vec::new()));
             }
         }
 
@@ -423,10 +514,10 @@ pub extern "C" fn plugin_metadata() -> *const u8 {{
                             // Make the router module public
                             content.replace("mod router;", "pub mod router;")
                         } else if file_name_str == "router.rs" {
-                            // Make handler functions public
-                            // Pattern: async fn handler_name() -> HttpResponse
-                            let re = regex::Regex::new(r"async fn ([a-zA-Z_][a-zA-Z0-9_]*)\(\) -> HttpResponse").unwrap();
-                            re.replace_all(&content, "pub async fn $1() -> HttpResponse").to_string()
+                            // Make handler functions public (if not already)
+                            // Pattern: async fn handler_name(...) -> HttpResponse
+                            let re = regex::Regex::new(r"(?m)^async fn ([a-zA-Z_][a-zA-Z0-9_]*)\(([^)]*)\) -> HttpResponse").unwrap();
+                            re.replace_all(&content, "pub async fn $1($2) -> HttpResponse").to_string()
                         } else {
                             content
                         };
@@ -444,7 +535,7 @@ pub extern "C" fn plugin_metadata() -> *const u8 {{
         let rust_build_dir = self.build_dir.join("rust_build");
 
         log::info!("[Developer] Compiling {} as cdylib...", self.plugin_id);
-        log_callback(format!("Compiling {} as cdylib...\n", self.plugin_id));
+        log_callback(format!("Compiling {} as cdylib...", self.plugin_id));
 
         // Build for current platform
         let mut cmd = Command::new("cargo");
@@ -453,7 +544,7 @@ pub extern "C" fn plugin_metadata() -> *const u8 {{
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
 
-        log_callback("Running: cargo build --release --lib\n".to_string());
+        log_callback("Running: cargo build --release --lib".to_string());
 
         let mut child = cmd.spawn().context("Failed to spawn cargo build")?;
 
@@ -475,7 +566,7 @@ pub extern "C" fn plugin_metadata() -> *const u8 {{
                 let reader = std::io::BufReader::new(stdout);
                 for line in reader.lines() {
                     if let Ok(line) = line {
-                        let _ = tx.send(format!("{}\n", line));
+                        let _ = tx.send(line);
                     }
                 }
             });
@@ -489,7 +580,7 @@ pub extern "C" fn plugin_metadata() -> *const u8 {{
                 let reader = std::io::BufReader::new(stderr);
                 for line in reader.lines() {
                     if let Ok(line) = line {
-                        let _ = tx.send(format!("{}\n", line));
+                        let _ = tx.send(line);
                     }
                 }
             });
@@ -513,11 +604,11 @@ pub extern "C" fn plugin_metadata() -> *const u8 {{
 
         if !status.success() {
             log::error!("[Developer] Cargo build failed");
-            log_callback("Cargo build failed!\n".to_string());
+            log_callback("Cargo build failed!".to_string());
             anyhow::bail!("Cargo build failed");
         }
 
-        log_callback("Rust compilation successful!\n".to_string());
+        log_callback("Rust compilation successful!".to_string());
 
         progress_callback(BuildProgress {
             step: "backend_compile".to_string(),
@@ -686,7 +777,7 @@ pub extern "C" fn plugin_metadata() -> *const u8 {{
         Ok(())
     }
 
-    fn create_package(&self, has_backend: bool) -> Result<String> {
+    fn create_package(&self) -> Result<String> {
         let cwd = std::env::current_dir()?;
         let dist_root = if cwd.ends_with("src-tauri") {
             cwd.parent().unwrap().join("dist")
@@ -720,17 +811,17 @@ pub extern "C" fn plugin_metadata() -> *const u8 {{
             zip.write_all(&content)?;
         }
 
-        // Add manifest
-        let manifest = self.create_manifest(has_backend)?;
-        zip.start_file("manifest.json", options)?;
-        zip.write_all(manifest.as_bytes())?;
+        // Add package.json (updated with webarcade config)
+        let package_json = self.create_package_json()?;
+        zip.start_file("package.json", options)?;
+        zip.write_all(package_json.as_bytes())?;
 
-        // Add routes configuration (separate from manifest for easier parsing)
-        let routes_config = self.create_routes_config()?;
-        zip.start_file("routes.json", options)?;
-        zip.write_all(routes_config.as_bytes())?;
+        // Add README - detect backend from built files
+        let has_dll = self.build_dir.join(format!("{}.dll", self.plugin_id)).exists();
+        let has_so = self.build_dir.join(format!("lib{}.so", self.plugin_id)).exists();
+        let has_dylib = self.build_dir.join(format!("lib{}.dylib", self.plugin_id)).exists();
+        let has_backend_file = has_dll || has_so || has_dylib;
 
-        // Add README
         let readme = format!(
             r#"# {} Plugin
 
@@ -749,19 +840,18 @@ Drag and drop this .zip file anywhere in the WebArcade window to install.
 ## Plugin Structure
 
 All files are in the root directory for simplicity:
-- manifest.json - Plugin metadata
-- plugin.js - Frontend code (if has_frontend)
-- routes.json - Backend routes (if has_backend)
-- *.dll / lib*.so / lib*.dylib - Native binary (if has_backend)
+- package.json - Plugin metadata, routes, and dependencies
+- plugin.js - Frontend code (if present)
+- *.dll / lib*.so / lib*.dylib - Native binary (if present)
 
 ## Note
 
-This plugin was built on {} and includes platform-specific binaries.
+This plugin was built on {} and may include platform-specific binaries.
 For other platforms, you may need to rebuild from source.
 "#,
             self.plugin_id,
             if self.build_dir.join("plugin.js").exists() { "Included" } else { "None" },
-            if has_backend { "Included" } else { "None" },
+            if has_backend_file { "Included" } else { "None" },
             if cfg!(target_os = "windows") {
                 "Windows"
             } else if cfg!(target_os = "macos") {
@@ -780,49 +870,45 @@ For other platforms, you may need to rebuild from source.
         Ok(zip_path.to_string_lossy().to_string())
     }
 
-    fn create_manifest(&self, has_backend: bool) -> Result<String> {
+    fn create_package_json(&self) -> Result<String> {
         let package_json_path = self.plugin_dir.join("package.json");
-        let metadata = if package_json_path.exists() {
+
+        // Read existing package.json or create a new one
+        let mut package_json = if package_json_path.exists() {
             let content = fs::read_to_string(package_json_path)?;
-            serde_json::from_str::<serde_json::Value>(&content).ok()
+            serde_json::from_str::<serde_json::Value>(&content)?
         } else {
-            None
+            serde_json::json!({
+                "name": self.plugin_id,
+                "version": "1.0.0",
+                "description": "",
+                "author": "Unknown"
+            })
         };
 
-        // Extract routes from router.rs
-        let routes = self.extract_routes()?;
+        // Extract routes from router.rs or use existing routes from package.json
+        let routes = if let Some(existing_routes) = package_json.get("webarcade")
+            .and_then(|wa| wa.get("routes"))
+            .and_then(|r| r.as_array()) {
+            existing_routes.clone()
+        } else {
+            self.extract_routes()?
+        };
 
-        let manifest = serde_json::json!({
-            "id": self.plugin_id,
-            "name": metadata.as_ref()
-                .and_then(|m| m.get("name"))
-                .and_then(|n| n.as_str())
+        // Create or update webarcade section - only store id and routes
+        // has_backend and has_frontend are auto-detected at runtime
+        let webarcade_config = serde_json::json!({
+            "id": package_json.get("webarcade")
+                .and_then(|wa| wa.get("id"))
+                .and_then(|id| id.as_str())
                 .unwrap_or(&self.plugin_id),
-            "version": metadata.as_ref()
-                .and_then(|m| m.get("version"))
-                .and_then(|v| v.as_str())
-                .unwrap_or("1.0.0"),
-            "description": metadata.as_ref()
-                .and_then(|m| m.get("description"))
-                .and_then(|d| d.as_str())
-                .unwrap_or(""),
-            "author": metadata.as_ref()
-                .and_then(|m| m.get("author"))
-                .and_then(|a| a.as_str())
-                .unwrap_or("Unknown"),
-            "has_backend": has_backend,
-            "has_frontend": self.plugin_dir.join("index.jsx").exists(),
-            "build_date": chrono::Utc::now().to_rfc3339(),
-            "build_platform": std::env::consts::OS,
-            "supported_platforms": if has_backend {
-                vec![std::env::consts::OS]
-            } else {
-                vec!["windows", "macos", "linux"]
-            },
-            "routes": routes,
+            "routes": routes
         });
 
-        Ok(serde_json::to_string_pretty(&manifest)?)
+        // Merge webarcade config into package.json
+        package_json["webarcade"] = webarcade_config;
+
+        Ok(serde_json::to_string_pretty(&package_json)?)
     }
 
     fn extract_routes(&self) -> Result<Vec<serde_json::Value>> {
@@ -835,7 +921,8 @@ For other platforms, you may need to rebuild from source.
         let mut routes = Vec::new();
 
         // Pattern: route!(router, METHOD "/path" => handler_name);
-        let re = regex::Regex::new(r#"route!\s*\([^,]+,\s*(\w+)\s+"([^"]+)"\s*=>\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*\)"#).unwrap();
+        // Pattern: route!(router, METHOD "/path", path => handler_name);
+        let re = regex::Regex::new(r#"route!\s*\([^,]+,\s*(\w+)\s+"([^"]+)"(?:,\s*path\s*)?=>\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*\)"#).unwrap();
 
         for cap in re.captures_iter(&content) {
             if let (Some(method), Some(path), Some(handler)) = (cap.get(1), cap.get(2), cap.get(3)) {
@@ -848,17 +935,6 @@ For other platforms, you may need to rebuild from source.
         }
 
         Ok(routes)
-    }
-
-    fn create_routes_config(&self) -> Result<String> {
-        let routes = self.extract_routes()?;
-
-        let config = serde_json::json!({
-            "plugin_id": self.plugin_id,
-            "routes": routes,
-        });
-
-        Ok(serde_json::to_string_pretty(&config)?)
     }
 
 }

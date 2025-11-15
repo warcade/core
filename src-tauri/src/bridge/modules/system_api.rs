@@ -32,10 +32,27 @@ pub fn handle_list_plugins() -> Response<BoxBody<Bytes, Infallible>> {
             if let Ok(entry) = entry {
                 let path = entry.path();
                 if path.is_dir() {
-                    let manifest_path = path.join("manifest.json");
-                    if let Ok(manifest_content) = fs::read_to_string(&manifest_path) {
-                        if let Ok(manifest) = serde_json::from_str::<serde_json::Value>(&manifest_content) {
-                            plugins.push(manifest);
+                    let package_path = path.join("package.json");
+                    if let Ok(package_content) = fs::read_to_string(&package_path) {
+                        if let Ok(package_json) = serde_json::from_str::<serde_json::Value>(&package_content) {
+                            // Extract webarcade section and create plugin metadata
+                            if let Some(webarcade) = package_json.get("webarcade") {
+                                let plugin_id = webarcade.get("id")
+                                    .and_then(|v| v.as_str())
+                                    .unwrap_or("");
+
+                                // Create plugin metadata from package.json
+                                let plugin_metadata = serde_json::json!({
+                                    "id": plugin_id,
+                                    "name": package_json.get("name").and_then(|v| v.as_str()).unwrap_or(plugin_id),
+                                    "version": package_json.get("version").and_then(|v| v.as_str()).unwrap_or("1.0.0"),
+                                    "description": package_json.get("description").and_then(|v| v.as_str()).unwrap_or(""),
+                                    "author": package_json.get("author").and_then(|v| v.as_str()).unwrap_or("Unknown"),
+                                    "routes": webarcade.get("routes").cloned().unwrap_or(serde_json::json!([]))
+                                });
+
+                                plugins.push(plugin_metadata);
+                            }
                         }
                     }
                 }

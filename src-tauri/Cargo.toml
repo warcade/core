@@ -87,7 +87,7 @@ dirs = "5.0"
 rusqlite = { version = "0.32", features = ["bundled"] }
 
 # WebArcade plugin API
-webarcade_api = { path = "./api" }
+api = { path = "./api" }
 
 # Bridge dependencies - Audio playback
 rodio = "0.17"

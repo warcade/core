@@ -191,6 +191,39 @@ pub extern "C" fn webarcade_get_database(_ctx: *const ()) -> *const () {
     std::ptr::null()
 }
 
+/// Execute a database query
+#[no_mangle]
+pub extern "C" fn webarcade_db_query(
+    _db: *const (),
+    _sql: *const u8,
+    _sql_len: usize,
+    _params: *const u8,
+    _params_len: usize
+) -> *const u8 {
+    // TODO: Implement database query
+    std::ptr::null()
+}
+
+/// Execute a database command (INSERT/UPDATE/DELETE)
+#[no_mangle]
+pub extern "C" fn webarcade_db_execute(
+    _db: *const (),
+    _sql: *const u8,
+    _sql_len: usize,
+    _params: *const u8,
+    _params_len: usize
+) -> i32 {
+    // TODO: Implement database execute
+    -1
+}
+
+/// Get the last inserted row ID
+#[no_mangle]
+pub extern "C" fn webarcade_db_last_insert_rowid(_db: *const ()) -> i64 {
+    // TODO: Implement last_insert_rowid
+    -1
+}
+
 /// Emit an event
 #[no_mangle]
 pub extern "C" fn webarcade_emit_event(

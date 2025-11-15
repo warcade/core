@@ -22,7 +22,7 @@ export default createPlugin({
   async onStart(api) {
     pluginApi = api;
 
-    // Register main viewport
+    // Register main viewport with lifecycle callbacks
     api.viewport('webarcade-dashboard', {
       label: 'Dashboard',
       component: DashboardViewport,
@@ -35,10 +35,18 @@ export default createPlugin({
           // Refresh the viewport to load new dashboard
           api.emit('dashboard:changed', { dashboardId: id });
         }
-      })
+      }),
+      onActivate: (api, tab) => {
+        api.showProps(false);
+        api.showMenu(true);
+        api.showFooter(true);
+        api.showTabs(true);
+      },
+      onDeactivate: (api, tab) => {}
     });
 
-    api.showProps(true);
+    // Initial UI setup
+    api.showProps(false);
     api.showMenu(true);
     api.showFooter(true);
     api.showTabs(true);

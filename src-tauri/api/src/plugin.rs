@@ -25,13 +25,13 @@ pub trait Plugin: Send + Sync {
 
     /// Initialize plugin (run migrations, register services, set up routes)
     /// Called once during server startup, before start()
-    async fn init(&self, ctx: &Context) -> Result<()> {
+    async fn init(&self, _ctx: &Context) -> Result<()> {
         Ok(())
     }
 
     /// Start plugin (begin background tasks, subscribe to events, connect to external services)
     /// Called after all plugins have been initialized
-    async fn start(&self, ctx: Arc<Context>) -> Result<()> {
+    async fn start(&self, _ctx: Arc<Context>) -> Result<()> {
         Ok(())
     }
 

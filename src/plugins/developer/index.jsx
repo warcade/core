@@ -17,12 +17,21 @@ export default createPlugin({
   async onStart(api) {
     console.log('[Developer] Starting...');
 
-    // Register the IDE viewport
+    // Register the IDE viewport with lifecycle callbacks
     api.viewport('plugin-ide-viewport', {
       label: 'Developer',
       component: PluginIDEViewport,
       icon: IconCode,
-      description: 'Develop and manage plugins with Monaco editor'
+      description: 'Develop and manage plugins with Monaco editor',
+      onActivate: (api, tab) => {
+        api.showProps(true);
+        api.showMenu(true);
+        api.showFooter(true);
+        api.showTabs(true);
+      },
+      onDeactivate: (api, tab) => {
+
+      }
     });
 
     // Register Files panel in right panel
@@ -34,8 +43,8 @@ export default createPlugin({
       viewport: 'plugin-ide-viewport'
     });
 
-    // Show all UI elements
-    api.showProps(true);  // Show props panel for file tree
+    // Show all UI elements on initial start
+    api.showProps(true);
     api.showMenu(true);
     api.showFooter(true);
     api.showTabs(true);

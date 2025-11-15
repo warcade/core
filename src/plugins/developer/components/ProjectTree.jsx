@@ -17,7 +17,7 @@ import {
   IconChevronRight,
   IconChevronDown,
 } from '@tabler/icons-solidjs';
-import { bridge } from '@/api/bridge';
+import { api } from '@/api/bridge';
 
 export function ProjectTree(props) {
   const [tree, setTree] = createSignal(null);
@@ -47,7 +47,7 @@ export function ProjectTree(props) {
 
   const loadTree = async () => {
     try {
-      const response = await bridge(`/developer/tree/${props.currentPlugin}`);
+      const response = await api(`developer/tree/${props.currentPlugin}`);
       const data = await response.json();
       setTree(data);
       // Auto-expand root

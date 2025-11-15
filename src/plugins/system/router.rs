@@ -5,7 +5,7 @@ use crate::route;
 use anyhow::Result;
 use hyper::{Request, Response, StatusCode, body::Incoming};
 use hyper::body::Bytes;
-use http_body_util::combinators::BoxBody;
+use http_body_util::{combinators::BoxBody, Full};
 use std::convert::Infallible;
 use sysinfo::System;
 use std::sync::{Arc, Mutex};
@@ -62,6 +62,18 @@ pub async fn register_routes(ctx: &PluginContext) -> Result<()> {
 
     // DELETE /system/plugins/:plugin_name - Remove an installed plugin
     route!(router, DELETE "/plugins/:plugin_name", path => handle_plugin_delete);
+
+    // POST /system/background/upload - Upload and save a background image or video
+    route!(router, POST "/background/upload" => handle_background_upload);
+
+    // GET /system/background/:filename - Serve background files
+    route!(router, GET "/background/:filename", path => handle_serve_background);
+
+    // GET /system/desktop-items - Get items from the Windows desktop folder
+    route!(router, GET "/desktop-items" => handle_get_desktop_items);
+
+    // POST /system/open-path - Open a file or folder using the default system handler
+    route!(router, POST "/open-path" => handle_open_path);
 
     ctx.register_router("system", router).await;
     Ok(())
@@ -491,6 +503,259 @@ fn copy_dir_all(src: &PathBuf, dst: &PathBuf) -> std::io::Result<()> {
         }
     }
     Ok(())
+}
+
+async fn handle_background_upload(req: Request<Incoming>) -> Response<BoxBody<Bytes, Infallible>> {
+    use http_body_util::BodyExt;
+    use multer::Multipart;
+    use std::fs;
+    use futures_util::stream;
+
+    // Get the boundary from Content-Type header
+    let content_type = match req.headers().get("content-type") {
+        Some(ct) => match ct.to_str() {
+            Ok(s) => s,
+            Err(_) => return error_response(StatusCode::BAD_REQUEST, "Invalid content-type header"),
+        },
+        None => return error_response(StatusCode::BAD_REQUEST, "Missing content-type header"),
+    };
+
+    let boundary = match multer::parse_boundary(content_type) {
+        Ok(b) => b,
+        Err(_) => return error_response(StatusCode::BAD_REQUEST, "Invalid multipart boundary"),
+    };
+
+    // Collect the body
+    let body_bytes = match req.collect().await {
+        Ok(collected) => collected.to_bytes(),
+        Err(e) => return error_response(StatusCode::BAD_REQUEST, &format!("Failed to read body: {}", e)),
+    };
+
+    // Create a stream from the bytes
+    let stream = stream::once(async move { Result::<_, std::io::Error>::Ok(body_bytes) });
+
+    // Parse multipart
+    let mut multipart = Multipart::new(stream, boundary);
+
+    // Find the background file
+    let mut file_data: Option<Vec<u8>> = None;
+    let mut file_name: Option<String> = None;
+
+    while let Some(field) = multipart.next_field().await.ok().flatten() {
+        if field.name() == Some("background") {
+            if let Some(fname) = field.file_name() {
+                file_name = Some(fname.to_string());
+            }
+            match field.bytes().await {
+                Ok(bytes) => {
+                    file_data = Some(bytes.to_vec());
+                    break;
+                }
+                Err(e) => return error_response(StatusCode::BAD_REQUEST, &format!("Failed to read file: {}", e)),
+            }
+        }
+    }
+
+    let file_data = match file_data {
+        Some(data) => data,
+        None => return error_response(StatusCode::BAD_REQUEST, "No background file found in request"),
+    };
+
+    let original_name = file_name.unwrap_or_else(|| "background".to_string());
+
+    // Determine file extension
+    let extension = std::path::Path::new(&original_name)
+        .extension()
+        .and_then(|s| s.to_str())
+        .unwrap_or("bin");
+
+    // Generate unique filename with timestamp
+    let timestamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs();
+    let safe_name = format!("background_{}.{}", timestamp, extension);
+
+    // Get AppData directory
+    let backgrounds_dir = dirs::data_local_dir()
+        .expect("Failed to get local data directory")
+        .join("WebArcade")
+        .join("backgrounds");
+
+    // Create backgrounds directory if it doesn't exist
+    if let Err(e) = fs::create_dir_all(&backgrounds_dir) {
+        return error_response(StatusCode::INTERNAL_SERVER_ERROR, &format!("Failed to create backgrounds directory: {}", e));
+    }
+
+    // Save the file
+    let file_path = backgrounds_dir.join(&safe_name);
+    if let Err(e) = fs::write(&file_path, &file_data) {
+        return error_response(StatusCode::INTERNAL_SERVER_ERROR, &format!("Failed to save background file: {}", e));
+    }
+
+    log::info!("[System] Saved background file: {:?}", file_path);
+
+    // Return the URL to access the file
+    let file_url = format!("http://localhost:3001/system/background/{}", safe_name);
+
+    json_response(&serde_json::json!({
+        "success": true,
+        "url": file_url,
+        "filename": safe_name
+    }))
+}
+
+async fn handle_serve_background(path: String) -> Response<BoxBody<Bytes, Infallible>> {
+    use std::fs;
+
+    // Extract filename from path (format: "/background/filename.ext")
+    let filename = path.trim_start_matches('/').trim_start_matches("background/");
+
+    if filename.is_empty() {
+        return error_response(StatusCode::BAD_REQUEST, "Filename is required");
+    }
+
+    // Get AppData directory
+    let backgrounds_dir = dirs::data_local_dir()
+        .expect("Failed to get local data directory")
+        .join("WebArcade")
+        .join("backgrounds");
+
+    let file_path = backgrounds_dir.join(filename);
+
+    // Security: Ensure the file is within the backgrounds directory
+    if !file_path.starts_with(&backgrounds_dir) {
+        return error_response(StatusCode::FORBIDDEN, "Access denied");
+    }
+
+    if !file_path.exists() {
+        return error_response(StatusCode::NOT_FOUND, "Background file not found");
+    }
+
+    match fs::read(&file_path) {
+        Ok(content) => {
+            // Determine content type based on extension
+            let content_type = if filename.ends_with(".jpg") || filename.ends_with(".jpeg") {
+                "image/jpeg"
+            } else if filename.ends_with(".png") {
+                "image/png"
+            } else if filename.ends_with(".gif") {
+                "image/gif"
+            } else if filename.ends_with(".webp") {
+                "image/webp"
+            } else if filename.ends_with(".mp4") {
+                "video/mp4"
+            } else if filename.ends_with(".webm") {
+                "video/webm"
+            } else if filename.ends_with(".ogg") || filename.ends_with(".ogv") {
+                "video/ogg"
+            } else {
+                "application/octet-stream"
+            };
+
+            Response::builder()
+                .status(StatusCode::OK)
+                .header("Content-Type", content_type)
+                .header("Access-Control-Allow-Origin", "*")
+                .header("Cache-Control", "public, max-age=31536000") // Cache for 1 year
+                .body(BoxBody::new(Full::new(Bytes::from(content))))
+                .unwrap()
+        }
+        Err(_) => error_response(StatusCode::INTERNAL_SERVER_ERROR, "Failed to read background file")
+    }
+}
+
+async fn handle_get_desktop_items() -> Response<BoxBody<Bytes, Infallible>> {
+    use std::fs;
+
+    // Get the Windows desktop folder path
+    let desktop_path = match dirs::desktop_dir() {
+        Some(path) => path,
+        None => return error_response(StatusCode::INTERNAL_SERVER_ERROR, "Could not find desktop directory"),
+    };
+
+    let mut items = Vec::new();
+
+    match fs::read_dir(&desktop_path) {
+        Ok(entries) => {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                let name = entry.file_name().to_string_lossy().to_string();
+
+                // Skip hidden files (starting with .)
+                if name.starts_with('.') {
+                    continue;
+                }
+
+                let is_dir = path.is_dir();
+                let extension = if is_dir {
+                    None
+                } else {
+                    path.extension().and_then(|e| e.to_str()).map(|s| s.to_lowercase())
+                };
+
+                // Determine item type
+                let item_type = if is_dir {
+                    "folder".to_string()
+                } else if let Some(ref ext) = extension {
+                    match ext.as_str() {
+                        "lnk" => "shortcut".to_string(),
+                        "exe" => "executable".to_string(),
+                        "url" => "url".to_string(),
+                        _ => "file".to_string(),
+                    }
+                } else {
+                    "file".to_string()
+                };
+
+                items.push(serde_json::json!({
+                    "name": name,
+                    "path": path.to_string_lossy().to_string(),
+                    "type": item_type,
+                    "is_dir": is_dir,
+                    "extension": extension,
+                }));
+            }
+        }
+        Err(e) => return error_response(StatusCode::INTERNAL_SERVER_ERROR, &format!("Failed to read desktop directory: {}", e)),
+    }
+
+    json_response(&serde_json::json!({
+        "desktop_path": desktop_path.to_string_lossy().to_string(),
+        "items": items
+    }))
+}
+
+async fn handle_open_path(req: Request<Incoming>) -> Response<BoxBody<Bytes, Infallible>> {
+    match read_json_body(req).await {
+        Ok(body) => {
+            let path = match body.get("path").and_then(|v| v.as_str()) {
+                Some(p) => p,
+                None => return error_response(StatusCode::BAD_REQUEST, "Missing path parameter"),
+            };
+
+            // Use the system's default handler to open the path
+            #[cfg(target_os = "windows")]
+            {
+                match std::process::Command::new("explorer")
+                    .arg(path)
+                    .spawn()
+                {
+                    Ok(_) => json_response(&serde_json::json!({
+                        "success": true,
+                        "message": format!("Opened: {}", path)
+                    })),
+                    Err(e) => error_response(StatusCode::INTERNAL_SERVER_ERROR, &format!("Failed to open path: {}", e)),
+                }
+            }
+
+            #[cfg(not(target_os = "windows"))]
+            {
+                error_response(StatusCode::NOT_IMPLEMENTED, "This feature is only available on Windows")
+            }
+        }
+        Err(e) => error_response(StatusCode::BAD_REQUEST, &e),
+    }
 }
 
 // Helper functions are now imported from router_utils

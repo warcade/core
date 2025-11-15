@@ -1,8 +1,10 @@
 import { createSignal, Show, onMount, onCleanup } from 'solid-js';
 import { invoke } from '@tauri-apps/api/core';
+import { editorActions } from '@/layout/stores/EditorStore.jsx';
 
 const PluginInstaller = () => {
   const [isDragging, setIsDragging] = createSignal(false);
+  const [dragType, setDragType] = createSignal(''); // 'plugin', 'image', or ''
   const [isInstalling, setIsInstalling] = createSignal(false);
   const [message, setMessage] = createSignal('');
   const [messageType, setMessageType] = createSignal('info'); // 'info', 'success', 'error'
@@ -16,10 +18,24 @@ const PluginInstaller = () => {
 
     // Check if the dragged item contains files
     if (e.dataTransfer.items && e.dataTransfer.items.length > 0) {
-      const hasFiles = Array.from(e.dataTransfer.items).some(
-        item => item.kind === 'file'
-      );
+      const items = Array.from(e.dataTransfer.items);
+      const hasFiles = items.some(item => item.kind === 'file');
+
       if (hasFiles) {
+        // Detect file type
+        const fileItem = items.find(item => item.kind === 'file');
+        if (fileItem && fileItem.type) {
+          if (fileItem.type.startsWith('image/')) {
+            setDragType('image');
+          } else if (fileItem.type.startsWith('video/')) {
+            setDragType('video');
+          } else if (fileItem.type === 'application/zip' || fileItem.type === 'application/x-zip-compressed') {
+            setDragType('plugin');
+          } else {
+            // Check extension for .webarcade files
+            setDragType('plugin'); // Default to plugin for unknown types
+          }
+        }
         setIsDragging(true);
       }
     }
@@ -32,6 +48,7 @@ const PluginInstaller = () => {
 
     if (dragCounter === 0) {
       setIsDragging(false);
+      setDragType('');
     }
   };
 
@@ -43,16 +60,38 @@ const PluginInstaller = () => {
   const handleDrop = async (e) => {
     e.preventDefault();
     e.stopPropagation();
+    const currentDragType = dragType();
     setIsDragging(false);
+    setDragType('');
     dragCounter = 0;
 
     const files = Array.from(e.dataTransfer.files);
+
+    if (files.length === 0) {
+      return;
+    }
+
+    const file = files[0];
+
+    // Handle image files
+    if (file.type.startsWith('image/')) {
+      await uploadBackground(file, 'image');
+      return;
+    }
+
+    // Handle video files
+    if (file.type.startsWith('video/')) {
+      await uploadBackground(file, 'video');
+      return;
+    }
+
+    // Handle plugin files
     const zipFiles = files.filter(file =>
       file.name.endsWith('.zip') || file.name.endsWith('.webarcade')
     );
 
     if (zipFiles.length === 0) {
-      showMessage('Please drop a .zip or .webarcade plugin file', 'error');
+      showMessage('Please drop a .zip, .webarcade plugin file, an image file, or a video file', 'error');
       return;
     }
 
@@ -62,6 +101,40 @@ const PluginInstaller = () => {
     }
 
     await installPlugin(zipFiles[0]);
+  };
+
+  const uploadBackground = async (file, type) => {
+    setIsInstalling(true);
+    setMessage(`Uploading ${type}...`);
+    setMessageType('info');
+
+    try {
+      const formData = new FormData();
+      formData.append('background', file);
+
+      const response = await fetch('http://localhost:3001/system/background/upload', {
+        method: 'POST',
+        body: formData,
+      });
+
+      if (!response.ok) {
+        const error = await response.text();
+        throw new Error(error || 'Failed to upload background');
+      }
+
+      const result = await response.json();
+
+      // Set the background using the URL returned from the server
+      editorActions.setBackgroundImage(result.url, type);
+
+      showMessage(`Background ${type} set successfully!`, 'success');
+
+    } catch (error) {
+      console.error('Background upload failed:', error);
+      showMessage(`Upload failed: ${error.message}`, 'error');
+    } finally {
+      setIsInstalling(false);
+    }
   };
 
   const installPlugin = async (file) => {
@@ -99,12 +172,10 @@ const PluginInstaller = () => {
     setMessage(msg);
     setMessageType(type);
 
-    // Auto-hide message after 5 seconds (except for success messages)
-    if (type !== 'success') {
-      setTimeout(() => {
-        setMessage('');
-      }, 5000);
-    }
+    // Auto-hide all messages after 3 seconds
+    setTimeout(() => {
+      setMessage('');
+    }, 3000);
   };
 
   onMount(() => {
@@ -140,9 +211,15 @@ const PluginInstaller = () => {
             <div class="flex items-center justify-center h-full">
               <div class="bg-base-100 px-8 py-6 rounded-lg shadow-2xl border-2 border-primary">
                 <div class="text-center">
-                  <div class="text-6xl mb-4">📦</div>
-                  <h3 class="text-2xl font-bold text-primary mb-2">Drop Plugin Here</h3>
-                  <p class="text-base-content/70">Release to install the plugin</p>
+                  <div class="text-6xl mb-4">
+                    {dragType() === 'image' ? '🖼️' : dragType() === 'video' ? '🎬' : '📦'}
+                  </div>
+                  <h3 class="text-2xl font-bold text-primary mb-2">
+                    {dragType() === 'image' ? 'Drop Image Here' : dragType() === 'video' ? 'Drop Video Here' : 'Drop Plugin Here'}
+                  </h3>
+                  <p class="text-base-content/70">
+                    {dragType() === 'image' ? 'Release to set as background' : dragType() === 'video' ? 'Release to set as background video' : 'Release to install the plugin'}
+                  </p>
                 </div>
               </div>
             </div>

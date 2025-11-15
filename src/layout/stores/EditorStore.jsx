@@ -31,6 +31,33 @@ const [editorStore, setEditorStore] = createStore({
   
 
   theme: 'dark',
+  backgroundImage: null, // URL or data URL for background image
+  backgroundType: 'image', // 'image' or 'video'
+  originalTheme: null, // Store original theme before switching to glass theme
+
+  glassTheme: {
+    base100Opacity: 0.2,
+    base200Opacity: 0.2,
+    base300Opacity: 0.2,
+    rootOpacity: 0.9,
+    blurAmount: 10,
+    // RGB color values
+    base100Color: { r: 10, g: 20, b: 39 },
+    base200Color: { r: 20, g: 31, b: 49 },
+    base300Color: { r: 30, g: 41, b: 59 },
+    rootColor: { r: 10, g: 20, b: 39 }
+  },
+
+  powerMode: {
+    enabled: true,
+    shake: true,
+    particles: true,
+    maxParticles: 500,
+    particleSize: 8,
+    shakeIntensity: 3
+  },
+
+  backgroundMode: false, // When true: maximized, no decorations, always on bottom
 
   settings: {
     viewport: {
@@ -192,9 +219,104 @@ export const editorActions = {
   setTheme: (theme) => {
     setEditorStore('theme', theme);
     editorActions.saveToProject();
-    
+
     // Apply theme to DOM
     document.documentElement.setAttribute('data-theme', theme);
+  },
+
+  setBackgroundImage: (imageUrl, type = 'image') => {
+    if (imageUrl && !editorStore.backgroundImage) {
+      // Setting a background image/video - save current theme and switch to glass
+      setEditorStore('originalTheme', editorStore.theme);
+      setEditorStore('theme', 'dark-glass');
+      document.documentElement.setAttribute('data-theme', 'dark-glass');
+    } else if (!imageUrl && editorStore.backgroundImage) {
+      // Removing background image/video - restore original theme
+      const restoreTheme = editorStore.originalTheme || 'dark';
+      setEditorStore('theme', restoreTheme);
+      setEditorStore('originalTheme', null);
+      document.documentElement.setAttribute('data-theme', restoreTheme);
+    }
+
+    setEditorStore('backgroundImage', imageUrl);
+    setEditorStore('backgroundType', type);
+    editorActions.saveToProject();
+    editorActions.updateGlassThemeCSS();
+  },
+
+  updateGlassThemeSetting: (key, value) => {
+    setEditorStore('glassTheme', key, value);
+    editorActions.saveToProject();
+    editorActions.updateGlassThemeCSS();
+  },
+
+  updatePowerModeSetting: (key, value) => {
+    setEditorStore('powerMode', key, value);
+    editorActions.saveToProject();
+  },
+
+  toggleBackgroundMode: async () => {
+    const newMode = !editorStore.backgroundMode;
+    setEditorStore('backgroundMode', newMode);
+
+    // Apply or remove background-mode class to body for styling
+    if (newMode) {
+      document.body.classList.add('background-mode');
+    } else {
+      document.body.classList.remove('background-mode');
+    }
+
+    if (typeof window !== 'undefined' && window.__TAURI_INTERNALS__) {
+      try {
+        const { getCurrentWindow } = await import('@tauri-apps/api/window');
+        const currentWindow = getCurrentWindow();
+
+        if (newMode) {
+          // Entering background mode - maximize window and stay behind other windows
+          await currentWindow.maximize();
+          await currentWindow.setAlwaysOnBottom(true);
+          // Don't use setIgnoreCursorEvents - we'll use CSS pointer-events instead
+        } else {
+          // Exiting background mode - restore window
+          await currentWindow.setAlwaysOnBottom(false);
+          await currentWindow.unmaximize();
+        }
+      } catch (error) {
+        console.error('Failed to toggle background mode:', error);
+      }
+    }
+  },
+
+  updateGlassThemeCSS: () => {
+    const {
+      base100Opacity, base200Opacity, base300Opacity, rootOpacity, blurAmount,
+      base100Color, base200Color, base300Color, rootColor
+    } = editorStore.glassTheme;
+
+    // Update CSS custom properties
+    const root = document.documentElement;
+    root.style.setProperty('--glass-base100-opacity', base100Opacity);
+    root.style.setProperty('--glass-base200-opacity', base200Opacity);
+    root.style.setProperty('--glass-base300-opacity', base300Opacity);
+    root.style.setProperty('--glass-root-opacity', rootOpacity);
+    root.style.setProperty('--glass-blur', `${blurAmount}px`);
+
+    // Set color values
+    root.style.setProperty('--glass-base100-r', base100Color.r);
+    root.style.setProperty('--glass-base100-g', base100Color.g);
+    root.style.setProperty('--glass-base100-b', base100Color.b);
+
+    root.style.setProperty('--glass-base200-r', base200Color.r);
+    root.style.setProperty('--glass-base200-g', base200Color.g);
+    root.style.setProperty('--glass-base200-b', base200Color.b);
+
+    root.style.setProperty('--glass-base300-r', base300Color.r);
+    root.style.setProperty('--glass-base300-g', base300Color.g);
+    root.style.setProperty('--glass-base300-b', base300Color.b);
+
+    root.style.setProperty('--glass-root-r', rootColor.r);
+    root.style.setProperty('--glass-root-g', rootColor.g);
+    root.style.setProperty('--glass-root-b', rootColor.b);
   },
 
   // Save settings to project file instead of localStorage
@@ -204,24 +326,36 @@ export const editorActions = {
   // Load settings from project data
   loadFromProject: (projectSettings) => {
     if (!projectSettings) return;
-    
+
     // Load all settings from project
     if (projectSettings.settings) {
       setEditorStore('settings', projectSettings.settings);
     }
-    
+
     if (projectSettings.ui) {
       setEditorStore('ui', 'currentMode', projectSettings.ui.currentMode || 'standard');
     }
-    
+
     if (projectSettings.scripts) {
       setEditorStore('scripts', projectSettings.scripts);
     }
-    
+
     if (projectSettings.theme) {
       setEditorStore('theme', projectSettings.theme);
       // Apply theme to DOM
       document.documentElement.setAttribute('data-theme', projectSettings.theme);
+    }
+
+    if (projectSettings.backgroundImage) {
+      setEditorStore('backgroundImage', projectSettings.backgroundImage);
+    }
+
+    if (projectSettings.backgroundType) {
+      setEditorStore('backgroundType', projectSettings.backgroundType);
+    }
+
+    if (projectSettings.originalTheme) {
+      setEditorStore('originalTheme', projectSettings.originalTheme);
     }
   },
 

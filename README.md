@@ -1,10 +1,67 @@
-# Plugin Development Guide
+# WebArcade
 
-WebArcade is an **open-source platform** that lets you create native plugins using **SolidJS** (frontend) and **Rust** (backend). Plugins can add new features, widgets, and functionality to the WebArcade ecosystem.
+WebArcade is an **open-source platform** that lets you create native plugins using **SolidJS** (frontend) and **Rust** (backend). Build custom features, widgets, and functionality to extend the WebArcade ecosystem.
 
-## Two Ways to Develop Plugins
+## Table of Contents
 
-### 1. Using the Developer IDE (Recommended)
+- [Features](#features)
+- [Quick Start](#quick-start)
+- [Plugin Development](#plugin-development)
+  - [Using the Developer IDE](#using-the-developer-ide-recommended)
+  - [Manual Plugin Development](#manual-plugin-development)
+- [Installing Plugins](#installing-plugins)
+- [Plugin Structure](#plugin-structure)
+- [Frontend Development](#frontend-development)
+- [Backend Development](#backend-development)
+- [API Reference](#api-reference)
+- [Examples](#examples)
+- [Security](#security)
+- [Contributing](#contributing)
+
+## Features
+
+- **Plugin System**: Extend functionality with custom plugins
+- **Full-Stack Development**: SolidJS frontend + Rust backend
+- **Built-in IDE**: Develop plugins directly within WebArcade
+- **Dashboard Widgets**: Create draggable, resizable dashboard components
+- **Real-time Events**: WebSocket-based event system for inter-plugin communication
+- **Database Access**: SQLite database with JSON parameter binding
+- **HTTP Routing**: Simple route registration with automatic request handling
+- **Sandboxed API**: Safe, secure plugin environment
+
+## Quick Start
+
+### Installation
+
+```bash
+# Clone the repository
+git clone https://github.com/your-org/webarcade.git
+cd webarcade
+
+# Install dependencies
+bun install
+
+# Build the application
+cargo build --release
+
+# Run in development mode
+bun run dev
+```
+
+### Creating Your First Plugin
+
+1. Open WebArcade and navigate to the **Developer** plugin
+2. Click **"New Plugin"** in the toolbar
+3. Choose a template (Basic, Widget, Backend, or Full-stack)
+4. Fill in plugin details (ID, name, description, author)
+5. Edit files in the built-in code editor
+6. Click **"Build"** to compile your plugin
+
+## Plugin Development
+
+### Two Ways to Develop Plugins
+
+#### Using the Developer IDE (Recommended)
 
 WebArcade includes a built-in Developer IDE for creating and building plugins:
 
@@ -24,13 +81,14 @@ WebArcade includes a built-in Developer IDE for creating and building plugins:
 
 **Note**: Plugins in the projects directory are excluded from the main build and are only for development.
 
-### 2. Manual Plugin Development
+#### Manual Plugin Development
 
 You can also create plugins manually for more control or when building outside WebArcade.
 
 ## Installing Plugins
 
 The easiest way to install a plugin is to **drag and drop** a plugin `.zip` file anywhere in the WebArcade application window. The app will automatically:
+
 1. Extract the plugin to the runtime plugins directory
 2. Validate its structure and manifest
 3. Install the plugin files
@@ -70,7 +128,7 @@ my-plugin/
 
 **Note:** All files are in the root directory. Platform detection happens automatically based on filename extensions (`.dll`, `.so`, `.dylib`).
 
-## package.json
+### package.json
 
 Every plugin **must** include a `package.json` file with a `webarcade` section:
 
@@ -89,7 +147,7 @@ Every plugin **must** include a `package.json` file with a `webarcade` section:
 }
 ```
 
-### Standard package.json Fields
+#### Standard package.json Fields
 
 - `name` (string): Package name
 - `version` (string): Semantic version (e.g., "1.0.0")
@@ -97,7 +155,7 @@ Every plugin **must** include a `package.json` file with a `webarcade` section:
 - `author` (string): Plugin author
 - `dependencies` (object): npm dependencies for frontend code
 
-### WebArcade Configuration (`webarcade` section)
+#### WebArcade Configuration (`webarcade` section)
 
 - `id` (string, required): Unique plugin identifier (alphanumeric, hyphens, underscores only)
 
@@ -106,7 +164,9 @@ Every plugin **must** include a `package.json` file with a `webarcade` section:
 - `has_backend`: Auto-detected by checking for `mod.rs` or `Cargo.toml`
 - `routes`: Auto-extracted from `router.rs` during build
 
-## Frontend Plugin (index.jsx)
+## Frontend Development
+
+### Plugin Entry Point (index.jsx)
 
 Frontend plugins use the WebArcade Plugin API:
 
@@ -163,9 +223,9 @@ export default createPlugin({
 });
 ```
 
-## Widgets
+### Creating Widgets
 
-Widgets are draggable components that can be placed on the dashboard. Create widget files in a `widgets/` directory:
+Widgets are draggable components that can be placed on the dashboard:
 
 ```jsx
 // widgets/MyWidget.jsx
@@ -209,7 +269,79 @@ export default function MyWidget() {
 
 **Important**: Widgets must be imported and registered in `index.jsx` using `api.widget()` to be included in the build.
 
-## Backend Plugin (Rust)
+### Using Third-Party JavaScript Libraries
+
+Add any npm package to your plugin by adding it to the `dependencies` section in `package.json`:
+
+```json
+{
+  "name": "my-plugin",
+  "version": "1.0.0",
+  "description": "My awesome plugin",
+  "author": "Your Name",
+  "dependencies": {
+    "canvas-confetti": "^1.9.2",
+    "date-fns": "^3.0.0",
+    "chart.js": "^4.4.0"
+  },
+  "webarcade": {
+    "id": "my-plugin"
+  }
+}
+```
+
+Then use them in your plugin code:
+
+```jsx
+import confetti from 'canvas-confetti';
+import { format } from 'date-fns';
+
+export default function MyViewport() {
+  const celebrate = () => {
+    confetti({
+      particleCount: 100,
+      spread: 70,
+      origin: { y: 0.6 }
+    });
+  };
+
+  return (
+    <div>
+      <p>Today is {format(new Date(), 'MMMM do, yyyy')}</p>
+      <button onClick={celebrate}>Celebrate!</button>
+    </div>
+  );
+}
+```
+
+**How it works:**
+1. The plugin builder automatically detects dependencies in `package.json`
+2. Runs `bun install` or `npm install` before bundling
+3. Bundles the dependencies into your `plugin.js`
+4. Dependencies are included in the final plugin package
+
+**Note:** External dependencies increase your plugin size. Use them wisely!
+
+### Calling Backend from Frontend
+
+Use the `api` API to call backend routes:
+
+```jsx
+import { api } from '@/api/bridge';
+
+async function fetchData() {
+  try {
+    // Calls /my-plugin/hello endpoint
+    const response = await api('my-plugin/hello');
+    const data = await response.json();
+    console.log(data.message);
+  } catch (err) {
+    console.error('Failed to fetch:', err);
+  }
+}
+```
+
+## Backend Development
 
 Backend plugins use the **api** crate, which provides a safe, sandboxed interface to the WebArcade core.
 
@@ -222,7 +354,7 @@ Backend plugins use the **api** crate, which provides a safe, sandboxed interfac
 
 ### Cargo.toml
 
-Every backend plugin needs a `Cargo.toml` file:
+Every backend plugin needs a `Cargo.toml` file. The minimal version is:
 
 ```toml
 [package]
@@ -231,15 +363,7 @@ version = "1.0.0"
 edition = "2021"
 
 [dependencies]
-# api provides the following crates (DO NOT add these):
-#   - serde, serde_json (serialization)
-#   - anyhow (error handling)
-#   - async-trait (async trait support)
-#   - log (logging macros)
-#   - tokio (async runtime)
-#   - hyper, http_body_util (HTTP types)
-
-# Only add dependencies NOT provided by api:
+# Add your custom dependencies here (if any)
 reqwest = { version = "0.12", features = ["json"] }
 some-other-crate = "1.0"
 
@@ -251,10 +375,11 @@ strip = true         # Strip symbols
 ```
 
 **Important Notes:**
-- The `api` dependency is automatically added by the plugin builder with the correct absolute path
-- The `[lib]` section with `crate-type = ["cdylib"]` and `path = "mod.rs"` is automatically added during the build process
-- During the build, a `lib.rs` file is automatically generated as the main module that exports your plugin
-- You only need to define your plugin in `mod.rs` - the builder handles the FFI exports
+- The `api` dependency is **automatically injected** by the plugin builder
+- The `[lib]` section with `crate-type = ["cdylib"]` and `path = "lib.rs"` is **automatically added** during build
+- A `lib.rs` file is **automatically generated** as the main module that exports your plugin
+- You only need to define your plugin in `mod.rs` - the builder handles all FFI boilerplate
+- You only need `[dependencies]` if you have custom dependencies beyond what the `api` crate provides
 
 **Dependencies Provided by `api::core::*`:**
 - **serde** (with Serialize, Deserialize)
@@ -423,78 +548,6 @@ async fn get_all_data() -> Result<Vec<MyData>> {
     ).await?;
 
     Ok(results)
-}
-```
-
-## Using Third-Party JavaScript Libraries
-
-You can add any npm package to your plugin by adding it to the `dependencies` section in `package.json`:
-
-```json
-{
-  "name": "my-plugin",
-  "version": "1.0.0",
-  "description": "My awesome plugin",
-  "author": "Your Name",
-  "dependencies": {
-    "canvas-confetti": "^1.9.2",
-    "date-fns": "^3.0.0",
-    "chart.js": "^4.4.0"
-  },
-  "webarcade": {
-    "id": "my-plugin"
-  }
-}
-```
-
-Then use them in your plugin code:
-
-```jsx
-import confetti from 'canvas-confetti';
-import { format } from 'date-fns';
-
-export default function MyViewport() {
-  const celebrate = () => {
-    confetti({
-      particleCount: 100,
-      spread: 70,
-      origin: { y: 0.6 }
-    });
-  };
-
-  return (
-    <div>
-      <p>Today is {format(new Date(), 'MMMM do, yyyy')}</p>
-      <button onClick={celebrate}>Celebrate!</button>
-    </div>
-  );
-}
-```
-
-**How it works:**
-1. The plugin builder automatically detects dependencies in `package.json`
-2. Runs `bun install` or `npm install` before bundling
-3. Bundles the dependencies into your `plugin.js`
-4. Dependencies are included in the final plugin package
-
-**Note:** External dependencies increase your plugin size. Use them wisely!
-
-## Calling Backend from Frontend
-
-Use the `api` API to call backend routes:
-
-```jsx
-import { api } from '@/api/bridge';
-
-async function fetchData() {
-  try {
-    // Calls /my-plugin/hello endpoint
-    const response = await api('my-plugin/hello');
-    const data = await response.json();
-    console.log(data.message);
-  } catch (err) {
-    console.error('Failed to fetch:', err);
-  }
 }
 ```
 
@@ -678,6 +731,119 @@ Use namespaced event names to avoid collisions:
 - ❌ `message` (too generic)
 - ❌ `update` (too vague)
 
+## API Reference
+
+### Frontend Plugin API
+
+#### Plugin Registration
+
+- `createPlugin(config)` - Create a new plugin
+
+#### API Methods
+
+- `api.viewport(id, config)` - Register a viewport tab
+- `api.menu(id, config)` - Register a menu item
+- `api.widget(id, config)` - Register a dashboard widget
+- `api.open(viewportId, options)` - Open a viewport
+- `api.showProps(visible)` - Show/hide properties panel
+- `api.showMenu(visible)` - Show/hide menu
+- `api.showFooter(visible)` - Show/hide footer
+- `api.showTabs(visible)` - Show/hide tabs
+
+### Backend API (Rust)
+
+#### Core Module (`api::core::*`)
+
+The core module imports everything you need for most plugins:
+
+- **Core Types**: `Plugin`, `Context`, `Database`, `Router`
+- **HTTP**: `HttpRequest`, `HttpResponse`, `StatusCode`
+- **Utilities**: `time` module, `json!()` macro
+- **Error Handling**: `Result`, `Error`, `anyhow!()`
+- **Serialization**: `Serialize`, `Deserialize`
+- **Logging**: `info!()`, `error!()`, `warn!()`, `debug!()`
+
+#### Plugin Trait
+
+```rust
+pub trait Plugin: Send + Sync {
+    fn id(&self) -> &str;
+    fn name(&self) -> &str;
+    fn version(&self) -> &str;
+    fn description(&self) -> &str;
+    fn author(&self) -> Option<&str>;
+
+    async fn init(&self, ctx: &Context) -> Result<()>;
+    async fn start(&self, ctx: Arc<Context>) -> Result<()>;
+    async fn stop(&self) -> Result<()>;
+}
+```
+
+#### Context Methods
+
+- `ctx.register_router(plugin_id, router)` - Register HTTP routes
+- `ctx.migrate(migrations)` - Run database migrations
+- `ctx.db()` - Access plugin database
+- `ctx.emit(event_name, data)` - Emit events
+- `ctx.subscribe_to(event_type)` - Subscribe to specific events
+- `ctx.subscribe_all()` - Subscribe to all events
+- `Context::global()` - Get global context from async handlers
+
+#### Database Methods
+
+```rust
+// Query - returns Vec<T>
+db.query::<T>(sql, params)?
+
+// Execute - returns affected rows
+db.execute(sql, params)?
+
+// Get last inserted ID
+db.last_insert_rowid()
+```
+
+#### Router Methods
+
+- `route!(router, GET "/path" => handler)` - Register GET route
+- `route!(router, POST "/path" => handler)` - Register POST route
+- `route!(router, PUT "/path" => handler)` - Register PUT route
+- `route!(router, DELETE "/path" => handler)` - Register DELETE route
+
+#### Response Helpers
+
+- `json_response(data)` - Create JSON response
+- `error_response(status, message)` - Create error response
+
+#### Time Module (`api::time`)
+
+```rust
+// Current Unix timestamp (seconds)
+time::timestamp()
+
+// Current Unix timestamp (milliseconds)
+time::timestamp_millis()
+
+// Format current time
+time::format_now("%Y-%m-%d %H:%M:%S")
+
+// Parse datetime
+time::parse_rfc3339("2024-01-01T12:00:00Z")?
+
+// From timestamp
+time::from_timestamp(1704110400)
+```
+
+## Examples
+
+### Complete Example: Notes Plugin
+
+See `src/plugins/developer/projects/demo` for a complete fullstack example.
+
+Check the `src/plugins/` directory for built-in examples:
+- `dashboard` - Dashboard with widget grid
+- `developer` - Developer IDE with project management
+- `system` - System widgets (CPU, Memory, Clock, etc.)
+
 ### Complete Example: Chat Plugin
 
 **Backend (router.rs):**
@@ -758,7 +924,7 @@ export default function ChatWidget() {
 }
 ```
 
-## Building Your Plugin for Distribution
+## Building Plugins for Distribution
 
 ### Using the Developer IDE
 
@@ -779,16 +945,16 @@ cargo build --release
 npm run build:plugin
 
 # Create zip
-zip -r my-plugin.zip manifest.json plugin.js my-plugin.dll
+zip -r my-plugin.zip package.json plugin.js my-plugin.dll
 ```
 
-## Security Considerations
+## Security
 
 Since WebArcade is **open-source**, developers have access to the codebase. To maintain security:
 
 ### For Plugin Developers
 
-- ✅ **Use webarcade_api wrapper**: Provides safe, sandboxed access to plugin APIs
+- ✅ **Use api wrapper**: Provides safe, sandboxed access to plugin APIs
 - ✅ **Declare permissions clearly**: Document what your plugin accesses (database, network, filesystem)
 - ✅ **Follow security best practices**: Validate inputs, sanitize outputs, use HTTPS for network calls
 - ❌ **Avoid direct FFI**: Don't create manual `#[no_mangle]` exports to bypass the API wrapper
@@ -807,39 +973,6 @@ Since WebArcade is **open-source**, developers have access to the codebase. To m
 - 🛡️ **Sandboxing**: Process isolation for untrusted plugins
 - 🏪 **Plugin marketplace**: Curated, reviewed plugins with reputation scores
 
-## API Reference
-
-### Plugin API Methods (Frontend)
-
-- `api.viewport(id, config)` - Register a viewport tab
-- `api.menu(id, config)` - Register a menu item
-- `api.widget(id, config)` - Register a dashboard widget
-- `api.open(viewportId, options)` - Open a viewport
-- `api.showProps(visible)` - Show/hide properties panel
-- `api.showMenu(visible)` - Show/hide menu
-- `api.showFooter(visible)` - Show/hide footer
-- `api.showTabs(visible)` - Show/hide tabs
-
-### Context API Methods (Backend)
-
-- `ctx.register_router(plugin_id, router)` - Register HTTP routes
-- `ctx.migrate(migrations)` - Run database migrations
-- `ctx.db()` - Access plugin database
-- `ctx.emit(event_name, data)` - Emit events
-- `Context::global()` - Get global context from async handlers
-
-### Router Methods
-
-- `route!(router, GET "/path" => handler)` - Register GET route
-- `route!(router, POST "/path" => handler)` - Register POST route
-- `route!(router, PUT "/path" => handler)` - Register PUT route
-- `route!(router, DELETE "/path" => handler)` - Register DELETE route
-
-### Response Helpers
-
-- `json_response(data)` - Create JSON response
-- `error_response(status, message)` - Create error response
-
 ## Tips
 
 - **Use unique IDs**: Plugin IDs must be unique across all plugins
@@ -850,14 +983,20 @@ Since WebArcade is **open-source**, developers have access to the codebase. To m
 - **Import widgets**: Always import and register widgets in index.jsx
 - **Use api crate**: Stick to the safe API wrapper for backend code
 
-## Example Plugins
+## Contributing
 
-Check the `src/plugins/` directory for built-in examples:
-- `dashboard` - Dashboard with widget grid
-- `developer` - Developer IDE with project management
-- `system` - System widgets (CPU, Memory, Clock, etc.)
+We welcome contributions! Please:
 
-Check `src/plugins/developer/projects/demo` for a complete fullstack example.
+1. Fork the repository
+2. Create a feature branch
+3. Make your changes
+4. Submit a pull request
+
+## Documentation
+
+- **Plugin Development**: See [PLUGIN_DEVELOPMENT.md](./PLUGIN_DEVELOPMENT.md) for detailed plugin development guide
+- **API Documentation**: See [src-tauri/api/README.md](./src-tauri/api/README.md) for Rust API reference
+- **API Design**: See [src-tauri/api/DESIGN.md](./src-tauri/api/DESIGN.md) for API architecture details
 
 ## Getting Help
 
@@ -865,5 +1004,11 @@ Check `src/plugins/developer/projects/demo` for a complete fullstack example.
 - Review the Plugin API in `src/api/plugin/`
 - Review the API crate in `src-tauri/api/`
 - Open an issue on GitHub for questions
+
+## License
+
+[Add your license information here]
+
+---
 
 Happy plugin development! 🚀

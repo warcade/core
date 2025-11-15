@@ -5,7 +5,7 @@ import { footerButtons } from '@/api/plugin';
 import BuildProgress from './BuildProgress';
 import DebugConsole from './DebugConsole';
 import { setShowAbout } from '../../plugins/menu/index.jsx';
-import { bridge } from '@/api/bridge';
+import { api } from '@/api/bridge';
 
 const Footer = () => {
   const [engineInfo] = createSignal('Engine Ready');
@@ -15,7 +15,7 @@ const Footer = () => {
   createEffect(() => {
     const fetchSystemStats = async () => {
       try {
-        const response = await bridge('/system/stats');
+        const response = await api('system/stats');
         if (response.ok) {
           const stats = await response.json();
           setSystemStats(stats);
