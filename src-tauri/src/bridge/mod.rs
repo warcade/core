@@ -120,89 +120,254 @@ pub async fn run_server() -> Result<()> {
                             let plugin_id = plugin_info.id.clone();
                             let handler_name_owned = handler_name.to_string();
 
+                            // Clone route_path for path parameter extraction
+                            let route_pattern = path.to_string();
+
                             // Create a handler that will call the DLL function
-                            plugin_router.route(method, path, move |_path_arg, _query, _req| {
+                            plugin_router.route(method, path, move |path_arg, query, req| {
                                 let plugin_id = plugin_id.clone();
                                 let handler_name = handler_name_owned.clone();
+                                let route_pattern = route_pattern.clone();
 
                                 Box::pin(async move {
                                     use http_body_util::Full;
                                     use hyper::body::Bytes;
                                     use http_body_util::combinators::BoxBody;
+                                    use http_body_util::BodyExt;
                                     use libloading::Symbol;
+                                    use std::collections::HashMap;
+
+                                    // Extract method before consuming request
+                                    let method_str = req.method().to_string();
+
+                                    // Extract headers before consuming request
+                                    let mut headers_map: HashMap<String, String> = HashMap::new();
+                                    for (key, value) in req.headers().iter() {
+                                        if let Ok(v) = value.to_str() {
+                                            headers_map.insert(key.to_string(), v.to_string());
+                                        }
+                                    }
+
+                                    // Collect the request body
+                                    let body_bytes = match req.collect().await {
+                                        Ok(collected) => collected.to_bytes(),
+                                        Err(e) => {
+                                            let error_json = serde_json::json!({
+                                                "error": format!("Failed to read request body: {}", e)
+                                            }).to_string();
+                                            return hyper::Response::builder()
+                                                .status(400)
+                                                .header("Content-Type", "application/json")
+                                                .header("Access-Control-Allow-Origin", "*")
+                                                .body(BoxBody::new(Full::new(Bytes::from(error_json))))
+                                                .unwrap();
+                                        }
+                                    };
+
+                                    // Parse query string into key-value pairs
+                                    let query_params: HashMap<String, String> = query
+                                        .split('&')
+                                        .filter(|s| !s.is_empty())
+                                        .filter_map(|pair| {
+                                            let mut parts = pair.splitn(2, '=');
+                                            match (parts.next(), parts.next()) {
+                                                (Some(k), Some(v)) => Some((
+                                                    urlencoding::decode(k).unwrap_or_default().into_owned(),
+                                                    urlencoding::decode(v).unwrap_or_default().into_owned()
+                                                )),
+                                                (Some(k), None) => Some((
+                                                    urlencoding::decode(k).unwrap_or_default().into_owned(),
+                                                    String::new()
+                                                )),
+                                                _ => None
+                                            }
+                                        })
+                                        .collect();
+
+                                    // Extract path parameters (e.g., /user/:id -> {"id": "123"})
+                                    let path_params: HashMap<String, String> = {
+                                        let pattern_parts: Vec<&str> = route_pattern.split('/').collect();
+                                        let path_parts: Vec<&str> = path_arg.split('/').collect();
+                                        let mut params = HashMap::new();
+
+                                        if pattern_parts.len() == path_parts.len() {
+                                            for (pattern_part, path_part) in pattern_parts.iter().zip(path_parts.iter()) {
+                                                if pattern_part.starts_with(':') {
+                                                    let param_name = &pattern_part[1..];
+                                                    params.insert(param_name.to_string(), path_part.to_string());
+                                                }
+                                            }
+                                        }
+                                        params
+                                    };
+
+                                    // Build full HTTP context as JSON
+                                    let request_context = serde_json::json!({
+                                        "method": method_str,
+                                        "path": path_arg,
+                                        "query": query_params,
+                                        "path_params": path_params,
+                                        "headers": headers_map,
+                                        "body": base64::Engine::encode(&base64::engine::general_purpose::STANDARD, &body_bytes),
+                                        "body_len": body_bytes.len()
+                                    });
+
+                                    // Log request being sent to DLL (for debugging)
+                                    log::debug!("[Bridge->DLL] {} {} (body_len: {} bytes)", method_str, path_arg, body_bytes.len());
+                                    if headers_map.get("content-type").map(|ct| ct.contains("multipart")).unwrap_or(false) {
+                                        log::info!("[Bridge->DLL] Multipart request: body_len={}, first 20 bytes: {:?}",
+                                            body_bytes.len(),
+                                            &body_bytes[..std::cmp::min(20, body_bytes.len())]
+                                        );
+                                    }
+
+                                    let request_json = match serde_json::to_string(&request_context) {
+                                        Ok(json) => json,
+                                        Err(e) => {
+                                            let error_json = serde_json::json!({
+                                                "error": format!("Failed to serialize request context: {}", e)
+                                            }).to_string();
+                                            return hyper::Response::builder()
+                                                .status(500)
+                                                .header("Content-Type", "application/json")
+                                                .header("Access-Control-Allow-Origin", "*")
+                                                .body(BoxBody::new(Full::new(Bytes::from(error_json))))
+                                                .unwrap();
+                                        }
+                                    };
 
                                     // Look up the plugin library
                                     let libs = crate::bridge::core::plugin_exports::PLUGIN_LIBRARIES.lock().unwrap();
 
                                     if let Some(lib) = libs.get(&plugin_id) {
-                                        // Look up the handler function in the DLL
-                                        // Handler signature: extern "C" fn() -> *const u8
-                                        let result: Result<Symbol<extern "C" fn() -> *const u8>, _> = unsafe {
+                                        // Get the shared runtime pointer
+                                        let runtime_ptr = crate::bridge::core::plugin_exports::get_shared_runtime_ptr();
+
+                                        // New handler signature: extern "C" fn(*const u8, usize, *const ()) -> *const u8
+                                        // Args: request_json_ptr, request_json_len, runtime_ptr -> response_json_ptr
+                                        let result: Result<Symbol<extern "C" fn(*const u8, usize, *const ()) -> *const u8>, _> = unsafe {
                                             lib.get(handler_name.as_bytes())
                                         };
 
-                                        match result {
+                                        let response_ptr = match result {
                                             Ok(handler_fn) => {
-                                                // Call the handler
-                                                let json_ptr = handler_fn();
-
-                                                if json_ptr.is_null() {
-                                                    let error_json = serde_json::json!({
-                                                        "error": "Handler returned null"
-                                                    }).to_string();
-
-                                                    return hyper::Response::builder()
-                                                        .status(500)
-                                                        .header("Content-Type", "application/json")
-                                                        .header("Access-Control-Allow-Origin", "*")
-                                                        .body(BoxBody::new(Full::new(Bytes::from(error_json))))
-                                                        .unwrap();
-                                                }
-
-                                                // Read the JSON string from the pointer
-                                                // The plugin returns a leaked String pointer, NOT a C string
-                                                // We need to reconstruct it and read it properly
-                                                let json_str = unsafe {
-                                                    // Attempt to read as C string first (null-terminated)
-                                                    let c_str = std::ffi::CStr::from_ptr(json_ptr as *const i8);
-                                                    let string = c_str.to_string_lossy().into_owned();
-
-                                                    // Validate JSON to ensure we didn't read past valid data
-                                                    if let Ok(_) = serde_json::from_str::<serde_json::Value>(&string) {
-                                                        string
-                                                    } else {
-                                                        // Fall back to error
-                                                        "{\"error\":\"Invalid JSON from handler\"}".to_string()
-                                                    }
-                                                };
-
-                                                // Free the string (if the plugin exports free_string)
-                                                let free_result: Result<Symbol<extern "C" fn(*mut u8)>, _> = unsafe {
-                                                    lib.get(b"free_string")
-                                                };
-                                                if let Ok(free_fn) = free_result {
-                                                    free_fn(json_ptr as *mut u8);
-                                                }
-
-                                                hyper::Response::builder()
-                                                    .status(200)
-                                                    .header("Content-Type", "application/json")
-                                                    .header("Access-Control-Allow-Origin", "*")
-                                                    .body(BoxBody::new(Full::new(Bytes::from(json_str))))
-                                                    .unwrap()
+                                                // Call the handler with full HTTP context and shared runtime
+                                                handler_fn(request_json.as_ptr(), request_json.len(), runtime_ptr)
                                             }
                                             Err(e) => {
                                                 let error_json = serde_json::json!({
                                                     "error": format!("Handler function '{}' not found in plugin: {}", handler_name, e)
                                                 }).to_string();
 
-                                                hyper::Response::builder()
+                                                return hyper::Response::builder()
                                                     .status(500)
                                                     .header("Content-Type", "application/json")
                                                     .header("Access-Control-Allow-Origin", "*")
                                                     .body(BoxBody::new(Full::new(Bytes::from(error_json))))
-                                                    .unwrap()
+                                                    .unwrap();
                                             }
+                                        };
+
+                                        if response_ptr.is_null() {
+                                            let error_json = serde_json::json!({
+                                                "error": "Handler returned null"
+                                            }).to_string();
+
+                                            return hyper::Response::builder()
+                                                .status(500)
+                                                .header("Content-Type", "application/json")
+                                                .header("Access-Control-Allow-Origin", "*")
+                                                .body(BoxBody::new(Full::new(Bytes::from(error_json))))
+                                                .unwrap();
+                                        }
+
+                                        // Read the response JSON string from the pointer
+                                        let response_json_str = unsafe {
+                                            let c_str = std::ffi::CStr::from_ptr(response_ptr as *const i8);
+                                            c_str.to_string_lossy().into_owned()
+                                        };
+
+                                        // Free the string (if the plugin exports free_string)
+                                        let free_result: Result<Symbol<extern "C" fn(*mut u8)>, _> = unsafe {
+                                            lib.get(b"free_string")
+                                        };
+                                        if let Ok(free_fn) = free_result {
+                                            free_fn(response_ptr as *mut u8);
+                                        }
+
+                                        // Parse the response JSON to extract status, headers, and body
+                                        let response_data: serde_json::Value = match serde_json::from_str(&response_json_str) {
+                                            Ok(v) => v,
+                                            Err(_) => {
+                                                // If parsing fails, treat the whole string as JSON body (legacy behavior)
+                                                return hyper::Response::builder()
+                                                    .status(200)
+                                                    .header("Content-Type", "application/json")
+                                                    .header("Access-Control-Allow-Origin", "*")
+                                                    .body(BoxBody::new(Full::new(Bytes::from(response_json_str))))
+                                                    .unwrap();
+                                            }
+                                        };
+
+                                        // Check if response uses new format with status/headers/body
+                                        if response_data.get("__ffi_response__").is_some() {
+                                            let status = response_data.get("status")
+                                                .and_then(|v| v.as_u64())
+                                                .unwrap_or(200) as u16;
+
+                                            let mut builder = hyper::Response::builder().status(status);
+
+                                            // Check if custom headers already include CORS
+                                            let mut has_cors = false;
+
+                                            // Add custom headers
+                                            if let Some(headers) = response_data.get("headers").and_then(|v| v.as_object()) {
+                                                for (key, value) in headers {
+                                                    if let Some(v) = value.as_str() {
+                                                        if key.to_lowercase() == "access-control-allow-origin" {
+                                                            has_cors = true;
+                                                        }
+                                                        builder = builder.header(key.as_str(), v);
+                                                    }
+                                                }
+                                            }
+
+                                            // Only add CORS header if not already present
+                                            if !has_cors {
+                                                builder = builder.header("Access-Control-Allow-Origin", "*");
+                                            }
+
+                                            // Handle body - check if it's base64 encoded binary
+                                            let body_bytes = if response_data.get("body_base64").is_some() {
+                                                // Binary body encoded as base64
+                                                let b64 = response_data.get("body_base64")
+                                                    .and_then(|v| v.as_str())
+                                                    .unwrap_or("");
+                                                base64::Engine::decode(&base64::engine::general_purpose::STANDARD, b64)
+                                                    .unwrap_or_default()
+                                            } else if let Some(body_str) = response_data.get("body").and_then(|v| v.as_str()) {
+                                                // String body
+                                                body_str.as_bytes().to_vec()
+                                            } else if let Some(body_obj) = response_data.get("body") {
+                                                // JSON object body
+                                                serde_json::to_string(body_obj)
+                                                    .unwrap_or_default()
+                                                    .into_bytes()
+                                            } else {
+                                                Vec::new()
+                                            };
+
+                                            builder
+                                                .body(BoxBody::new(Full::new(Bytes::from(body_bytes))))
+                                                .unwrap()
+                                        } else {
+                                            // Legacy format - treat entire response as JSON body
+                                            hyper::Response::builder()
+                                                .status(200)
+                                                .header("Content-Type", "application/json")
+                                                .header("Access-Control-Allow-Origin", "*")
+                                                .body(BoxBody::new(Full::new(Bytes::from(response_json_str))))
+                                                .unwrap()
                                         }
                                     } else {
                                         let error_json = serde_json::json!({

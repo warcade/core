@@ -41,6 +41,22 @@ pub fn handle_list_plugins() -> Response<BoxBody<Bytes, Infallible>> {
                                     .and_then(|v| v.as_str())
                                     .unwrap_or("");
 
+                                // Check if plugin.js exists (frontend plugin)
+                                let has_plugin_js = path.join("plugin.js").exists();
+
+                                // Check if any native library exists (backend plugin)
+                                // Windows: .dll, Linux: .so, macOS: .dylib
+                                let has_dll = fs::read_dir(&path)
+                                    .map(|entries| {
+                                        entries.filter_map(|e| e.ok())
+                                            .any(|e| {
+                                                e.path().extension()
+                                                    .map(|ext| ext == "dll" || ext == "so" || ext == "dylib")
+                                                    .unwrap_or(false)
+                                            })
+                                    })
+                                    .unwrap_or(false);
+
                                 // Create plugin metadata from package.json
                                 let plugin_metadata = serde_json::json!({
                                     "id": plugin_id,
@@ -48,7 +64,9 @@ pub fn handle_list_plugins() -> Response<BoxBody<Bytes, Infallible>> {
                                     "version": package_json.get("version").and_then(|v| v.as_str()).unwrap_or("1.0.0"),
                                     "description": package_json.get("description").and_then(|v| v.as_str()).unwrap_or(""),
                                     "author": package_json.get("author").and_then(|v| v.as_str()).unwrap_or("Unknown"),
-                                    "routes": webarcade.get("routes").cloned().unwrap_or(serde_json::json!([]))
+                                    "routes": webarcade.get("routes").cloned().unwrap_or(serde_json::json!([])),
+                                    "has_plugin_js": has_plugin_js,
+                                    "has_dll": has_dll
                                 });
 
                                 plugins.push(plugin_metadata);

@@ -106,8 +106,11 @@ class PluginLoader {
         console.log('[PluginLoader] Runtime plugins data:', data);
 
         for (const runtimePlugin of data.plugins) {
-          // Only load frontend plugins or plugins with both frontend and backend
-          if (runtimePlugin.has_frontend) {
+          // Check if this plugin has a frontend (plugin.js exists)
+          // We'll try to load it and handle errors if it doesn't exist
+          const hasFrontend = runtimePlugin.has_plugin_js !== false; // Default to true, backend can explicitly set to false
+
+          if (hasFrontend) {
             const pluginConfig = {
               id: runtimePlugin.id,
               path: `/runtime/${runtimePlugin.id}`, // Virtual path for runtime plugins
@@ -119,7 +122,8 @@ class PluginLoader {
               enabled: true,
               priority: 100, // Lower priority than core plugins
               widget: null,
-              widgets: null
+              widgets: null,
+              has_backend: runtimePlugin.has_dll || false // Backend plugins have .dll files
             };
 
             // Register runtime plugin config in store so it can be tracked
@@ -143,11 +147,13 @@ class PluginLoader {
                 priority: pluginConfig.priority
               }
             };
-            console.log('[PluginLoader] Adding runtime plugin:', plugin.id);
+            console.log('[PluginLoader] Adding runtime plugin:', plugin.id, '(has_backend:', pluginConfig.has_backend, ')');
             plugins.push(plugin);
+          } else {
+            console.log('[PluginLoader] Skipping runtime plugin (no frontend):', runtimePlugin.id);
           }
         }
-        console.log('[PluginLoader] Total runtime plugins added:', data.plugins.filter(p => p.has_frontend).length);
+        console.log('[PluginLoader] Total runtime plugins added:', data.plugins.filter(p => p.has_plugin_js !== false).length);
       }
     } catch (error) {
       // Runtime plugins not available, continue with static plugins only

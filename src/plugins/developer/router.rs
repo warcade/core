@@ -23,6 +23,7 @@ pub async fn register_routes(ctx: &PluginContext) -> Result<()> {
     route!(router, POST "/build/:plugin", path => handle_build_plugin);
     route!(router, POST "/install/:plugin", path => handle_install_plugin);
     route!(router, POST "/create" => handle_create_plugin);
+    route!(router, GET "/api-test" => handle_api_test);
 
     ctx.register_router("developer", router).await;
 
@@ -1236,6 +1237,20 @@ strip = true
     fs::write(path.join("Cargo.toml"), cargo_toml)?;
 
     Ok(())
+}
+
+async fn handle_api_test() -> Response<BoxBody<Bytes, Infallible>> {
+    log::info!("[Developer] Running WebArcade API Test Suite...");
+
+    // Run the test suite
+    let summary = api::test_suite::ApiTestSuite::run_all();
+    let formatted = api::test_suite::ApiTestSuite::format_results(&summary);
+
+    // Log the formatted output to console
+    log::info!("\n{}", formatted);
+
+    // Return JSON response with test results
+    json_response(&summary)
 }
 
 async fn handle_install_plugin(path: String, _req: Request<Incoming>) -> Response<BoxBody<Bytes, Infallible>> {

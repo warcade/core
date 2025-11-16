@@ -29,6 +29,35 @@ pub mod events;
 pub mod macros;
 pub mod vtable;
 pub mod time;
+pub mod ffi_http;
+
+// WebArcade API Suite - Complete toolkit for plugin development
+pub mod json;
+pub mod form;
+pub mod encoding;
+pub mod crypto;
+pub mod validate;
+pub mod text;
+pub mod path;
+pub mod fs;
+pub mod env;
+pub mod sys;
+pub mod error;
+pub mod collections;
+pub mod fetch;
+pub mod process;
+pub mod cache;
+pub mod state;
+pub mod schedule;
+pub mod archive;
+pub mod regex_utils;
+pub mod mime;
+pub mod websocket;
+pub mod csv;
+pub mod ini;
+pub mod template;
+pub mod query;
+pub mod test_suite;
 
 // Core module - import everything you need with one line
 pub mod core;

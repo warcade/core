@@ -31,9 +31,6 @@ const [editorStore, setEditorStore] = createStore({
   
 
   theme: 'dark',
-  backgroundImage: null, // URL or data URL for background image
-  backgroundType: 'image', // 'image' or 'video'
-  originalTheme: null, // Store original theme before switching to glass theme
 
   glassTheme: {
     base100Opacity: 0.2,
@@ -224,26 +221,6 @@ export const editorActions = {
     document.documentElement.setAttribute('data-theme', theme);
   },
 
-  setBackgroundImage: (imageUrl, type = 'image') => {
-    if (imageUrl && !editorStore.backgroundImage) {
-      // Setting a background image/video - save current theme and switch to glass
-      setEditorStore('originalTheme', editorStore.theme);
-      setEditorStore('theme', 'dark-glass');
-      document.documentElement.setAttribute('data-theme', 'dark-glass');
-    } else if (!imageUrl && editorStore.backgroundImage) {
-      // Removing background image/video - restore original theme
-      const restoreTheme = editorStore.originalTheme || 'dark';
-      setEditorStore('theme', restoreTheme);
-      setEditorStore('originalTheme', null);
-      document.documentElement.setAttribute('data-theme', restoreTheme);
-    }
-
-    setEditorStore('backgroundImage', imageUrl);
-    setEditorStore('backgroundType', type);
-    editorActions.saveToProject();
-    editorActions.updateGlassThemeCSS();
-  },
-
   updateGlassThemeSetting: (key, value) => {
     setEditorStore('glassTheme', key, value);
     editorActions.saveToProject();
@@ -344,18 +321,6 @@ export const editorActions = {
       setEditorStore('theme', projectSettings.theme);
       // Apply theme to DOM
       document.documentElement.setAttribute('data-theme', projectSettings.theme);
-    }
-
-    if (projectSettings.backgroundImage) {
-      setEditorStore('backgroundImage', projectSettings.backgroundImage);
-    }
-
-    if (projectSettings.backgroundType) {
-      setEditorStore('backgroundType', projectSettings.backgroundType);
-    }
-
-    if (projectSettings.originalTheme) {
-      setEditorStore('originalTheme', projectSettings.originalTheme);
     }
   },
 

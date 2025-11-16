@@ -10,9 +10,28 @@ use std::collections::HashMap;
 use std::sync::{Mutex, Arc};
 use once_cell::sync::Lazy;
 use libloading::Library;
+use tokio::runtime::Runtime;
 
 // Global registry to track plugin_id -> Library mapping
 pub static PLUGIN_LIBRARIES: Lazy<Mutex<HashMap<String, Arc<Library>>>> = Lazy::new(|| Mutex::new(HashMap::new()));
+
+// Shared tokio runtime for all DLL plugins
+// This avoids creating a separate runtime per plugin (which wastes threads)
+pub static SHARED_RUNTIME: Lazy<Arc<Runtime>> = Lazy::new(|| {
+    Arc::new(
+        tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .worker_threads(4)  // 4 threads shared across ALL plugins
+            .thread_name("webarcade-plugin")
+            .build()
+            .expect("Failed to create shared plugin runtime")
+    )
+});
+
+/// Get pointer to the shared runtime for passing to DLL handlers
+pub fn get_shared_runtime_ptr() -> *const () {
+    Arc::as_ptr(&SHARED_RUNTIME) as *const ()
+}
 
 /// Register a plugin library for handler lookups
 pub fn register_plugin_library(plugin_id: String, library: Arc<Library>) {

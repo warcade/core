@@ -71,9 +71,6 @@ const Layout = () => {
       <div
         class="fixed bg-base-100 inset-0 flex flex-col pointer-events-none z-10 transition-opacity duration-300"
         onContextMenu={(e) => e.preventDefault()}
-        style={{
-          opacity: editorStore.backgroundImage ? '0.95' : '1'
-        }}
       >
         <div class="flex-shrink-0 pointer-events-auto z-50">
           <TopMenu />

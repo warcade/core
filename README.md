@@ -395,6 +395,32 @@ strip = true         # Strip symbols
 - **base64** (base64 encoding/decoding)
 - **rand** (random number generation)
 
+**FFI-Safe Utility Modules (30+ modules):**
+- **Json** - JSON parsing, building, and path navigation
+- **Csv** - Pure Rust CSV parsing and generation
+- **Ini** - INI/Config file parsing with typed getters
+- **Template** - String templating with `{{variable}}` syntax
+- **QueryString** - URL query string parsing and building
+- **Base64, Hex, UrlEncoding, HtmlEncoding** - Encoding utilities
+- **Hashing, Random, Uuid, Token** - Cryptographic utilities
+- **Email, Url, Password, StringValidation** - Input validation
+- **Text** - String manipulation (slugify, case conversion, truncate)
+- **Path** - Cross-platform path utilities
+- **Fs** - File system operations (read, write, metadata)
+- **Env** - Environment variable access
+- **Sys** - System information and timing
+- **LruCache, RingBuffer, Counter** - Data structures
+- **Fetch** - HTTP client (async requests)
+- **WebSocket** - WebSocket client
+- **Regex** - Pattern matching and replacement
+- **Mime** - MIME type detection
+- **Command, Shell** - Process execution
+- **TtlCache, Memo, Store** - Caching utilities
+- **Scheduler, Debouncer, Throttler** - Task scheduling
+- **Archive, ZipReader** - Archive/compression
+- **Error, ErrorCode** - Structured error handling
+- **ApiTestSuite** - Comprehensive API testing
+
 These are re-exported from `api::core`, so you don't need to add them to your Cargo.toml!
 
 **Example usage:**
@@ -415,6 +441,90 @@ let random_num = rand::random::<u32>();
 
 // Base64 encode
 let encoded = base64::encode("Hello, World!");
+```
+
+**FFI-Safe API Usage Examples:**
+```rust
+use api::core::*;
+
+// JSON Builder
+let json = JsonBuilder::object()
+    .field("name", "Alice")
+    .field("age", 30)
+    .field("active", true)
+    .build();
+
+// CSV Parsing
+let csv_data = "name,age\nAlice,30\nBob,25";
+let rows = Csv::parse_with_headers(csv_data)?;
+// rows[0].get("name") == Some("Alice")
+
+// INI Config
+let config = r#"
+[database]
+host = localhost
+port = 5432
+"#;
+let data = Ini::parse(config)?;
+let port = Ini::get_int(&data, "database", "port"); // Some(5432)
+
+// Template Rendering
+let vars = HashMap::from([("name".to_string(), "World".to_string())]);
+let result = Template::render("Hello {{name}}!", &vars);
+// "Hello World!"
+
+// Query String
+let params = QueryString::parse("name=Alice&age=30");
+let url = QueryBuilder::new()
+    .param("key", "value")
+    .param_int("count", 42)
+    .append_to("https://api.example.com");
+
+// Text Manipulation
+let slug = Text::slugify("Hello World!"); // "hello-world"
+let camel = Text::to_camel_case("my_variable"); // "myVariable"
+let truncated = Text::truncate("Long text...", 10); // "Long te..."
+
+// Validation
+let email_valid = Email::is_valid("test@example.com"); // true
+let password_result = Password::validate("StrongPass123");
+if password_result.is_valid() {
+    // Password meets requirements
+}
+
+// File System
+let content = Fs::read_string("/path/to/file.txt")?;
+Fs::write_string("/path/to/output.txt", "Hello")?;
+let info = Fs::metadata("/path/to/file")?;
+
+// Cryptography
+let uuid = Uuid::v4(); // "550e8400-e29b-41d4-a716-446655440000"
+let token = Token::api_key(); // Random alphanumeric string
+let bytes = Random::bytes(32); // 32 random bytes
+
+// Error Handling
+let err = WaError::not_found("Resource not found");
+let result: WaResult<String> = Err(err);
+
+// Collections
+let mut cache = LruCache::new(100);
+cache.insert("key", "value");
+let value = cache.get(&"key");
+
+let mut counter = Counter::new();
+counter.increment("visits".to_string());
+let count = counter.get(&"visits".to_string()); // 1
+
+// HTTP Fetch (async)
+let response = Fetch::get("https://api.example.com/data")
+    .header("Authorization", "Bearer token")
+    .timeout(5000)
+    .send()
+    .await?;
+
+// Regex Utilities
+let matches = Re::find_all(r"\d+", "a1b22c333")?; // ["1", "22", "333"]
+let replaced = Re::replace_all(r"\d", "test123", "X")?; // "testXXX"
 ```
 
 ### mod.rs
@@ -831,6 +941,73 @@ time::parse_rfc3339("2024-01-01T12:00:00Z")?
 
 // From timestamp
 time::from_timestamp(1704110400)
+```
+
+### API Test Suite
+
+WebArcade includes a comprehensive test suite for the Rust API that validates all modules. This is accessible via the Developer plugin:
+
+**Running Tests:**
+```bash
+# Via HTTP endpoint
+GET /developer/api-test
+```
+
+**Test Coverage:**
+- JSON parsing, building, and path navigation
+- CSV/INI/Template/QueryString parsing
+- Encoding (Base64, Hex, URL, HTML)
+- Cryptographic utilities (hashing, UUID, tokens)
+- Input validation (email, URL, password strength)
+- Text manipulation and string distance
+- File system operations
+- Regular expressions and MIME types
+- Collections (LRU cache, ring buffer, counters)
+- Error handling and context propagation
+
+**Test Output:**
+```
+╔══════════════════════════════════════════════════════════════╗
+║                   WebArcade API Test Suite                   ║
+╚══════════════════════════════════════════════════════════════╝
+
+┌─ ✓ JSON (4/4)
+│  ✓ parse_valid_json - JSON parsing works (0ms)
+│  ✓ stringify_object - JSON stringify works (0ms)
+│  ✓ get_path_nested - JSON path navigation works (0ms)
+│  ✓ builder_pattern - JSON builder works (0ms)
+└
+
+┌─ ✓ CSV (4/4)
+│  ✓ parse_simple - CSV parsing works (0ms)
+│  ✓ parse_with_headers - CSV header parsing works (0ms)
+│  ✓ stringify - CSV stringify works (0ms)
+│  ✓ quoted_fields - Quoted CSV fields work (0ms)
+└
+
+═══════════════════════════════════════════════════════════════
+Total: 50 tests | Passed: 50 | Failed: 0 | Duration: 15ms
+Status: ✓ ALL TESTS PASSED
+═══════════════════════════════════════════════════════════════
+```
+
+**Programmatic Usage:**
+```rust
+use api::test_suite::{ApiTestSuite, TestSummary};
+
+// Run all tests
+let summary: TestSummary = ApiTestSuite::run_all();
+
+// Format for console output
+let formatted = ApiTestSuite::format_results(&summary);
+println!("{}", formatted);
+
+// Check results
+if summary.failed > 0 {
+    for result in summary.results.iter().filter(|r| !r.passed) {
+        println!("FAILED: {} - {}", result.name, result.message);
+    }
+}
 ```
 
 ## Examples

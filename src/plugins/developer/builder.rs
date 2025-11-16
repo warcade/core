@@ -250,123 +250,173 @@ rustflags = ["-C", "link-args=-undefined dynamic_lookup"]
         // Extract handler functions from router.rs with their signatures
         let handlers = self.extract_handler_signatures()?;
 
-        // Generate handler wrapper functions
-        let handler_wrappers = handlers.iter().map(|(handler_name, params)| {
+        // Generate handler wrapper functions using new FFI HTTP system
+        let handler_wrappers = handlers.iter().map(|(handler_name, params, is_async, return_type)| {
             // Determine what arguments to pass based on the parameters
-            let (handler_args, needs_request) = if params.is_empty() {
-                (String::new(), false)
-            } else if params.len() == 1 && params[0].1.contains("HttpRequest") {
-                // Handler takes only HttpRequest
-                ("dummy_req".to_string(), true)
-            } else if params.len() == 2 && params[0].1.contains("HttpRequest") && params[1].1.contains("String") {
-                // Handler takes HttpRequest and path String
-                ("dummy_req, String::new()".to_string(), true)
+            let await_suffix = if *is_async { ".await" } else { "" };
+
+            // Build argument list for handler call
+            let handler_args = if params.is_empty() {
+                String::new()
             } else {
-                // Unknown parameter pattern - try to pass dummy values
-                let has_req = params.iter().any(|(_, ty)| ty.contains("HttpRequest"));
-                let args = params.iter().map(|(_, ty)| {
-                    if ty.contains("HttpRequest") {
-                        "dummy_req"
+                params.iter().map(|(name, ty)| {
+                    if ty.contains("HttpRequest") || ty.contains("Request<") {
+                        // Pass the HttpRequest - it's now the FFI-compatible type
+                        "http_request.clone()".to_string()
+                    } else if ty.contains("&str") {
+                        format!("&{}", name)
+                    } else if ty.contains("String") && name.contains("path") {
+                        "http_request.path.clone()".to_string()
+                    } else if ty.contains("String") && name.contains("query") {
+                        "serde_json::to_string(&http_request.query).unwrap_or_default()".to_string()
                     } else if ty.contains("String") {
-                        "String::new()"
+                        format!("{}.clone()", name)
+                    } else if ty.contains("u32") || ty.contains("u64") || ty.contains("i32") || ty.contains("i64") || ty.contains("usize") {
+                        // Try to parse from query or path params
+                        format!("http_request.path_params.get(\"{}\").and_then(|s| s.parse().ok()).unwrap_or_default()", name)
+                    } else if ty.contains("bool") {
+                        format!("http_request.query.get(\"{}\").map(|s| s == \"true\" || s == \"1\").unwrap_or(false)", name)
                     } else {
-                        "Default::default()"
+                        "Default::default()".to_string()
                     }
-                }).collect::<Vec<_>>().join(", ");
-                (args, has_req)
+                }).collect::<Vec<_>>().join(", ")
             };
 
-            // Create dummy request if needed - we need to transmute an empty body to Incoming
-            // This is safe because we're just creating a request that will be immediately consumed
-            let create_dummy_req = if needs_request {
+            let handler_call = format!("plugin_mod::router::{}({}){}", handler_name, handler_args, await_suffix);
+
+            // Handle different return types
+            let response_handling = if return_type.contains("Result<") {
+                // Result<HttpResponse, _> - unwrap or convert error
                 r#"
-            // Create a dummy HTTP request with an empty body
-            // SAFETY: We're creating an empty request for handlers that will ignore the body
-            use api::http_body_util::Empty;
-            use api::hyper::body::Bytes;
-            let empty_body = Empty::<Bytes>::new();
-
-            // We need to convert Empty to Incoming, which is tricky
-            // For now, we'll use an unsafe transmute since the handler shouldn't read the body
-            let dummy_req: api::hyper::Request<api::hyper::body::Incoming> = unsafe {
-                std::mem::transmute(
-                    api::hyper::Request::builder()
-                        .method("GET")
-                        .uri("/")
-                        .body(empty_body)
-                        .unwrap()
-                )
-            };"#
+            let response = match handler_result {
+                Ok(resp) => resp,
+                Err(e) => {
+                    let error_response = FFIResponse::new(500)
+                        .json(&api::serde_json::json!({"error": format!("{}", e)}));
+                    return error_response.into_ffi_ptr();
+                }
+            };"#.to_string()
             } else {
-                ""
+                // Direct HttpResponse
+                "let response = handler_result;".to_string()
             };
 
-            format!("
+            format!(r##"
 #[no_mangle]
-pub extern \"C\" fn {}() -> *const u8 {{
+pub extern "C" fn {handler_name}(request_ptr: *const u8, request_len: usize, runtime_ptr: *const ()) -> *const u8 {{
     use std::panic;
     use std::ffi::CString;
+    use api::ffi_http::{{Response as FFIResponse}};
+    use api::http::HttpRequest;
+    use api::tokio::runtime::Runtime;
 
     let result = panic::catch_unwind(|| {{
-        // Use the shared runtime instead of creating a new one
-        get_runtime().block_on(async {{
+        // Parse FFI JSON into HttpRequest (the developer-facing type)
+        let http_request = match HttpRequest::from_ffi_json(request_ptr, request_len) {{
+            Ok(r) => r,
+            Err(e) => {{
+                let error_response = FFIResponse::new(400)
+                    .json(&api::serde_json::json!({{"error": e}}));
+                return error_response.into_ffi_ptr();
+            }}
+        }};
+
+        // Use the shared runtime passed from the bridge
+        let runtime = unsafe {{ &*(runtime_ptr as *const Runtime) }};
+        runtime.block_on(async {{
             use api::http_body_util::BodyExt;
-{}
-            // Call the handler and get the HttpResponse
-            let response = plugin_mod::router::{}({}).await;
 
-            // Extract the body bytes from the response
-            let (_parts, body) = response.into_parts();
-            let body_bytes = body.collect().await.unwrap().to_bytes();
-            let body_str = String::from_utf8(body_bytes.to_vec()).unwrap();
+            // Call the handler with the clean HttpRequest type
+            let handler_result = {handler_call};
+{response_handling}
+            // Extract status, headers, and body from the response
+            let (parts, body) = response.into_parts();
+            let status = parts.status.as_u16();
 
-            body_str
+            // Collect headers
+            let mut headers = std::collections::HashMap::new();
+            for (key, value) in parts.headers.iter() {{
+                if let Ok(v) = value.to_str() {{
+                    headers.insert(key.to_string(), v.to_string());
+                }}
+            }}
+
+            // Collect body
+            let body_bytes = match body.collect().await {{
+                Ok(collected) => collected.to_bytes().to_vec(),
+                Err(_) => Vec::new(),
+            }};
+
+            // Create FFI response
+            let mut ffi_response = FFIResponse::new(status);
+            ffi_response.headers = headers.clone();
+
+            // Check Content-Type to determine if body is binary
+            let content_type = headers.get("content-type")
+                .or_else(|| headers.get("Content-Type"))
+                .cloned()
+                .unwrap_or_default()
+                .to_lowercase();
+
+            let is_binary = content_type.starts_with("image/")
+                || content_type.starts_with("video/")
+                || content_type.starts_with("audio/")
+                || content_type.starts_with("application/octet-stream")
+                || content_type.starts_with("application/pdf")
+                || content_type.starts_with("application/zip")
+                || content_type.starts_with("font/");
+
+            if is_binary {{
+                // Binary data - encode as base64
+                use api::base64::Engine;
+                ffi_response.body_base64 = Some(
+                    api::base64::engine::general_purpose::STANDARD.encode(&body_bytes)
+                );
+            }} else if let Ok(body_str) = String::from_utf8(body_bytes.clone()) {{
+                // Try to parse as JSON
+                if let Ok(json_value) = api::serde_json::from_str::<api::serde_json::Value>(&body_str) {{
+                    ffi_response.body = Some(json_value);
+                }} else {{
+                    // Plain text
+                    ffi_response.body = Some(api::serde_json::Value::String(body_str));
+                }}
+            }} else {{
+                // Binary data - encode as base64
+                use api::base64::Engine;
+                ffi_response.body_base64 = Some(
+                    api::base64::engine::general_purpose::STANDARD.encode(&body_bytes)
+                );
+            }}
+
+            ffi_response.into_ffi_ptr()
         }})
     }});
 
     match result {{
-        Ok(json_string) => {{
-            // Convert to CString to ensure null-termination for C FFI
-            let c_string = CString::new(json_string).unwrap();
-            Box::leak(Box::new(c_string)).as_ptr() as *const u8
-        }}
+        Ok(ptr) => ptr,
         Err(_) => {{
-            let error = CString::new(\"{{\\\"error\\\": \\\"Handler panicked\\\"}}\").unwrap();
+            let error = CString::new(r#"{{"__ffi_response__":true,"status":500,"headers":{{"Content-Type":"application/json"}},"body":{{"error":"Handler panicked"}}}}"#).unwrap();
             Box::leak(Box::new(error)).as_ptr() as *const u8
         }}
     }}
 }}
-", handler_name, create_dummy_req, handler_name, handler_args)
+"##)
         }).collect::<Vec<_>>().join("\n");
 
         let lib_content = format!(r#"// Auto-generated plugin library
 // This file uses the api crate to provide a clean plugin interface
+// Runtime is shared across all plugins (passed from bridge)
 
 // Include plugin modules
 pub mod plugin_mod;
 
 // Re-export plugin
 pub use plugin_mod::*;
-use api::tokio;
-use std::sync::{{Arc, OnceLock}};
 
-// Shared runtime for all handler calls to avoid creating multiple runtimes
-static RUNTIME: OnceLock<Arc<tokio::runtime::Runtime>> = OnceLock::new();
-
-fn get_runtime() -> &'static Arc<tokio::runtime::Runtime> {{
-    RUNTIME.get_or_init(|| {{
-        Arc::new(
-            tokio::runtime::Builder::new_multi_thread()
-                .enable_all()
-                .worker_threads(2)
-                .build()
-                .expect("Failed to create tokio runtime")
-        )
-    }})
-}}
+// Re-export free_string for memory management
+pub use api::ffi_http::free_string;
 
 // Export plugin lifecycle functions for dynamic loading
-// Note: These are no-ops since we use manifest-based routing
 #[no_mangle]
 pub extern "C" fn plugin_init(_ffi_ctx: *const ()) -> i32 {{
     // Routes are registered from manifest, so init is a no-op
@@ -426,7 +476,7 @@ pub extern "C" fn plugin_metadata() -> *const u8 {{
         Ok(handlers)
     }
 
-    fn extract_handler_signatures(&self) -> Result<Vec<(String, Vec<(String, String)>)>> {
+    fn extract_handler_signatures(&self) -> Result<Vec<(String, Vec<(String, String)>, bool, String)>> {
         let router_path = self.plugin_dir.join("router.rs");
         if !router_path.exists() {
             return Ok(Vec::new());
@@ -435,44 +485,101 @@ pub extern "C" fn plugin_metadata() -> *const u8 {{
         let content = fs::read_to_string(&router_path)?;
         let mut handlers = Vec::new();
 
-        // First get handler names from route! macros
+        // First get handler names from route! macros (only HTTP handlers)
         let handler_names = self.extract_handlers()?;
 
         // For each handler, find its function signature
         for handler_name in handler_names {
-            // Match: pub async fn handler_name(param1: Type1, param2: Type2) -> HttpResponse
-            let pattern = format!(
-                r"(?:pub\s+)?async\s+fn\s+{}\s*\(([^)]*)\)\s*->\s*HttpResponse",
+            // Try to match async function first
+            // Match any return type including generics like Result<HttpResponse, Error>
+            let async_pattern = format!(
+                r"(?:pub\s+)?async\s+fn\s+{}\s*(?:<[^>]*>)?\s*\(([^)]*)\)\s*->\s*(.+?)(?:\s*\{{|\s*where\s)",
                 regex::escape(&handler_name)
             );
-            let re = regex::Regex::new(&pattern).unwrap();
+            let async_re = regex::Regex::new(&async_pattern).unwrap();
 
-            if let Some(cap) = re.captures(&content) {
-                if let Some(params_str) = cap.get(1) {
-                    let params_str = params_str.as_str().trim();
-                    let mut params = Vec::new();
+            let is_async;
+            let params_str_opt;
+            let return_type;
 
-                    if !params_str.is_empty() {
-                        // Split by comma and parse each parameter
-                        for param in params_str.split(',') {
-                            let param = param.trim();
-                            if let Some(colon_pos) = param.find(':') {
-                                let name = param[..colon_pos].trim().to_string();
-                                let ty = param[colon_pos + 1..].trim().to_string();
-                                params.push((name, ty));
+            if let Some(cap) = async_re.captures(&content) {
+                is_async = true;
+                params_str_opt = cap.get(1).map(|m| m.as_str().trim().to_string());
+                return_type = cap.get(2).map(|m| m.as_str().trim().to_string()).unwrap_or_else(|| "HttpResponse".to_string());
+            } else {
+                // Try to match sync function
+                let sync_pattern = format!(
+                    r"(?:pub\s+)?fn\s+{}\s*(?:<[^>]*>)?\s*\(([^)]*)\)\s*->\s*(.+?)(?:\s*\{{|\s*where\s)",
+                    regex::escape(&handler_name)
+                );
+                let sync_re = regex::Regex::new(&sync_pattern).unwrap();
+
+                if let Some(cap) = sync_re.captures(&content) {
+                    is_async = false;
+                    params_str_opt = cap.get(1).map(|m| m.as_str().trim().to_string());
+                    return_type = cap.get(2).map(|m| m.as_str().trim().to_string()).unwrap_or_else(|| "HttpResponse".to_string());
+                } else {
+                    // Couldn't find signature, assume async with no parameters returning HttpResponse
+                    is_async = true;
+                    params_str_opt = None;
+                    return_type = "HttpResponse".to_string();
+                }
+            }
+
+            let mut params = Vec::new();
+            if let Some(params_str) = params_str_opt {
+                if !params_str.is_empty() {
+                    // Parse parameters carefully handling nested generics
+                    let mut current_param = String::new();
+                    let mut angle_depth = 0;
+                    let mut paren_depth = 0;
+
+                    for ch in params_str.chars() {
+                        match ch {
+                            '<' => {
+                                angle_depth += 1;
+                                current_param.push(ch);
+                            }
+                            '>' => {
+                                angle_depth -= 1;
+                                current_param.push(ch);
+                            }
+                            '(' => {
+                                paren_depth += 1;
+                                current_param.push(ch);
+                            }
+                            ')' => {
+                                paren_depth -= 1;
+                                current_param.push(ch);
+                            }
+                            ',' if angle_depth == 0 && paren_depth == 0 => {
+                                // End of parameter
+                                let param = current_param.trim();
+                                if let Some(colon_pos) = param.find(':') {
+                                    let name = param[..colon_pos].trim().to_string();
+                                    let ty = param[colon_pos + 1..].trim().to_string();
+                                    params.push((name, ty));
+                                }
+                                current_param.clear();
+                            }
+                            _ => {
+                                current_param.push(ch);
                             }
                         }
                     }
-
-                    handlers.push((handler_name.clone(), params));
-                } else {
-                    // No parameters
-                    handlers.push((handler_name.clone(), Vec::new()));
+                    // Don't forget the last parameter
+                    let param = current_param.trim();
+                    if !param.is_empty() {
+                        if let Some(colon_pos) = param.find(':') {
+                            let name = param[..colon_pos].trim().to_string();
+                            let ty = param[colon_pos + 1..].trim().to_string();
+                            params.push((name, ty));
+                        }
+                    }
                 }
-            } else {
-                // Couldn't find signature, assume no parameters
-                handlers.push((handler_name.clone(), Vec::new()));
             }
+
+            handlers.push((handler_name.clone(), params, is_async, return_type));
         }
 
         Ok(handlers)
@@ -517,7 +624,13 @@ pub extern "C" fn plugin_metadata() -> *const u8 {{
                             // Make handler functions public (if not already)
                             // Pattern: async fn handler_name(...) -> HttpResponse
                             let re = regex::Regex::new(r"(?m)^async fn ([a-zA-Z_][a-zA-Z0-9_]*)\(([^)]*)\) -> HttpResponse").unwrap();
-                            re.replace_all(&content, "pub async fn $1($2) -> HttpResponse").to_string()
+                            let modified = re.replace_all(&content, "pub async fn $1($2) -> HttpResponse").to_string();
+
+                            // HttpRequest is now the FFI-compatible type, no transformation needed
+                            // The builder generates lib.rs that calls HttpRequest::from_ffi_json()
+                            // and passes the clean HttpRequest to handlers
+
+                            modified
                         } else {
                             content
                         };
@@ -922,7 +1035,8 @@ For other platforms, you may need to rebuild from source.
 
         // Pattern: route!(router, METHOD "/path" => handler_name);
         // Pattern: route!(router, METHOD "/path", path => handler_name);
-        let re = regex::Regex::new(r#"route!\s*\([^,]+,\s*(\w+)\s+"([^"]+)"(?:,\s*path\s*)?=>\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*\)"#).unwrap();
+        // The (?:,\s*path\s*)? part is optional to match both variants
+        let re = regex::Regex::new(r#"route!\s*\([^,]+,\s*(\w+)\s+"([^"]+)"\s*(?:,\s*path\s*)?=>\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*\)"#).unwrap();
 
         for cap in re.captures_iter(&content) {
             if let (Some(method), Some(path), Some(handler)) = (cap.get(1), cap.get(2), cap.get(3)) {

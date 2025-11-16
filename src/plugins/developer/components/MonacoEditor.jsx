@@ -179,6 +179,720 @@ function MonacoEditor({
     monaco.languages.typescript.typescriptDefaults.addExtraLib(jsxTypes, 'ts:jsx-runtime.d.ts');
   };
 
+  const registerRustCompletions = (monaco) => {
+    const rustCompletions = [
+      // Core API imports and modules
+      {
+        label: 'use api::core::*',
+        kind: monaco.languages.CompletionItemKind.Module,
+        documentation: 'Import all WebArcade core API types and utilities',
+        insertText: 'use api::core::*;',
+        sortText: '0000'
+      },
+      {
+        label: 'use api::prelude::*',
+        kind: monaco.languages.CompletionItemKind.Module,
+        documentation: 'Import WebArcade prelude (all commonly used items)',
+        insertText: 'use api::prelude::*;',
+        sortText: '0001'
+      },
+      // Plugin trait implementation
+      {
+        label: 'plugin_metadata!',
+        kind: monaco.languages.CompletionItemKind.Snippet,
+        documentation: 'Define plugin metadata macro',
+        insertText: 'plugin_metadata!(\n\t"${1:plugin-id}",\n\t"${2:Plugin Name}",\n\t"${3:1.0.0}",\n\t"${4:Description}",\n\tauthor: "${5:Author}"\n);',
+        insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
+        sortText: '0002'
+      },
+      {
+        label: 'impl Plugin',
+        kind: monaco.languages.CompletionItemKind.Snippet,
+        documentation: 'Implement Plugin trait for a struct',
+        insertText: '#[async_trait]\nimpl Plugin for ${1:MyPlugin} {\n\tplugin_metadata!(\n\t\t"${2:plugin-id}",\n\t\t"${3:Plugin Name}",\n\t\t"${4:1.0.0}",\n\t\t"${5:Description}",\n\t\tauthor: "${6:Author}"\n\t);\n\n\tasync fn init(&self, ctx: &Context) -> Result<()> {\n\t\tlog::info!("[${3}] Initializing");\n\t\t${7}\n\t\tOk(())\n\t}\n\n\tasync fn start(&self, _ctx: Arc<Context>) -> Result<()> {\n\t\tlog::info!("[${3}] Started");\n\t\tOk(())\n\t}\n\n\tasync fn stop(&self) -> Result<()> {\n\t\tlog::info!("[${3}] Stopped");\n\t\tOk(())\n\t}\n}',
+        insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
+        sortText: '0003'
+      },
+      // Router and routes
+      {
+        label: 'register_routes',
+        kind: monaco.languages.CompletionItemKind.Function,
+        documentation: 'Create a route registration function',
+        insertText: 'pub async fn register_routes(ctx: &Context) -> Result<()> {\n\tlet mut router = Router::new();\n\n\troute!(router, GET "/${1:path}" => ${2:handler_name});\n\n\tctx.register_router("${3:plugin-id}", router).await;\n\tOk(())\n}',
+        insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
+        sortText: '0004'
+      },
+      {
+        label: 'route! GET',
+        kind: monaco.languages.CompletionItemKind.Snippet,
+        documentation: 'Register a GET route',
+        insertText: 'route!(router, GET "/${1:path}" => ${2:handler});',
+        insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
+        sortText: '0005'
+      },
+      {
+        label: 'route! POST',
+        kind: monaco.languages.CompletionItemKind.Snippet,
+        documentation: 'Register a POST route',
+        insertText: 'route!(router, POST "/${1:path}" => ${2:handler});',
+        insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
+        sortText: '0006'
+      },
+      {
+        label: 'route! PUT',
+        kind: monaco.languages.CompletionItemKind.Snippet,
+        documentation: 'Register a PUT route',
+        insertText: 'route!(router, PUT "/${1:path}" => ${2:handler});',
+        insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
+        sortText: '0007'
+      },
+      {
+        label: 'route! DELETE',
+        kind: monaco.languages.CompletionItemKind.Snippet,
+        documentation: 'Register a DELETE route',
+        insertText: 'route!(router, DELETE "/${1:path}" => ${2:handler});',
+        insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
+        sortText: '0008'
+      },
+      // Handler functions
+      {
+        label: 'async handler',
+        kind: monaco.languages.CompletionItemKind.Snippet,
+        documentation: 'Create an async HTTP handler function',
+        insertText: 'async fn ${1:handle_request}() -> HttpResponse {\n\tlet response = json!({\n\t\t"${2:key}": "${3:value}"\n\t});\n\tjson_response(&response)\n}',
+        insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
+        sortText: '0009'
+      },
+      {
+        label: 'async handler with body',
+        kind: monaco.languages.CompletionItemKind.Snippet,
+        documentation: 'Create an async HTTP handler with request body',
+        insertText: 'async fn ${1:handle_request}(body: String) -> HttpResponse {\n\tmatch serde_json::from_str::<${2:RequestType}>(&body) {\n\t\tOk(req) => {\n\t\t\t${3}\n\t\t\tjson_response(&json!({ "status": "ok" }))\n\t\t}\n\t\tErr(e) => error_response(StatusCode::BAD_REQUEST, &format!("Invalid JSON: {}", e))\n\t}\n}',
+        insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
+        sortText: '0010'
+      },
+      // JSON operations
+      {
+        label: 'json!',
+        kind: monaco.languages.CompletionItemKind.Snippet,
+        documentation: 'Create a JSON value',
+        insertText: 'json!({\n\t"${1:key}": ${2:value}\n})',
+        insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
+        sortText: '0011'
+      },
+      {
+        label: 'json_response',
+        kind: monaco.languages.CompletionItemKind.Function,
+        documentation: 'Return a JSON HTTP response',
+        insertText: 'json_response(&${1:data})',
+        insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
+        sortText: '0012'
+      },
+      {
+        label: 'error_response',
+        kind: monaco.languages.CompletionItemKind.Function,
+        documentation: 'Return an error HTTP response',
+        insertText: 'error_response(StatusCode::${1:BAD_REQUEST}, "${2:Error message}")',
+        insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
+        sortText: '0013'
+      },
+      {
+        label: 'JsonBuilder',
+        kind: monaco.languages.CompletionItemKind.Class,
+        documentation: 'Build JSON objects fluently',
+        insertText: 'JsonBuilder::object()\n\t.field("${1:key}", ${2:value})\n\t.build()',
+        insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
+        sortText: '0014'
+      },
+      {
+        label: 'Json::parse',
+        kind: monaco.languages.CompletionItemKind.Function,
+        documentation: 'Parse JSON string into Value',
+        insertText: 'Json::parse(${1:json_str})?',
+        insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
+        sortText: '0015'
+      },
+      // CSV/INI/Template utilities
+      {
+        label: 'Csv::parse',
+        kind: monaco.languages.CompletionItemKind.Function,
+        documentation: 'Parse CSV string into rows',
+        insertText: 'Csv::parse(${1:csv_text})?',
+        insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
+        sortText: '0016'
+      },
+      {
+        label: 'Csv::parse_with_headers',
+        kind: monaco.languages.CompletionItemKind.Function,
+        documentation: 'Parse CSV with headers into HashMaps',
+        insertText: 'Csv::parse_with_headers(${1:csv_text})?',
+        insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
+        sortText: '0017'
+      },
+      {
+        label: 'Ini::parse',
+        kind: monaco.languages.CompletionItemKind.Function,
+        documentation: 'Parse INI/Config file',
+        insertText: 'Ini::parse(${1:ini_text})?',
+        insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
+        sortText: '0018'
+      },
+      {
+        label: 'Template::render',
+        kind: monaco.languages.CompletionItemKind.Function,
+        documentation: 'Render template with variables',
+        insertText: 'Template::render("${1:Hello {{name}}!}", &${2:vars})',
+        insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
+        sortText: '0019'
+      },
+      {
+        label: 'QueryString::parse',
+        kind: monaco.languages.CompletionItemKind.Function,
+        documentation: 'Parse URL query string',
+        insertText: 'QueryString::parse("${1:key=value&foo=bar}")',
+        insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
+        sortText: '0020'
+      },
+      {
+        label: 'QueryBuilder',
+        kind: monaco.languages.CompletionItemKind.Class,
+        documentation: 'Build query strings fluently',
+        insertText: 'QueryBuilder::new()\n\t.param("${1:key}", "${2:value}")\n\t.build()',
+        insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
+        sortText: '0021'
+      },
+      // Validation
+      {
+        label: 'Email::is_valid',
+        kind: monaco.languages.CompletionItemKind.Function,
+        documentation: 'Validate email address',
+        insertText: 'Email::is_valid("${1:email@example.com}")',
+        insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
+        sortText: '0022'
+      },
+      {
+        label: 'Password::validate',
+        kind: monaco.languages.CompletionItemKind.Function,
+        documentation: 'Validate password strength',
+        insertText: 'Password::validate("${1:password}")',
+        insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
+        sortText: '0023'
+      },
+      {
+        label: 'Url::is_valid',
+        kind: monaco.languages.CompletionItemKind.Function,
+        documentation: 'Validate URL format',
+        insertText: 'Url::is_valid("${1:https://example.com}")',
+        insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
+        sortText: '0024'
+      },
+      // Text manipulation
+      {
+        label: 'Text::slugify',
+        kind: monaco.languages.CompletionItemKind.Function,
+        documentation: 'Convert string to URL-safe slug',
+        insertText: 'Text::slugify("${1:Hello World}")',
+        insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
+        sortText: '0025'
+      },
+      {
+        label: 'Text::truncate',
+        kind: monaco.languages.CompletionItemKind.Function,
+        documentation: 'Truncate string with ellipsis',
+        insertText: 'Text::truncate("${1:long text}", ${2:max_len})',
+        insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
+        sortText: '0026'
+      },
+      {
+        label: 'Text::to_camel_case',
+        kind: monaco.languages.CompletionItemKind.Function,
+        documentation: 'Convert to camelCase',
+        insertText: 'Text::to_camel_case("${1:snake_case}")',
+        insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
+        sortText: '0027'
+      },
+      // Crypto
+      {
+        label: 'Uuid::v4',
+        kind: monaco.languages.CompletionItemKind.Function,
+        documentation: 'Generate a random UUID v4',
+        insertText: 'Uuid::v4()',
+        sortText: '0028'
+      },
+      {
+        label: 'Token::api_key',
+        kind: monaco.languages.CompletionItemKind.Function,
+        documentation: 'Generate a random API key',
+        insertText: 'Token::api_key()',
+        sortText: '0029'
+      },
+      {
+        label: 'Random::bytes',
+        kind: monaco.languages.CompletionItemKind.Function,
+        documentation: 'Generate random bytes',
+        insertText: 'Random::bytes(${1:32})',
+        insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
+        sortText: '0030'
+      },
+      // Encoding
+      {
+        label: 'Base64::encode',
+        kind: monaco.languages.CompletionItemKind.Function,
+        documentation: 'Encode bytes to Base64',
+        insertText: 'Base64::encode(${1:bytes})',
+        insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
+        sortText: '0031'
+      },
+      {
+        label: 'Base64::decode',
+        kind: monaco.languages.CompletionItemKind.Function,
+        documentation: 'Decode Base64 to bytes',
+        insertText: 'Base64::decode("${1:base64_string}")?',
+        insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
+        sortText: '0032'
+      },
+      {
+        label: 'Hex::encode',
+        kind: monaco.languages.CompletionItemKind.Function,
+        documentation: 'Encode bytes to hex string',
+        insertText: 'Hex::encode(${1:bytes})',
+        insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
+        sortText: '0033'
+      },
+      // File system
+      {
+        label: 'Fs::read_string',
+        kind: monaco.languages.CompletionItemKind.Function,
+        documentation: 'Read file content as string',
+        insertText: 'Fs::read_string("${1:path}")?',
+        insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
+        sortText: '0034'
+      },
+      {
+        label: 'Fs::write_string',
+        kind: monaco.languages.CompletionItemKind.Function,
+        documentation: 'Write string to file',
+        insertText: 'Fs::write_string("${1:path}", "${2:content}")?',
+        insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
+        sortText: '0035'
+      },
+      {
+        label: 'Fs::exists',
+        kind: monaco.languages.CompletionItemKind.Function,
+        documentation: 'Check if file exists',
+        insertText: 'Fs::exists("${1:path}")',
+        insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
+        sortText: '0036'
+      },
+      {
+        label: 'Fs::metadata',
+        kind: monaco.languages.CompletionItemKind.Function,
+        documentation: 'Get file metadata (size, timestamps)',
+        insertText: 'Fs::metadata("${1:path}")?',
+        insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
+        sortText: '0037'
+      },
+      {
+        label: 'Path::webarcade_data',
+        kind: monaco.languages.CompletionItemKind.Function,
+        documentation: 'Get WebArcade data directory path',
+        insertText: 'Path::webarcade_data()?',
+        sortText: '0038'
+      },
+      {
+        label: 'Path::join',
+        kind: monaco.languages.CompletionItemKind.Function,
+        documentation: 'Join path segments',
+        insertText: 'Path::join("${1:base}", &["${2:segment}"])',
+        insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
+        sortText: '0039'
+      },
+      // Collections
+      {
+        label: 'LruCache::new',
+        kind: monaco.languages.CompletionItemKind.Function,
+        documentation: 'Create an LRU cache with capacity',
+        insertText: 'LruCache::new(${1:100})',
+        insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
+        sortText: '0040'
+      },
+      {
+        label: 'RingBuffer::new',
+        kind: monaco.languages.CompletionItemKind.Function,
+        documentation: 'Create a circular buffer',
+        insertText: 'RingBuffer::new(${1:10})',
+        insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
+        sortText: '0041'
+      },
+      {
+        label: 'Counter::new',
+        kind: monaco.languages.CompletionItemKind.Function,
+        documentation: 'Create a counter for tracking occurrences',
+        insertText: 'Counter::new()',
+        sortText: '0042'
+      },
+      // Error handling
+      {
+        label: 'WaError::not_found',
+        kind: monaco.languages.CompletionItemKind.Function,
+        documentation: 'Create a not found error',
+        insertText: 'WaError::not_found("${1:Resource not found}")',
+        insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
+        sortText: '0043'
+      },
+      {
+        label: 'WaError::validation',
+        kind: monaco.languages.CompletionItemKind.Function,
+        documentation: 'Create a validation error',
+        insertText: 'WaError::validation("${1:Invalid input}")',
+        insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
+        sortText: '0044'
+      },
+      // Regex
+      {
+        label: 'Re::is_match',
+        kind: monaco.languages.CompletionItemKind.Function,
+        documentation: 'Test if pattern matches text',
+        insertText: 'Re::is_match(r"${1:\\\\d+}", "${2:text}")?',
+        insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
+        sortText: '0045'
+      },
+      {
+        label: 'Re::replace_all',
+        kind: monaco.languages.CompletionItemKind.Function,
+        documentation: 'Replace all pattern matches',
+        insertText: 'Re::replace_all(r"${1:pattern}", "${2:text}", "${3:replacement}")?',
+        insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
+        sortText: '0046'
+      },
+      // MIME
+      {
+        label: 'Mime::from_filename',
+        kind: monaco.languages.CompletionItemKind.Function,
+        documentation: 'Get MIME type from filename',
+        insertText: 'Mime::from_filename("${1:file.pdf}")',
+        insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
+        sortText: '0047'
+      },
+      // HTTP Fetch
+      {
+        label: 'Fetch::get',
+        kind: monaco.languages.CompletionItemKind.Function,
+        documentation: 'Create a GET request',
+        insertText: 'Fetch::get("${1:https://api.example.com}")\n\t.send()\n\t.await?',
+        insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
+        sortText: '0048'
+      },
+      {
+        label: 'Fetch::post',
+        kind: monaco.languages.CompletionItemKind.Function,
+        documentation: 'Create a POST request',
+        insertText: 'Fetch::post("${1:https://api.example.com}")\n\t.json(&${2:data})\n\t.send()\n\t.await?',
+        insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
+        sortText: '0049'
+      },
+      // Time
+      {
+        label: 'time::timestamp',
+        kind: monaco.languages.CompletionItemKind.Function,
+        documentation: 'Get current Unix timestamp (seconds)',
+        insertText: 'time::timestamp()',
+        sortText: '0050'
+      },
+      {
+        label: 'time::timestamp_millis',
+        kind: monaco.languages.CompletionItemKind.Function,
+        documentation: 'Get current Unix timestamp (milliseconds)',
+        insertText: 'time::timestamp_millis()',
+        sortText: '0051'
+      },
+      // Logging
+      {
+        label: 'log::info!',
+        kind: monaco.languages.CompletionItemKind.Snippet,
+        documentation: 'Log info message',
+        insertText: 'log::info!("[${1:Plugin}] ${2:message}");',
+        insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
+        sortText: '0052'
+      },
+      {
+        label: 'log::error!',
+        kind: monaco.languages.CompletionItemKind.Snippet,
+        documentation: 'Log error message',
+        insertText: 'log::error!("[${1:Plugin}] ${2:error}");',
+        insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
+        sortText: '0053'
+      },
+      {
+        label: 'log::warn!',
+        kind: monaco.languages.CompletionItemKind.Snippet,
+        documentation: 'Log warning message',
+        insertText: 'log::warn!("[${1:Plugin}] ${2:warning}");',
+        insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
+        sortText: '0054'
+      },
+      // Database
+      {
+        label: 'ctx.migrate',
+        kind: monaco.languages.CompletionItemKind.Method,
+        documentation: 'Run database migrations',
+        insertText: 'ctx.migrate(&[\n\tr"\n\t\tCREATE TABLE IF NOT EXISTS ${1:table_name} (\n\t\t\tid INTEGER PRIMARY KEY AUTOINCREMENT,\n\t\t\t${2:column} ${3:TEXT NOT NULL},\n\t\t\tcreated_at INTEGER NOT NULL\n\t\t)\n\t",\n])?;',
+        insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
+        sortText: '0055'
+      },
+      {
+        label: 'ctx.emit',
+        kind: monaco.languages.CompletionItemKind.Method,
+        documentation: 'Emit an event to WebSocket',
+        insertText: 'ctx.emit("${1:event_name}", json!({\n\t"${2:key}": ${3:value}\n})).await;',
+        insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
+        sortText: '0056'
+      },
+      // Derive macros
+      {
+        label: '#[derive(Serialize, Deserialize)]',
+        kind: monaco.languages.CompletionItemKind.Snippet,
+        documentation: 'Add serde serialization derives',
+        insertText: '#[derive(Serialize, Deserialize)]\nstruct ${1:Name} {\n\t${2:field}: ${3:String},\n}',
+        insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
+        sortText: '0057'
+      },
+      {
+        label: '#[async_trait]',
+        kind: monaco.languages.CompletionItemKind.Snippet,
+        documentation: 'Add async trait macro',
+        insertText: '#[async_trait]',
+        sortText: '0058'
+      },
+    ];
+
+    // Register completion provider for Rust
+    monaco.languages.registerCompletionItemProvider('rust', {
+      triggerCharacters: ['.', ':', ' ', '!'],
+      provideCompletionItems: (model, position) => {
+        const word = model.getWordUntilPosition(position);
+        const range = {
+          startLineNumber: position.lineNumber,
+          endLineNumber: position.lineNumber,
+          startColumn: word.startColumn,
+          endColumn: word.endColumn
+        };
+
+        const suggestions = rustCompletions.map(suggestion => ({
+          ...suggestion,
+          range
+        }));
+
+        return { suggestions };
+      }
+    });
+
+    // Add Rust diagnostics for common WebArcade API issues
+    const validateRustCode = (model) => {
+      const content = model.getValue();
+      const markers = [];
+
+      // Check for common WebArcade API issues
+      const lines = content.split('\n');
+
+      lines.forEach((line, index) => {
+        const lineNumber = index + 1;
+
+        // Check for missing Result handling
+        if (line.includes('.await') && !line.includes('?') && !line.includes('match ') && !line.includes('unwrap')) {
+          if (!line.trim().startsWith('//')) {
+            markers.push({
+              severity: monaco.MarkerSeverity.Warning,
+              message: 'Consider handling Result with ? operator or match',
+              startLineNumber: lineNumber,
+              startColumn: line.indexOf('.await') + 1,
+              endLineNumber: lineNumber,
+              endColumn: line.indexOf('.await') + 7
+            });
+          }
+        }
+
+        // Check for deprecated API usage
+        if (line.includes('json_response(') && !line.includes('&')) {
+          const pos = line.indexOf('json_response(');
+          const closePos = line.indexOf(')', pos);
+          if (closePos > pos && !line.substring(pos, closePos).includes('&')) {
+            markers.push({
+              severity: monaco.MarkerSeverity.Error,
+              message: 'json_response requires a reference (&) to the data',
+              startLineNumber: lineNumber,
+              startColumn: pos + 14,
+              endLineNumber: lineNumber,
+              endColumn: closePos + 1
+            });
+          }
+        }
+
+        // Check for missing imports
+        if (line.includes('JsonBuilder::') && !content.includes('use api::core::*') && !content.includes('JsonBuilder')) {
+          markers.push({
+            severity: monaco.MarkerSeverity.Error,
+            message: 'JsonBuilder not imported. Add: use api::core::*;',
+            startLineNumber: lineNumber,
+            startColumn: line.indexOf('JsonBuilder') + 1,
+            endLineNumber: lineNumber,
+            endColumn: line.indexOf('JsonBuilder') + 12
+          });
+        }
+
+        // Check for incorrect route! macro syntax
+        const routeMatch = line.match(/route!\s*\(\s*router\s*,\s*(\w+)\s+"([^"]+)"/);
+        if (routeMatch) {
+          const method = routeMatch[1];
+          const path = routeMatch[2];
+
+          if (!['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'HEAD', 'OPTIONS'].includes(method)) {
+            markers.push({
+              severity: monaco.MarkerSeverity.Error,
+              message: `Invalid HTTP method: ${method}. Use GET, POST, PUT, DELETE, PATCH, HEAD, or OPTIONS`,
+              startLineNumber: lineNumber,
+              startColumn: line.indexOf(method) + 1,
+              endLineNumber: lineNumber,
+              endColumn: line.indexOf(method) + method.length + 1
+            });
+          }
+
+          if (!path.startsWith('/')) {
+            markers.push({
+              severity: monaco.MarkerSeverity.Warning,
+              message: 'Route path should start with /',
+              startLineNumber: lineNumber,
+              startColumn: line.indexOf('"' + path) + 2,
+              endLineNumber: lineNumber,
+              endColumn: line.indexOf('"' + path) + path.length + 2
+            });
+          }
+        }
+
+        // Check for async fn without Result return type
+        if (line.includes('async fn') && line.includes('-> HttpResponse') && !line.includes('Result<')) {
+          // This is fine for handlers
+        } else if (line.includes('async fn') && line.includes('->') && !line.includes('Result<') && !line.includes('HttpResponse') && !line.includes('()')) {
+          markers.push({
+            severity: monaco.MarkerSeverity.Info,
+            message: 'Consider returning Result<T> for better error handling',
+            startLineNumber: lineNumber,
+            startColumn: line.indexOf('->') + 1,
+            endLineNumber: lineNumber,
+            endColumn: line.length + 1
+          });
+        }
+
+        // Check for unwrap usage
+        if (line.includes('.unwrap()') && !line.trim().startsWith('//') && !line.includes('// unwrap is ok')) {
+          markers.push({
+            severity: monaco.MarkerSeverity.Warning,
+            message: 'Consider using ? operator or expect() instead of unwrap()',
+            startLineNumber: lineNumber,
+            startColumn: line.indexOf('.unwrap()') + 1,
+            endLineNumber: lineNumber,
+            endColumn: line.indexOf('.unwrap()') + 10
+          });
+        }
+
+        // Check for ctx.emit without .await
+        if (line.includes('ctx.emit(') && !line.includes('.await')) {
+          markers.push({
+            severity: monaco.MarkerSeverity.Error,
+            message: 'ctx.emit() is async and requires .await',
+            startLineNumber: lineNumber,
+            startColumn: line.indexOf('ctx.emit(') + 1,
+            endLineNumber: lineNumber,
+            endColumn: line.indexOf('ctx.emit(') + 9
+          });
+        }
+
+        // Check for Context::global() in non-handler context
+        if (line.includes('Context::global()') && !content.includes('async fn')) {
+          markers.push({
+            severity: monaco.MarkerSeverity.Warning,
+            message: 'Context::global() should only be used in async handler functions',
+            startLineNumber: lineNumber,
+            startColumn: line.indexOf('Context::global()') + 1,
+            endLineNumber: lineNumber,
+            endColumn: line.indexOf('Context::global()') + 18
+          });
+        }
+
+        // Check for serde_json::from_str without type annotation
+        if (line.includes('serde_json::from_str(') && !line.includes('::<') && !line.includes('let ') && line.includes(': ')) {
+          // Has type annotation, this is fine
+        } else if (line.includes('serde_json::from_str(') && !line.includes('::<')) {
+          markers.push({
+            severity: monaco.MarkerSeverity.Warning,
+            message: 'Consider adding type annotation: serde_json::from_str::<Type>(...)',
+            startLineNumber: lineNumber,
+            startColumn: line.indexOf('serde_json::from_str(') + 1,
+            endLineNumber: lineNumber,
+            endColumn: line.indexOf('serde_json::from_str(') + 21
+          });
+        }
+      });
+
+      // Check for missing Plugin implementation
+      if (content.includes('struct ') && !content.includes('impl Plugin for') && content.includes('mod router')) {
+        const structMatch = content.match(/pub\s+struct\s+(\w+)/);
+        if (structMatch) {
+          const structLine = content.substring(0, content.indexOf(structMatch[0])).split('\n').length;
+          markers.push({
+            severity: monaco.MarkerSeverity.Warning,
+            message: `Consider implementing Plugin trait for ${structMatch[1]}`,
+            startLineNumber: structLine,
+            startColumn: 1,
+            endLineNumber: structLine,
+            endColumn: 100
+          });
+        }
+      }
+
+      // Check for missing async_trait macro
+      if (content.includes('impl Plugin for') && !content.includes('#[async_trait]')) {
+        const implLine = content.substring(0, content.indexOf('impl Plugin for')).split('\n').length;
+        markers.push({
+          severity: monaco.MarkerSeverity.Error,
+          message: 'Plugin implementation requires #[async_trait] macro',
+          startLineNumber: implLine,
+          startColumn: 1,
+          endLineNumber: implLine,
+          endColumn: 50
+        });
+      }
+
+      return markers;
+    };
+
+    // Set up diagnostics for Rust files
+    let rustDiagnosticsDisposable = null;
+    const setupRustDiagnostics = (editorInstance) => {
+      if (rustDiagnosticsDisposable) {
+        rustDiagnosticsDisposable.dispose();
+      }
+
+      rustDiagnosticsDisposable = editorInstance.onDidChangeModelContent(() => {
+        const model = editorInstance.getModel();
+        if (model && model.getLanguageId() === 'rust') {
+          const markers = validateRustCode(model);
+          monaco.editor.setModelMarkers(model, 'webarcade-rust', markers);
+        }
+      });
+
+      // Initial validation
+      const model = editorInstance.getModel();
+      if (model && model.getLanguageId() === 'rust') {
+        const markers = validateRustCode(model);
+        monaco.editor.setModelMarkers(model, 'webarcade-rust', markers);
+      }
+    };
+
+    // Store the setup function to be called after editor creation
+    monaco._webarcadeSetupRustDiagnostics = setupRustDiagnostics;
+  };
+
   const registerScriptingLanguage = (monaco) => {
     // Register tokens provider for syntax highlighting
     monaco.languages.setMonarchTokensProvider('javascript', {
@@ -207,7 +921,7 @@ function MonacoEditor({
           [/\b(addLight|addCamera|addMesh|removeMesh|playAnimation|stopAnimation|pauseAnimation)\b/, 'support.function'],
           [/\b(onPointerDown|onPointerUp|onPointerMove|onKeyDown|onKeyUp|onCollision)\b/, 'support.function.event'],
           [/\b(registerBeforeRender|unregisterBeforeRender|dispose|clone|intersectsMesh)\b/, 'support.function'],
-          
+
           [/[a-z_$][\w$]*/, {
             cases: {
               '@typeKeywords': 'keyword',
@@ -216,7 +930,7 @@ function MonacoEditor({
             }
           }],
           [/[A-Z][\w$]*/, 'type.identifier'],
-          
+
           [/[{}()[\]]/, '@brackets'],
           [/[<>](?!@symbols)/, '@brackets'],
           [/@symbols/, {
@@ -225,7 +939,7 @@ function MonacoEditor({
               '@default': ''
             }
           }],
-          
+
           [/\d*\.\d+([eE][-+]?\d+)?/, 'number.float'],
           [/0[xX][0-9a-fA-F]+/, 'number.hex'],
           [/\d+/, 'number'],
@@ -887,6 +1601,11 @@ function MonacoEditor({
       // Call onMount callback if provided
       if (onMountCallback) {
         onMountCallback(editorInstance, monaco);
+      }
+
+      // Set up Rust diagnostics if available
+      if (monaco._webarcadeSetupRustDiagnostics) {
+        monaco._webarcadeSetupRustDiagnostics(editorInstance);
       }
 
       // Handle container resize
