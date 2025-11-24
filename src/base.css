@@ -158,31 +158,4 @@
     visibility: hidden;
     transition: opacity 0.3s ease-out 0.4s, visibility 0.3s ease-out 0.4s;
   }
-
-  /* Background Mode - Disable window dragging */
-  body.background-mode [data-tauri-drag-region] {
-    -webkit-app-region: no-drag !important;
-    pointer-events: none;
-  }
-
-  /* Background Mode - Click through empty areas but allow interaction with UI elements */
-  body.background-mode {
-    pointer-events: none;
-  }
-
-  /* Re-enable pointer events for interactive elements in background mode */
-  body.background-mode button,
-  body.background-mode input,
-  body.background-mode select,
-  body.background-mode textarea,
-  body.background-mode a,
-  body.background-mode [role="button"],
-  body.background-mode .widget,
-  body.background-mode .panel,
-  body.background-mode .menu,
-  body.background-mode .dropdown,
-  body.background-mode .interactive,
-  body.background-mode [data-interactive] {
-    pointer-events: auto;
-  }
 }

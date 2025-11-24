@@ -1,15 +1,26 @@
 import { createSignal, For, Show } from 'solid-js';
-import { allThemes } from '@/themes';
 import { editorStore, editorActions } from '@/layout/stores/EditorStore.jsx';
 import { IconPalette, IconChevronUp } from '@tabler/icons-solidjs';
+import themeEngine from './ThemeEngine.js';
 
 const ThemeFooterButton = () => {
   const [isOpen, setIsOpen] = createSignal(false);
 
+  // Get all registered themes
+  const allThemes = () => {
+    const themes = themeEngine.getAllThemes();
+    // Add simple metadata for themes that don't have it
+    return themes.map(theme => ({
+      name: theme.name,
+      label: theme.displayName || theme.name,
+      category: theme.category || 'Custom'
+    }));
+  };
+
   // Group themes by category
   const themesByCategory = () => {
     const grouped = {};
-    allThemes.forEach(theme => {
+    allThemes().forEach(theme => {
       if (!grouped[theme.category]) {
         grouped[theme.category] = [];
       }
@@ -20,11 +31,12 @@ const ThemeFooterButton = () => {
 
   const handleThemeSelect = (themeName) => {
     editorActions.setTheme(themeName);
+    themeEngine.setTheme(themeName);
     setIsOpen(false);
   };
 
   const currentTheme = () => {
-    const theme = allThemes.find(t => t.name === editorStore.theme);
+    const theme = allThemes().find(t => t.name === editorStore.theme);
     return theme ? theme.label : 'Unknown';
   };
 

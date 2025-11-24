@@ -1,6 +1,5 @@
 import { onMount, For } from 'solid-js'
 import './base.css'
-import './themes'
 import { Engine, layoutComponents } from '@/api/plugin'
 import Layout from './layout'
 import DevNotice from './components/DevNotice'
@@ -9,11 +8,17 @@ import PluginInstaller from './components/PluginInstaller'
 import { usePluginAPI } from '@/api/plugin'
 import { editorStore, editorActions } from '@/layout/stores/EditorStore.jsx'
 import { IconSettings as SettingsIcon, IconMaximize } from '@tabler/icons-solidjs'
+import { themeEngine } from './plugins/themes'
 
 export default function App() {
   onMount(async () => {
-    // Apply theme on startup
+    // Initialize comprehensive theme system
     const theme = editorStore.theme || 'dark';
+
+    // Apply theme using the new theme engine
+    themeEngine.setTheme(theme);
+
+    // Also set DaisyUI data-theme for backwards compatibility
     document.documentElement.setAttribute('data-theme', theme);
 
     // Background image/video is now handled by the background plugin via api.bg
