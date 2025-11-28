@@ -22,7 +22,7 @@ WebArcade is an **open-source platform** for building native plugins using **Sol
 
 - **Plugin System**: Extend functionality with dynamic plugins loaded at runtime
 - **Full-Stack Development**: SolidJS frontend + Rust backend
-- **Built-in Developer IDE**: Create, edit, build, and hot-reload plugins without restarting
+- **Flexible Panel Layout**: Left panel, right panel, bottom panel, and toolbar - all plugin-controlled
 - **Hot Reload**: Build and reload plugins instantly during development
 - **HTTP Routing**: Simple route registration with automatic request handling
 - **Lightweight API**: Minimal Rust crate with fast compile times (~3-5 seconds)
@@ -36,7 +36,7 @@ WebArcade is an **open-source platform** for building native plugins using **Sol
 
 ```bash
 # Clone the repository
-git clone https://github.com/user/webarcade.git
+git clone https://github.com/renzora/webarcade.git
 cd webarcade
 
 # Install dependencies
@@ -48,11 +48,10 @@ bun run dev
 
 ### Creating Your First Plugin
 
-1. Open WebArcade and navigate to the **Developer** plugin
-2. Click **"New Plugin"** in the toolbar
-3. Fill in plugin details (ID, name, description, author)
-4. Edit files in the built-in Monaco editor
-5. Click **"Build & Reload"** to compile and hot-reload your plugin
+1. Create a new plugin directory in `%LOCALAPPDATA%/WebArcade/projects/`
+2. Add required files: `index.jsx` (frontend entry), `mod.rs` and `router.rs` (backend)
+3. Define routes in `Cargo.toml`
+4. Build and reload your plugin to see changes instantly
 
 ---
 
@@ -66,7 +65,7 @@ WebArcade distinguishes between **projects** (source code you edit) and **plugin
 |--------|----------|---------|
 | Location | `%LOCALAPPDATA%/WebArcade/projects/` | `%LOCALAPPDATA%/WebArcade/plugins/` |
 | Contents | Source files (.rs, .jsx, .toml) | Compiled files (.dll, .js, package.json) |
-| Editable | Yes (via Developer IDE) | No (read-only) |
+| Editable | Yes (source files) | No (read-only) |
 | Purpose | Development | Runtime execution |
 
 **Flow**: Project → Build → Plugin → Load
@@ -74,7 +73,6 @@ WebArcade distinguishes between **projects** (source code you edit) and **plugin
 ### Dynamic Plugin System
 
 All plugins in WebArcade are loaded dynamically at runtime:
-- Created through the Developer IDE or installed from `.zip` files
 - Stored in `%LOCALAPPDATA%/WebArcade/projects/` (source)
 - Installed to `%LOCALAPPDATA%/WebArcade/plugins/` (compiled)
 - Can be built, installed, unloaded, and reloaded without restarting
@@ -90,7 +88,7 @@ All plugins in WebArcade are loaded dynamically at runtime:
 │   │   ├── Cargo.toml     # Routes and metadata
 │   │   ├── mod.rs         # Plugin entry point
 │   │   ├── router.rs      # HTTP handlers
-│   │   ├── index.jsx      # Frontend entry (required for IDE detection)
+│   │   ├── index.jsx      # Frontend entry (required)
 │   │   └── viewport.jsx   # UI components
 │   └── another-plugin/
 │       └── ...
@@ -106,18 +104,16 @@ All plugins in WebArcade are loaded dynamically at runtime:
 
 ### File Requirements
 
-For the Developer IDE to detect your project:
-
 | File | Required | Purpose |
 |------|----------|---------|
-| `index.jsx` | **Yes** | Frontend entry point - IDE uses this to identify plugin directories |
+| `index.jsx` | **Yes** | Frontend entry point - identifies plugin directories |
 | `mod.rs` | For backend | Rust plugin entry point |
 | `router.rs` | For backend | HTTP route handlers |
 | `Cargo.toml` | For backend | Routes definition and Rust metadata |
 | `package.json` | Optional | NPM dependencies for frontend |
 | `viewport.jsx` | Optional | Main UI component |
 
-**Important**: Without `index.jsx`, the IDE will not recognize the directory as a plugin project.
+**Important**: Without `index.jsx`, the directory will not be recognized as a plugin project.
 
 ---
 
@@ -271,6 +267,16 @@ export default createPlugin({
             onClick: () => api.open('my-viewport')
         });
 
+        // Register left panel content
+        api.leftPanel({
+            component: MyLeftPanel
+        });
+
+        // Register right panel content
+        api.rightPanel({
+            component: MyRightPanel
+        });
+
         // Register bottom panel tab
         api.bottomTab('my-console', {
             title: 'Console',
@@ -278,12 +284,24 @@ export default createPlugin({
             icon: IconTerminal
         });
 
+        // Register toolbar items
+        api.toolbar('my-tool', {
+            icon: IconTool,
+            label: 'My Tool',
+            tooltip: 'Do something',
+            onClick: () => console.log('Clicked!'),
+            group: 'tools',
+            order: 10
+        });
+
         // Control UI visibility
-        api.showProps(true);
-        api.showMenu(true);
-        api.showFooter(true);
-        api.showTabs(true);
-        api.showBottomPanel(true);
+        api.showProps(true);        // Right panel
+        api.showLeftPanel(true);    // Left panel
+        api.showMenu(true);         // Top menu buttons
+        api.showFooter(true);       // Footer bar
+        api.showTabs(true);         // Viewport tabs
+        api.showBottomPanel(true);  // Bottom panel
+        api.showToolbar(true);      // Toolbar
     }
 });
 ```
@@ -800,7 +818,7 @@ export default createPlugin({
 
 ### Build Process
 
-When you click "Build" or "Build & Reload" in the Developer IDE:
+When building a plugin:
 
 1. **Backend Compilation** (if `mod.rs` exists):
    - Creates build directory
@@ -818,7 +836,7 @@ When you click "Build" or "Build & Reload" in the Developer IDE:
    - Generates `package.json` manifest
    - Creates distributable `.zip` file
 
-4. **Installation** (Build & Reload):
+4. **Installation**:
    - Unloads old plugin DLL
    - Copies to `%LOCALAPPDATA%/WebArcade/plugins/`
    - Loads new DLL and registers routes
@@ -893,11 +911,10 @@ Users can drag & drop the `.zip` into WebArcade to install.
 - Check routes in `Cargo.toml` match handler function names exactly
 - Ensure handlers are `pub`
 
-**IDE doesn't detect plugin**
-- Create `index.jsx` file (required for IDE detection)
+**Plugin not detected**
+- Create `index.jsx` file (required for plugin detection)
 
 **DLL won't reload**
-- Try "Unload" before "Build & Reload"
 - Restart WebArcade if file is locked
 
 ---
@@ -913,7 +930,34 @@ Users can drag & drop the `.zip` into WebArcade to install.
 
 ## Quick Reference
 
-### Imports Cheat Sheet
+### Frontend API Methods
+
+| Method | Description |
+|--------|-------------|
+| `api.viewport(id, config)` | Register a viewport type |
+| `api.menu(id, config)` | Add a top menu item |
+| `api.leftPanel(config)` | Register left panel component |
+| `api.rightPanel(config)` | Register right panel component |
+| `api.bottomTab(id, config)` | Add a bottom panel tab |
+| `api.toolbar(id, config)` | Add a toolbar button |
+| `api.toolbarGroup(id, config)` | Create a toolbar group |
+| `api.footer(id, config)` | Add a footer button |
+| `api.topMenuButton(id, config)` | Add a top menu button |
+| `api.open(typeId)` | Open/create a viewport tab |
+
+### UI Visibility Controls
+
+| Method | Description |
+|--------|-------------|
+| `api.showProps(bool)` | Show/hide right panel |
+| `api.showLeftPanel(bool)` | Show/hide left panel |
+| `api.showMenu(bool)` | Show/hide top menu buttons |
+| `api.showFooter(bool)` | Show/hide footer |
+| `api.showTabs(bool)` | Show/hide viewport tabs |
+| `api.showBottomPanel(bool)` | Show/hide bottom panel |
+| `api.showToolbar(bool)` | Show/hide toolbar |
+
+### Rust Imports Cheat Sheet
 
 ```rust
 use api::{
