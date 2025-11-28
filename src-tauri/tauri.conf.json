@@ -203,7 +203,7 @@
       "icons/icon.ico"
     ],
     "resources": [
-      "../scripts/*"
+      "scripts/build_plugin.js"
     ]
   }
 }

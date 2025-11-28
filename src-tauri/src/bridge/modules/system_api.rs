@@ -2,7 +2,6 @@ use hyper::{Response, StatusCode};
 use http_body_util::{Full, combinators::BoxBody};
 use hyper::body::Bytes;
 use std::convert::Infallible;
-use std::path::PathBuf;
 use std::fs;
 
 /// Handle /api/plugins/list - list runtime plugins

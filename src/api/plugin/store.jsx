@@ -1,5 +1,4 @@
 import { createSignal, createEffect, createRoot } from 'solid-js';
-import pluginsConfig from '@/api/plugin/plugins.json';
 
 // Create reactive signals for plugin management within a root to avoid disposal warnings
 let pluginConfigs, setPluginConfigs, pluginInstances, setPluginInstances;
@@ -15,7 +14,7 @@ createRoot(() => {
 // Plugin states enum
 export const PLUGIN_STATES = {
   DISCOVERED: 'discovered',
-  LOADING: 'loading', 
+  LOADING: 'loading',
   LOADED: 'loaded',
   INITIALIZING: 'initializing',
   INITIALIZED: 'initialized',
@@ -25,41 +24,11 @@ export const PLUGIN_STATES = {
   DISABLED: 'disabled'
 };
 
-// Initialize plugin configurations from JSON and localStorage
+// Initialize plugin configurations (all plugins are now dynamic/runtime)
 const initializePluginConfigs = () => {
-  const configs = new Map();
-  
-  // Start with JSON file configurations
-  pluginsConfig.plugins.forEach(plugin => {
-    configs.set(plugin.id, {
-      ...plugin,
-      enabled: plugin.enabled !== false // Default to true if not specified
-    });
-  });
-  
-  // Check localStorage for saved configurations
-  try {
-    const saved = localStorage.getItem('pluginConfigs');
-    if (saved) {
-      const savedConfigs = JSON.parse(saved);
-      if (savedConfigs.plugins && Array.isArray(savedConfigs.plugins)) {
-        // Merge saved configurations with JSON configurations
-        savedConfigs.plugins.forEach(savedPlugin => {
-          if (configs.has(savedPlugin.id)) {
-            // Update enabled state from localStorage
-            const existing = configs.get(savedPlugin.id);
-            configs.set(savedPlugin.id, {
-              ...existing,
-              enabled: savedPlugin.enabled
-            });
-          }
-        });
-      }
-    }
-  } catch (error) {
-  }
-  
-  setPluginConfigs(configs);
+  // All plugins are loaded dynamically from the backend at runtime
+  // No static plugin configurations needed
+  setPluginConfigs(new Map());
 };
 
 // Plugin Store API
@@ -334,25 +303,11 @@ export const pluginStore = {
     }
   },
   
-  // Reload configurations from JSON file
+  // Reload configurations (no-op since all plugins are dynamic)
   reloadConfigsFromFile: async () => {
-    try {
-      const response = await fetch('/src/api/plugin/plugins.json?' + Date.now());
-      const updatedConfig = await response.json();
-      
-      const configs = new Map();
-      updatedConfig.plugins.forEach(plugin => {
-        configs.set(plugin.id, {
-          ...plugin,
-          enabled: plugin.enabled !== false
-        });
-      });
-      
-      setPluginConfigs(configs);
-      return true;
-    } catch (error) {
-      return false;
-    }
+    // All plugins are loaded dynamically from the backend
+    // This method is kept for API compatibility but does nothing
+    return true;
   },
   
   // Event emitter for plugin changes

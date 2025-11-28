@@ -3,14 +3,11 @@ pub mod services;
 pub mod plugin;
 pub mod plugin_context;
 pub mod plugin_manager;
-pub mod database;
-pub mod types;
 pub mod websocket_bridge;
 pub mod plugin_router;
 pub mod router_utils;
 pub mod plugin_macros;
 pub mod dynamic_plugin_loader;
-pub mod plugin_vtable;
 pub mod plugin_exports;
 
 pub use events::{Event, EventBus};

@@ -6,62 +6,42 @@ import DevNotice from './components/DevNotice'
 import KeyboardShortcuts, { keyboardShortcuts } from './components/KeyboardShortcuts'
 import PluginInstaller from './components/PluginInstaller'
 import { usePluginAPI } from '@/api/plugin'
-import { editorStore, editorActions } from '@/layout/stores/EditorStore.jsx'
-import { IconSettings as SettingsIcon, IconMaximize } from '@tabler/icons-solidjs'
-import { themeEngine } from './plugins/themes'
+import { initDeveloper } from '@/developer'
+
+// Component that initializes core modules after Engine/PluginAPIProvider is mounted
+function CoreModuleInitializer() {
+  onMount(() => {
+    const api = usePluginAPI();
+
+    // Initialize Developer IDE (built-in, not a plugin)
+    initDeveloper(api);
+
+    // Open engine viewport by default after plugins are loaded
+    const unsubscribe = api.on('api-initialized', () => {
+      // Small delay to ensure all plugins have registered their viewports
+      setTimeout(() => {
+        api.open('engine-viewport', { label: 'Engine' });
+      }, 100);
+      unsubscribe();
+    });
+  });
+
+  return null;
+}
 
 export default function App() {
   onMount(async () => {
-    // Initialize comprehensive theme system
-    const theme = editorStore.theme || 'dark';
-
-    // Apply theme using the new theme engine
-    themeEngine.setTheme(theme);
-
-    // Also set DaisyUI data-theme for backwards compatibility
+    // Initialize theme from localStorage
+    const theme = localStorage.getItem('theme') || 'dark';
     document.documentElement.setAttribute('data-theme', theme);
 
-    // Background image/video is now handled by the background plugin via api.bg
-
-    // Wait for plugin API to be initialized
-    setTimeout(() => {
-      try {
-        const api = usePluginAPI();
-    
-        // Settings helper  
-        api.helper('settings-button', {
-          title: 'Settings',
-          icon: SettingsIcon,
-          order: 30,
-          onClick: () => {
-          }
-        });
-
-        api.helper('fullscreen-button', {
-          title: 'Toggle Fullscreen',
-          icon: IconMaximize,
-          order: 40,
-          onClick: () => {
-            if (!document.fullscreenElement) {
-              document.documentElement.requestFullscreen().catch(err => {
-              });
-            } else {
-              document.exitFullscreen();
-            }
-          }
-        });
-        
-      } catch (error) {
-      }
-    }, 100);
-    
     // Setup window close handling for Tauri (handles Alt+F4, system close, etc.)
     const setupWindowCloseHandler = async () => {
       try {
         // Check if we're in Tauri environment
         if (window.__TAURI__) {
           const { listen } = await import('@tauri-apps/api/event');
-          
+
           // Listen for window close request from Tauri (triggered by system/OS close)
           await listen('window-close-requested', async () => {
             await handleWindowCloseRequest();
@@ -70,17 +50,8 @@ export default function App() {
       } catch (error) {
       }
     };
-    
-    setupWindowCloseHandler();
 
-    // Register keyboard shortcut for background mode (Ctrl+B)
-    const unregisterBackgroundMode = keyboardShortcuts.register(
-      keyboardShortcuts.createHandler({
-        'ctrl+b': async () => {
-          await editorActions.toggleBackgroundMode();
-        }
-      })
-    );
+    setupWindowCloseHandler();
 
     // Show window immediately
     setTimeout(async () => {
@@ -94,13 +65,14 @@ export default function App() {
       }
     }, 50);
   })
-  
+
   // Simplified window close handler
   const handleWindowCloseRequest = async () => {
   };
 
   return (
     <Engine>
+      <CoreModuleInitializer />
       <KeyboardShortcuts />
       <PluginInstaller />
       <div class="w-full h-full relative">

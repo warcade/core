@@ -1,33 +1,34 @@
 # WebArcade
 
-WebArcade is an **open-source platform** that lets you create native plugins using **SolidJS** (frontend) and **Rust** (backend). Build custom features, widgets, and functionality to extend the WebArcade ecosystem.
+WebArcade is an **open-source platform** for building native plugins using **SolidJS** (frontend) and **Rust** (backend). Create custom features, widgets, and functionality through a powerful plugin system with hot-reload support.
 
 ## Table of Contents
 
-- [Features](#features)
-- [Quick Start](#quick-start)
-- [Plugin Development](#plugin-development)
-  - [Using the Developer IDE](#using-the-developer-ide-recommended)
-  - [Manual Plugin Development](#manual-plugin-development)
-- [Installing Plugins](#installing-plugins)
-- [Plugin Structure](#plugin-structure)
-- [Frontend Development](#frontend-development)
-- [Backend Development](#backend-development)
-- [API Reference](#api-reference)
-- [Examples](#examples)
-- [Security](#security)
-- [Contributing](#contributing)
+1. [Features](#features)
+2. [Quick Start](#quick-start)
+3. [Architecture](#architecture)
+4. [Plugin Development](#plugin-development)
+5. [Frontend Development](#frontend-development)
+6. [Backend Development](#backend-development)
+7. [API Reference](#api-reference)
+8. [Examples](#examples)
+9. [Building & Distribution](#building--distribution)
+10. [Security](#security)
+11. [Contributing](#contributing)
+
+---
 
 ## Features
 
-- **Plugin System**: Extend functionality with custom plugins
+- **Plugin System**: Extend functionality with dynamic plugins loaded at runtime
 - **Full-Stack Development**: SolidJS frontend + Rust backend
-- **Built-in IDE**: Develop plugins directly within WebArcade
-- **Dashboard Widgets**: Create draggable, resizable dashboard components
-- **Real-time Events**: WebSocket-based event system for inter-plugin communication
-- **Database Access**: SQLite database with JSON parameter binding
+- **Built-in Developer IDE**: Create, edit, build, and hot-reload plugins without restarting
+- **Hot Reload**: Build and reload plugins instantly during development
 - **HTTP Routing**: Simple route registration with automatic request handling
-- **Sandboxed API**: Safe, secure plugin environment
+- **Lightweight API**: Minimal Rust crate with fast compile times (~3-5 seconds)
+- **Cross-Platform**: Compiles to `.dll` (Windows), `.so` (Linux), `.dylib` (macOS)
+
+---
 
 ## Quick Start
 
@@ -35,14 +36,11 @@ WebArcade is an **open-source platform** that lets you create native plugins usi
 
 ```bash
 # Clone the repository
-git clone https://github.com/your-org/webarcade.git
+git clone https://github.com/user/webarcade.git
 cd webarcade
 
 # Install dependencies
 bun install
-
-# Build the application
-cargo build --release
 
 # Run in development mode
 bun run dev
@@ -52,309 +50,94 @@ bun run dev
 
 1. Open WebArcade and navigate to the **Developer** plugin
 2. Click **"New Plugin"** in the toolbar
-3. Choose a template (Basic, Widget, Backend, or Full-stack)
-4. Fill in plugin details (ID, name, description, author)
-5. Edit files in the built-in code editor
-6. Click **"Build"** to compile your plugin
+3. Fill in plugin details (ID, name, description, author)
+4. Edit files in the built-in Monaco editor
+5. Click **"Build & Reload"** to compile and hot-reload your plugin
+
+---
+
+## Architecture
+
+### Projects vs Plugins
+
+WebArcade distinguishes between **projects** (source code you edit) and **plugins** (compiled packages ready to run).
+
+| Aspect | Projects | Plugins |
+|--------|----------|---------|
+| Location | `%LOCALAPPDATA%/WebArcade/projects/` | `%LOCALAPPDATA%/WebArcade/plugins/` |
+| Contents | Source files (.rs, .jsx, .toml) | Compiled files (.dll, .js, package.json) |
+| Editable | Yes (via Developer IDE) | No (read-only) |
+| Purpose | Development | Runtime execution |
+
+**Flow**: Project → Build → Plugin → Load
+
+### Dynamic Plugin System
+
+All plugins in WebArcade are loaded dynamically at runtime:
+- Created through the Developer IDE or installed from `.zip` files
+- Stored in `%LOCALAPPDATA%/WebArcade/projects/` (source)
+- Installed to `%LOCALAPPDATA%/WebArcade/plugins/` (compiled)
+- Can be built, installed, unloaded, and reloaded without restarting
+- Backend compiled as `.dll` (Windows), `.so` (Linux), or `.dylib` (macOS)
+- Frontend bundled as `plugin.js`
+
+### Storage Locations
+
+```
+%LOCALAPPDATA%/WebArcade/
+├── projects/              # Your plugin source code
+│   ├── my-plugin/
+│   │   ├── Cargo.toml     # Routes and metadata
+│   │   ├── mod.rs         # Plugin entry point
+│   │   ├── router.rs      # HTTP handlers
+│   │   ├── index.jsx      # Frontend entry (required for IDE detection)
+│   │   └── viewport.jsx   # UI components
+│   └── another-plugin/
+│       └── ...
+│
+└── plugins/               # Compiled plugins (installed)
+    ├── my-plugin/
+    │   ├── package.json   # Plugin manifest with routes
+    │   ├── my-plugin.dll  # Compiled Rust backend
+    │   └── plugin.js      # Bundled frontend
+    └── another-plugin/
+        └── ...
+```
+
+### File Requirements
+
+For the Developer IDE to detect your project:
+
+| File | Required | Purpose |
+|------|----------|---------|
+| `index.jsx` | **Yes** | Frontend entry point - IDE uses this to identify plugin directories |
+| `mod.rs` | For backend | Rust plugin entry point |
+| `router.rs` | For backend | HTTP route handlers |
+| `Cargo.toml` | For backend | Routes definition and Rust metadata |
+| `package.json` | Optional | NPM dependencies for frontend |
+| `viewport.jsx` | Optional | Main UI component |
+
+**Important**: Without `index.jsx`, the IDE will not recognize the directory as a plugin project.
+
+---
 
 ## Plugin Development
 
-### Two Ways to Develop Plugins
-
-#### Using the Developer IDE (Recommended)
-
-WebArcade includes a built-in Developer IDE for creating and building plugins:
-
-1. Open WebArcade and navigate to the **Developer** plugin from the menu
-2. Click **"New Plugin"** in the toolbar
-3. Choose a template:
-   - **Basic**: Simple frontend-only plugin with viewport
-   - **Widget**: Plugin with dashboard widget component
-   - **Backend**: Rust backend with API routes
-   - **Full-stack**: Complete plugin with frontend, backend, and widget
-4. Fill in plugin details (ID, name, description, author)
-5. The IDE will generate the plugin structure in `src/plugins/developer/projects/`
-6. Edit files in the built-in code editor
-7. Click **"Build"** to compile your plugin into a distributable `.zip`
-
-**Development Directory**: `src/plugins/developer/projects/your-plugin-name/`
-
-**Note**: Plugins in the projects directory are excluded from the main build and are only for development.
-
-#### Manual Plugin Development
-
-You can also create plugins manually for more control or when building outside WebArcade.
-
-## Installing Plugins
-
-The easiest way to install a plugin is to **drag and drop** a plugin `.zip` file anywhere in the WebArcade application window. The app will automatically:
-
-1. Extract the plugin to the runtime plugins directory
-2. Validate its structure and manifest
-3. Install the plugin files
-4. Prompt you to restart to load the plugin
-
-### Plugin Installation Locations
-
-**Runtime Plugins (Drag & Drop):**
-- Windows: `%LOCALAPPDATA%\WebArcade\plugins\`
-- Linux: `~/.local/share/WebArcade/plugins/`
-- macOS: `~/Library/Application Support/WebArcade/plugins/`
-
-**Development Plugins (IDE):**
-- Located in `src/plugins/developer/projects/` (not compiled into main app)
-
-## Plugin Structure
-
-### Minimal Frontend-Only Plugin
+### Plugin Structure
 
 ```
 my-plugin/
-├── package.json          # Required: Plugin metadata and configuration
-├── index.jsx             # Optional: Main plugin entry point
-└── Widget.jsx            # Optional: A widget component
+├── Cargo.toml      # Routes and Rust metadata
+├── mod.rs          # Plugin entry point
+├── router.rs       # HTTP route handlers
+├── index.jsx       # Frontend entry (required)
+├── viewport.jsx    # UI component
+└── package.json    # NPM dependencies (optional)
 ```
-
-### Full-Stack Plugin with DLL Backend
-
-```
-my-plugin/
-├── package.json          # Required: Plugin metadata, routes, and dependencies
-├── plugin.js             # Frontend bundle (ES module)
-├── my-plugin.dll         # Windows binary
-├── libmy-plugin.so       # Linux binary
-└── libmy-plugin.dylib    # macOS binary
-```
-
-**Note:** All files are in the root directory. Platform detection happens automatically based on filename extensions (`.dll`, `.so`, `.dylib`).
-
-### package.json
-
-Every plugin **must** include a `package.json` file with a `webarcade` section:
-
-```json
-{
-  "name": "my-plugin",
-  "version": "1.0.0",
-  "description": "A plugin that does amazing things",
-  "author": "Your Name",
-  "dependencies": {
-    "canvas-confetti": "^1.9.2"
-  },
-  "webarcade": {
-    "id": "my-plugin"
-  }
-}
-```
-
-#### Standard package.json Fields
-
-- `name` (string): Package name
-- `version` (string): Semantic version (e.g., "1.0.0")
-- `description` (string): Brief description of the plugin
-- `author` (string): Plugin author
-- `dependencies` (object): npm dependencies for frontend code
-
-#### WebArcade Configuration (`webarcade` section)
-
-- `id` (string, required): Unique plugin identifier (alphanumeric, hyphens, underscores only)
-
-**Auto-detected fields (set during build):**
-- `has_frontend`: Auto-detected by checking for `index.jsx` or `index.js`
-- `has_backend`: Auto-detected by checking for `mod.rs` or `Cargo.toml`
-- `routes`: Auto-extracted from `router.rs` during build
-
-## Frontend Development
-
-### Plugin Entry Point (index.jsx)
-
-Frontend plugins use the WebArcade Plugin API:
-
-```jsx
-import { createPlugin } from '@/api/plugin';
-import { IconPlugin } from '@tabler/icons-solidjs';
-import MyViewport from './MyViewport.jsx';
-import MyWidget from './widgets/MyWidget.jsx';
-
-export default createPlugin({
-  id: 'my-plugin',
-  name: 'My Plugin',
-  version: '1.0.0',
-  description: 'Does cool things',
-  author: 'Your Name',
-
-  async onStart(api) {
-    console.log('[My Plugin] Starting...');
-
-    // Register a viewport (main view)
-    api.viewport('my-plugin-viewport', {
-      label: 'My Plugin',
-      component: MyViewport,
-      icon: IconPlugin,
-      description: 'Main plugin interface'
-    });
-
-    // Add menu item
-    api.menu('my-plugin-menu', {
-      label: 'My Plugin',
-      icon: IconPlugin,
-      onClick: () => {
-        api.open('my-plugin-viewport', {
-          label: 'My Plugin'
-        });
-      }
-    });
-
-    // Register a widget (dashboard component)
-    api.widget('my-plugin-widget', {
-      title: 'My Widget',
-      component: MyWidget,
-      icon: IconPlugin,
-      description: 'A dashboard widget',
-      defaultSize: { w: 2, h: 2 },
-      minSize: { w: 1, h: 1 },
-      maxSize: { w: 4, h: 4 }
-    });
-  },
-
-  async onStop() {
-    console.log('[My Plugin] Stopping...');
-  }
-});
-```
-
-### Creating Widgets
-
-Widgets are draggable components that can be placed on the dashboard:
-
-```jsx
-// widgets/MyWidget.jsx
-import { createSignal } from 'solid-js';
-import { IconPlugin } from '@tabler/icons-solidjs';
-
-export default function MyWidget() {
-  const [count, setCount] = createSignal(0);
-
-  return (
-    <div class="card bg-gradient-to-br from-primary/20 to-primary/5 bg-base-100 shadow-lg h-full flex flex-col p-4">
-      {/* Header */}
-      <div class="flex items-center justify-between mb-2">
-        <div class="flex items-center gap-2">
-          <IconPlugin size={20} class="text-primary opacity-80" />
-          <span class="text-sm font-medium opacity-70">My Widget</span>
-        </div>
-      </div>
-
-      {/* Content */}
-      <div class="flex-1 flex flex-col items-center justify-center">
-        <div class="text-4xl font-bold text-primary mb-4">
-          {count()}
-        </div>
-        <button
-          class="btn btn-primary btn-sm"
-          onClick={() => setCount(count() + 1)}
-        >
-          Increment
-        </button>
-      </div>
-
-      {/* Footer */}
-      <div class="text-xs opacity-50 text-center mt-2">
-        Click to increment
-      </div>
-    </div>
-  );
-}
-```
-
-**Important**: Widgets must be imported and registered in `index.jsx` using `api.widget()` to be included in the build.
-
-### Using Third-Party JavaScript Libraries
-
-Add any npm package to your plugin by adding it to the `dependencies` section in `package.json`:
-
-```json
-{
-  "name": "my-plugin",
-  "version": "1.0.0",
-  "description": "My awesome plugin",
-  "author": "Your Name",
-  "dependencies": {
-    "canvas-confetti": "^1.9.2",
-    "date-fns": "^3.0.0",
-    "chart.js": "^4.4.0"
-  },
-  "webarcade": {
-    "id": "my-plugin"
-  }
-}
-```
-
-Then use them in your plugin code:
-
-```jsx
-import confetti from 'canvas-confetti';
-import { format } from 'date-fns';
-
-export default function MyViewport() {
-  const celebrate = () => {
-    confetti({
-      particleCount: 100,
-      spread: 70,
-      origin: { y: 0.6 }
-    });
-  };
-
-  return (
-    <div>
-      <p>Today is {format(new Date(), 'MMMM do, yyyy')}</p>
-      <button onClick={celebrate}>Celebrate!</button>
-    </div>
-  );
-}
-```
-
-**How it works:**
-1. The plugin builder automatically detects dependencies in `package.json`
-2. Runs `bun install` or `npm install` before bundling
-3. Bundles the dependencies into your `plugin.js`
-4. Dependencies are included in the final plugin package
-
-**Note:** External dependencies increase your plugin size. Use them wisely!
-
-### Calling Backend from Frontend
-
-Use the `api` API to call backend routes:
-
-```jsx
-import { api } from '@/api/bridge';
-
-async function fetchData() {
-  try {
-    // Calls /my-plugin/hello endpoint
-    const response = await api('my-plugin/hello');
-    const data = await response.json();
-    console.log(data.message);
-  } catch (err) {
-    console.error('Failed to fetch:', err);
-  }
-}
-```
-
-## Backend Development
-
-Backend plugins use the **api** crate, which provides a safe, sandboxed interface to the WebArcade core.
-
-### Why Use the API Crate?
-
-- ✅ **Security**: Sandboxed API prevents malicious plugins from accessing internal systems
-- ✅ **Safety**: Type-safe boundaries with automatic memory management
-- ✅ **Simplicity**: Clean abstractions hide FFI complexity
-- ✅ **Maintainability**: Easy-to-use async functions instead of raw C exports
 
 ### Cargo.toml
 
-Every backend plugin needs a `Cargo.toml` file. The minimal version is:
+Define your plugin metadata and routes:
 
 ```toml
 [package]
@@ -362,219 +145,45 @@ name = "my-plugin"
 version = "1.0.0"
 edition = "2021"
 
-[dependencies]
-# Add your custom dependencies here (if any)
-reqwest = { version = "0.12", features = ["json"] }
-some-other-crate = "1.0"
+# Define HTTP routes - maps "METHOD /path" to handler function
+[routes]
+"GET /hello" = "handle_hello"
+"GET /items" = "handle_list_items"
+"GET /items/:id" = "handle_get_item"
+"POST /items" = "handle_create_item"
+"PUT /items/:id" = "handle_update_item"
+"DELETE /items/:id" = "handle_delete_item"
 
 [profile.release]
-opt-level = "z"      # Optimize for size
-lto = true           # Link-time optimization
+opt-level = "z"
+lto = true
 codegen-units = 1
-strip = true         # Strip symbols
+strip = true
 ```
 
-**Important Notes:**
-- The `api` dependency is **automatically injected** by the plugin builder
-- The `[lib]` section with `crate-type = ["cdylib"]` and `path = "lib.rs"` is **automatically added** during build
-- A `lib.rs` file is **automatically generated** as the main module that exports your plugin
-- You only need to define your plugin in `mod.rs` - the builder handles all FFI boilerplate
-- You only need `[dependencies]` if you have custom dependencies beyond what the `api` crate provides
-
-**Dependencies Provided by `api::core::*`:**
-- **serde** (with Serialize, Deserialize)
-- **serde_json** (with json! macro, Value)
-- **anyhow** (with Result, Error, anyhow! macro)
-- **async-trait** (with #[async_trait] macro)
-- **log** (with info!, error!, warn!, debug! macros)
-- **tokio** (async runtime with sync and time features)
-- **hyper** (HTTP types)
-- **chrono** (date and time utilities)
-- **regex** (regular expressions)
-- **uuid** (UUID generation with v4 and serde support)
-- **base64** (base64 encoding/decoding)
-- **rand** (random number generation)
-
-**FFI-Safe Utility Modules (30+ modules):**
-- **Json** - JSON parsing, building, and path navigation
-- **Csv** - Pure Rust CSV parsing and generation
-- **Ini** - INI/Config file parsing with typed getters
-- **Template** - String templating with `{{variable}}` syntax
-- **QueryString** - URL query string parsing and building
-- **Base64, Hex, UrlEncoding, HtmlEncoding** - Encoding utilities
-- **Hashing, Random, Uuid, Token** - Cryptographic utilities
-- **Email, Url, Password, StringValidation** - Input validation
-- **Text** - String manipulation (slugify, case conversion, truncate)
-- **Path** - Cross-platform path utilities
-- **Fs** - File system operations (read, write, metadata)
-- **Env** - Environment variable access
-- **Sys** - System information and timing
-- **LruCache, RingBuffer, Counter** - Data structures
-- **Fetch** - HTTP client (async requests)
-- **WebSocket** - WebSocket client
-- **Regex** - Pattern matching and replacement
-- **Mime** - MIME type detection
-- **Command, Shell** - Process execution
-- **TtlCache, Memo, Store** - Caching utilities
-- **Scheduler, Debouncer, Throttler** - Task scheduling
-- **Archive, ZipReader** - Archive/compression
-- **Error, ErrorCode** - Structured error handling
-- **ApiTestSuite** - Comprehensive API testing
-
-These are re-exported from `api::core`, so you don't need to add them to your Cargo.toml!
-
-**Example usage:**
-```rust
-use api::core::*;
-
-// Generate a UUID
-let id = uuid::Uuid::new_v4();
-
-// Use regex
-let re = regex::Regex::new(r"^\d{4}-\d{2}-\d{2}$").unwrap();
-
-// Get current time
-let now = chrono::Utc::now();
-
-// Generate random number
-let random_num = rand::random::<u32>();
-
-// Base64 encode
-let encoded = base64::encode("Hello, World!");
-```
-
-**FFI-Safe API Usage Examples:**
-```rust
-use api::core::*;
-
-// JSON Builder
-let json = JsonBuilder::object()
-    .field("name", "Alice")
-    .field("age", 30)
-    .field("active", true)
-    .build();
-
-// CSV Parsing
-let csv_data = "name,age\nAlice,30\nBob,25";
-let rows = Csv::parse_with_headers(csv_data)?;
-// rows[0].get("name") == Some("Alice")
-
-// INI Config
-let config = r#"
-[database]
-host = localhost
-port = 5432
-"#;
-let data = Ini::parse(config)?;
-let port = Ini::get_int(&data, "database", "port"); // Some(5432)
-
-// Template Rendering
-let vars = HashMap::from([("name".to_string(), "World".to_string())]);
-let result = Template::render("Hello {{name}}!", &vars);
-// "Hello World!"
-
-// Query String
-let params = QueryString::parse("name=Alice&age=30");
-let url = QueryBuilder::new()
-    .param("key", "value")
-    .param_int("count", 42)
-    .append_to("https://api.example.com");
-
-// Text Manipulation
-let slug = Text::slugify("Hello World!"); // "hello-world"
-let camel = Text::to_camel_case("my_variable"); // "myVariable"
-let truncated = Text::truncate("Long text...", 10); // "Long te..."
-
-// Validation
-let email_valid = Email::is_valid("test@example.com"); // true
-let password_result = Password::validate("StrongPass123");
-if password_result.is_valid() {
-    // Password meets requirements
-}
-
-// File System
-let content = Fs::read_string("/path/to/file.txt")?;
-Fs::write_string("/path/to/output.txt", "Hello")?;
-let info = Fs::metadata("/path/to/file")?;
-
-// Cryptography
-let uuid = Uuid::v4(); // "550e8400-e29b-41d4-a716-446655440000"
-let token = Token::api_key(); // Random alphanumeric string
-let bytes = Random::bytes(32); // 32 random bytes
-
-// Error Handling
-let err = WaError::not_found("Resource not found");
-let result: WaResult<String> = Err(err);
-
-// Collections
-let mut cache = LruCache::new(100);
-cache.insert("key", "value");
-let value = cache.get(&"key");
-
-let mut counter = Counter::new();
-counter.increment("visits".to_string());
-let count = counter.get(&"visits".to_string()); // 1
-
-// HTTP Fetch (async)
-let response = Fetch::get("https://api.example.com/data")
-    .header("Authorization", "Bearer token")
-    .timeout(5000)
-    .send()
-    .await?;
-
-// Regex Utilities
-let matches = Re::find_all(r"\d+", "a1b22c333")?; // ["1", "22", "333"]
-let replaced = Re::replace_all(r"\d", "test123", "X")?; // "testXXX"
-```
+**Route Patterns:**
+- `:param` - Named parameter (e.g., `/items/:id` captures `id`)
+- `*` - Wildcard (captures rest of path)
 
 ### mod.rs
 
 ```rust
-mod router;
+pub mod router;
 
-use api::core::*;
-use std::sync::Arc;
+use api::{Plugin, PluginMetadata};
 
 pub struct MyPlugin;
 
-#[async_trait]
 impl Plugin for MyPlugin {
-    plugin_metadata!(
-        "my-plugin",
-        "My Plugin",
-        "1.0.0",
-        "Does backend things",
-        author: "Your Name"
-    );
-
-    async fn init(&self, ctx: &Context) -> Result<()> {
-        log::info!("[My Plugin] Initializing...");
-
-        // Database migrations (optional)
-        ctx.migrate(&[
-            r"
-            CREATE TABLE IF NOT EXISTS my_plugin_data (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                value TEXT NOT NULL,
-                created_at INTEGER NOT NULL
-            )
-            ",
-        ])?;
-
-        // Register API routes
-        router::register_routes(ctx).await?;
-
-        Ok(())
-    }
-
-    async fn start(&self, _ctx: Arc<Context>) -> Result<()> {
-        log::info!("[My Plugin] Starting...");
-        Ok(())
-    }
-
-    async fn stop(&self) -> Result<()> {
-        log::info!("[My Plugin] Stopping...");
-        Ok(())
+    fn metadata(&self) -> PluginMetadata {
+        PluginMetadata {
+            id: "my-plugin".into(),
+            name: "My Plugin".into(),
+            version: "1.0.0".into(),
+            description: "Does something cool".into(),
+            author: "You".into(),
+            dependencies: vec![],
+        }
     }
 }
 ```
@@ -582,609 +191,783 @@ impl Plugin for MyPlugin {
 ### router.rs
 
 ```rust
-use api::core::*;
+use api::{HttpRequest, HttpResponse, json, json_response, error_response, Serialize, Deserialize};
 
-pub async fn register_routes(ctx: &Context) -> Result<()> {
-    let mut router = Router::new();
-
-    // Register route handlers
-    route!(router, GET "/hello" => handle_hello);
-    route!(router, GET "/data" => handle_data);
-
-    // Register the router with your plugin ID
-    ctx.register_router("my-plugin", router).await;
-
-    Ok(())
-}
-
-async fn handle_hello() -> HttpResponse {
-    let response = json!({
+pub async fn handle_hello(req: HttpRequest) -> HttpResponse {
+    json_response(&json!({
         "message": "Hello from my plugin!"
-    });
-
-    json_response(&response)
+    }))
 }
 
-#[derive(Serialize)]
-struct DataResponse {
-    timestamp: u64,
-    value: String,
-}
+pub async fn handle_get_item(req: HttpRequest) -> HttpResponse {
+    let id = req.path_params.get("id").cloned().unwrap_or_default();
 
-async fn handle_data() -> HttpResponse {
-    let timestamp = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap()
-        .as_secs();
+    if id.is_empty() {
+        return error_response(400, "Missing item ID");
+    }
 
-    let data = DataResponse {
-        timestamp,
-        value: String::from("Data from Rust backend!"),
-    };
-
-    json_response(&data)
+    json_response(&json!({
+        "id": id,
+        "name": "Example Item"
+    }))
 }
 ```
 
-### Database Access
-
-Use the Context to interact with the plugin database:
-
-```rust
-async fn save_data(value: String) -> Result<()> {
-    let ctx = Context::global();
-    let db = ctx.db();
-
-    let params = json!({
-        "value": value,
-        "created_at": timestamp()
-    });
-
-    db.execute(
-        "INSERT INTO my_plugin_data (value, created_at) VALUES (?1, ?2)",
-        &params
-    ).await?;
-
-    Ok(())
-}
-
-async fn get_all_data() -> Result<Vec<MyData>> {
-    let ctx = Context::global();
-    let db = ctx.db();
-
-    let results = db.query(
-        "SELECT * FROM my_plugin_data ORDER BY created_at DESC",
-        &json!({})
-    ).await?;
-
-    Ok(results)
-}
-```
-
-## Events and WebSocket
-
-WebArcade provides a powerful event system that allows plugins to communicate with each other and with the frontend via WebSocket.
-
-### Backend: Emitting Events
-
-Plugins can emit events from the Rust backend using the `ctx.emit()` method:
-
-```rust
-use api::core::*;
-
-async fn handle_chat_message() -> HttpResponse {
-    let ctx = Context::global();
-
-    // Emit an event to all subscribers
-    ctx.emit("twitch:chat_message", json!({
-        "username": "john_doe",
-        "message": "Hello, world!",
-        "timestamp": timestamp()
-    })).await;
-
-    json_response(&json!({ "status": "ok" }))
-}
-```
-
-Events are automatically broadcast to:
-- The WebSocket server (port 3002 by default)
-- All WebSocket clients connected to the frontend
-- Other plugins subscribed to this event type
-
-### Backend: Subscribing to Events
-
-Plugins can subscribe to events emitted by other plugins:
-
-```rust
-use api::core::*;
-
-async fn start_event_listener(ctx: Arc<Context>) {
-    // Subscribe to a specific event type
-    let mut rx = ctx.subscribe_to("twitch:chat_message").await;
-
-    tokio::spawn(async move {
-        while let Ok(event) = rx.recv().await {
-            log::info!("Received event: {:?}", event);
-
-            // Deserialize the payload
-            if let Ok(chat_msg) = serde_json::from_value::<ChatMessage>(event.payload) {
-                // Process the event
-                process_chat_message(chat_msg).await;
-            }
-        }
-    });
-}
-
-// Or subscribe to ALL events
-async fn listen_to_all_events(ctx: Arc<Context>) {
-    let mut rx = ctx.subscribe_all();
-
-    tokio::spawn(async move {
-        while let Ok(event) = rx.recv().await {
-            log::info!("Event from {}: {}", event.source_plugin, event.event_type);
-        }
-    });
-}
-```
-
-### Frontend: Subscribing to Events via WebSocket
-
-Frontend components can connect to the WebSocket server to receive real-time events:
+### index.jsx
 
 ```jsx
-import { createSignal, createEffect, onCleanup } from 'solid-js';
-import { ws } from '@/api/bridge';
+import { createPlugin } from '@/api/plugin';
+import MyViewport from './viewport';
 
-export default function TwitchChatWidget() {
-  const [messages, setMessages] = createSignal([]);
-  const [connected, setConnected] = createSignal(false);
+export default createPlugin({
+    id: 'my-plugin',
+    name: 'My Plugin',
+    version: '1.0.0',
+    description: 'Does something cool',
+    author: 'You',
 
-  createEffect(() => {
-    // Get WebSocket connection (shared singleton)
-    const socket = ws();
+    async onStart(api) {
+        console.log('[My Plugin] Starting...');
 
-    const handleOpen = () => {
-      console.log('Connected to WebSocket');
-      setConnected(true);
-    };
+        api.viewport('my-plugin-viewport', {
+            label: 'My Plugin',
+            component: MyViewport,
+            description: 'Main plugin interface'
+        });
+    },
 
-    const handleMessage = (event) => {
-      try {
-        const data = JSON.parse(event.data);
-
-        // Check if this is a Twitch chat message event
-        if (data.event_type === 'twitch:chat_message') {
-          const { username, message, timestamp } = data.payload;
-
-          setMessages(prev => [...prev, {
-            username,
-            message,
-            timestamp
-          }]);
-        }
-      } catch (err) {
-        console.error('Failed to parse WebSocket message:', err);
-      }
-    };
-
-    const handleClose = () => {
-      console.log('Disconnected from WebSocket');
-      setConnected(false);
-    };
-
-    const handleError = (err) => {
-      console.error('WebSocket error:', err);
-    };
-
-    socket.addEventListener('open', handleOpen);
-    socket.addEventListener('message', handleMessage);
-    socket.addEventListener('close', handleClose);
-    socket.addEventListener('error', handleError);
-
-    // Cleanup - remove event listeners (don't close, it's shared!)
-    onCleanup(() => {
-      socket.removeEventListener('open', handleOpen);
-      socket.removeEventListener('message', handleMessage);
-      socket.removeEventListener('close', handleClose);
-      socket.removeEventListener('error', handleError);
-    });
-  });
-
-  return (
-    <div class="card">
-      <div class="flex items-center gap-2">
-        <div class={`w-2 h-2 rounded-full ${connected() ? 'bg-green-500' : 'bg-red-500'}`} />
-        <span>Chat {connected() ? 'Connected' : 'Disconnected'}</span>
-      </div>
-
-      <div class="mt-4 space-y-2">
-        <For each={messages()}>
-          {(msg) => (
-            <div class="text-sm">
-              <span class="font-bold">{msg.username}:</span> {msg.message}
-            </div>
-          )}
-        </For>
-      </div>
-    </div>
-  );
-}
+    async onStop() {
+        console.log('[My Plugin] Stopping...');
+    }
+});
 ```
 
-### Event Structure
+---
 
-All events follow this structure:
-
-```typescript
-interface Event {
-  source_plugin: string;  // Plugin that emitted the event (e.g., "twitch")
-  event_type: string;     // Event identifier (e.g., "twitch:chat_message")
-  timestamp: number;      // Unix timestamp (seconds)
-  payload: any;          // Event data (JSON)
-}
-```
-
-### WebSocket Connection Details
-
-- **Port**: 3002 (default, configurable via `WS_PORT` environment variable)
-- **URL**: `ws://127.0.0.1:3002`
-- **Protocol**: WebSocket with JSON messages
-- **Events**: All plugin events are broadcast to connected clients
-
-### Event Naming Conventions
-
-Use namespaced event names to avoid collisions:
-
-- ✅ `twitch:chat_message`
-- ✅ `auction:bid_placed`
-- ✅ `spotify:track_changed`
-- ❌ `message` (too generic)
-- ❌ `update` (too vague)
-
-## API Reference
+## Frontend Development
 
 ### Frontend Plugin API
 
-#### Plugin Registration
+```jsx
+import { createPlugin } from '@/api/plugin';
 
-- `createPlugin(config)` - Create a new plugin
+export default createPlugin({
+    id: 'my-plugin',
+    name: 'My Plugin',
 
-#### API Methods
+    async onStart(api) {
+        // Register a viewport (main view)
+        api.viewport('my-viewport', {
+            label: 'My Plugin',
+            component: MyViewport,
+            icon: IconPlugin,
+            description: 'Main interface'
+        });
 
-- `api.viewport(id, config)` - Register a viewport tab
-- `api.menu(id, config)` - Register a menu item
-- `api.widget(id, config)` - Register a dashboard widget
-- `api.open(viewportId, options)` - Open a viewport
-- `api.showProps(visible)` - Show/hide properties panel
-- `api.showMenu(visible)` - Show/hide menu
-- `api.showFooter(visible)` - Show/hide footer
-- `api.showTabs(visible)` - Show/hide tabs
+        // Add menu item
+        api.menu('my-menu', {
+            label: 'My Plugin',
+            icon: IconPlugin,
+            onClick: () => api.open('my-viewport')
+        });
 
-### Backend API (Rust)
+        // Register bottom panel tab
+        api.bottomTab('my-console', {
+            title: 'Console',
+            component: MyConsole,
+            icon: IconTerminal
+        });
 
-#### Core Module (`api::core::*`)
+        // Control UI visibility
+        api.showProps(true);
+        api.showMenu(true);
+        api.showFooter(true);
+        api.showTabs(true);
+        api.showBottomPanel(true);
+    }
+});
+```
 
-The core module imports everything you need for most plugins:
+### Calling Backend from Frontend
 
-- **Core Types**: `Plugin`, `Context`, `Database`, `Router`
-- **HTTP**: `HttpRequest`, `HttpResponse`, `StatusCode`
-- **Utilities**: `time` module, `json!()` macro
-- **Error Handling**: `Result`, `Error`, `anyhow!()`
-- **Serialization**: `Serialize`, `Deserialize`
-- **Logging**: `info!()`, `error!()`, `warn!()`, `debug!()`
+```jsx
+import { api } from '@/api/bridge';
 
-#### Plugin Trait
+// GET request
+async function fetchData() {
+    const response = await api('my-plugin/hello');
+    return await response.json();
+}
 
-```rust
-pub trait Plugin: Send + Sync {
-    fn id(&self) -> &str;
-    fn name(&self) -> &str;
-    fn version(&self) -> &str;
-    fn description(&self) -> &str;
-    fn author(&self) -> Option<&str>;
+// POST request with JSON body
+async function createItem(name) {
+    const response = await api('my-plugin/items', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name })
+    });
+    return await response.json();
+}
 
-    async fn init(&self, ctx: &Context) -> Result<()>;
-    async fn start(&self, ctx: Arc<Context>) -> Result<()>;
-    async fn stop(&self) -> Result<()>;
+// GET with query params
+async function search(query) {
+    const response = await api(`my-plugin/search?q=${encodeURIComponent(query)}`);
+    return await response.json();
+}
+
+// PUT request
+async function updateItem(id, data) {
+    const response = await api(`my-plugin/items/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data)
+    });
+    return await response.json();
+}
+
+// DELETE request
+async function deleteItem(id) {
+    const response = await api(`my-plugin/items/${id}`, {
+        method: 'DELETE'
+    });
+    return await response.json();
 }
 ```
 
-#### Context Methods
+### Using Third-Party Libraries
 
-- `ctx.register_router(plugin_id, router)` - Register HTTP routes
-- `ctx.migrate(migrations)` - Run database migrations
-- `ctx.db()` - Access plugin database
-- `ctx.emit(event_name, data)` - Emit events
-- `ctx.subscribe_to(event_type)` - Subscribe to specific events
-- `ctx.subscribe_all()` - Subscribe to all events
-- `Context::global()` - Get global context from async handlers
+Add dependencies to `package.json`:
 
-#### Database Methods
-
-```rust
-// Query - returns Vec<T>
-db.query::<T>(sql, params)?
-
-// Execute - returns affected rows
-db.execute(sql, params)?
-
-// Get last inserted ID
-db.last_insert_rowid()
-```
-
-#### Router Methods
-
-- `route!(router, GET "/path" => handler)` - Register GET route
-- `route!(router, POST "/path" => handler)` - Register POST route
-- `route!(router, PUT "/path" => handler)` - Register PUT route
-- `route!(router, DELETE "/path" => handler)` - Register DELETE route
-
-#### Response Helpers
-
-- `json_response(data)` - Create JSON response
-- `error_response(status, message)` - Create error response
-
-#### Time Module (`api::time`)
-
-```rust
-// Current Unix timestamp (seconds)
-time::timestamp()
-
-// Current Unix timestamp (milliseconds)
-time::timestamp_millis()
-
-// Format current time
-time::format_now("%Y-%m-%d %H:%M:%S")
-
-// Parse datetime
-time::parse_rfc3339("2024-01-01T12:00:00Z")?
-
-// From timestamp
-time::from_timestamp(1704110400)
-```
-
-### API Test Suite
-
-WebArcade includes a comprehensive test suite for the Rust API that validates all modules. This is accessible via the Developer plugin:
-
-**Running Tests:**
-```bash
-# Via HTTP endpoint
-GET /developer/api-test
-```
-
-**Test Coverage:**
-- JSON parsing, building, and path navigation
-- CSV/INI/Template/QueryString parsing
-- Encoding (Base64, Hex, URL, HTML)
-- Cryptographic utilities (hashing, UUID, tokens)
-- Input validation (email, URL, password strength)
-- Text manipulation and string distance
-- File system operations
-- Regular expressions and MIME types
-- Collections (LRU cache, ring buffer, counters)
-- Error handling and context propagation
-
-**Test Output:**
-```
-╔══════════════════════════════════════════════════════════════╗
-║                   WebArcade API Test Suite                   ║
-╚══════════════════════════════════════════════════════════════╝
-
-┌─ ✓ JSON (4/4)
-│  ✓ parse_valid_json - JSON parsing works (0ms)
-│  ✓ stringify_object - JSON stringify works (0ms)
-│  ✓ get_path_nested - JSON path navigation works (0ms)
-│  ✓ builder_pattern - JSON builder works (0ms)
-└
-
-┌─ ✓ CSV (4/4)
-│  ✓ parse_simple - CSV parsing works (0ms)
-│  ✓ parse_with_headers - CSV header parsing works (0ms)
-│  ✓ stringify - CSV stringify works (0ms)
-│  ✓ quoted_fields - Quoted CSV fields work (0ms)
-└
-
-═══════════════════════════════════════════════════════════════
-Total: 50 tests | Passed: 50 | Failed: 0 | Duration: 15ms
-Status: ✓ ALL TESTS PASSED
-═══════════════════════════════════════════════════════════════
-```
-
-**Programmatic Usage:**
-```rust
-use api::test_suite::{ApiTestSuite, TestSummary};
-
-// Run all tests
-let summary: TestSummary = ApiTestSuite::run_all();
-
-// Format for console output
-let formatted = ApiTestSuite::format_results(&summary);
-println!("{}", formatted);
-
-// Check results
-if summary.failed > 0 {
-    for result in summary.results.iter().filter(|r| !r.passed) {
-        println!("FAILED: {} - {}", result.name, result.message);
+```json
+{
+    "name": "my-plugin",
+    "dependencies": {
+        "canvas-confetti": "^1.9.2",
+        "date-fns": "^3.0.0"
     }
 }
 ```
+
+Use in your code:
+
+```jsx
+import confetti from 'canvas-confetti';
+import { format } from 'date-fns';
+
+export default function MyViewport() {
+    return (
+        <div>
+            <p>Today is {format(new Date(), 'MMMM do, yyyy')}</p>
+            <button onClick={() => confetti()}>Celebrate!</button>
+        </div>
+    );
+}
+```
+
+---
+
+## Backend Development
+
+### Available API Exports
+
+Everything is available directly from `api::`:
+
+```rust
+// Types
+use api::HttpRequest;      // Incoming HTTP request
+use api::HttpResponse;     // Outgoing HTTP response
+use api::Request;          // Alias for HttpRequest
+use api::Response;         // Alias for HttpResponse
+use api::Plugin;           // Plugin trait
+use api::PluginMetadata;   // Plugin metadata struct
+use api::MultipartField;   // Parsed multipart form field
+use api::Bytes;            // bytes::Bytes re-export
+use api::Value;            // serde_json::Value re-export
+
+// Functions
+use api::json_response;    // Create JSON 200 response
+use api::error_response;   // Create error response with status code
+
+// Macros
+use api::json;             // serde_json::json! macro
+
+// Traits
+use api::Serialize;        // serde::Serialize
+use api::Deserialize;      // serde::Deserialize
+
+// Modules
+use api::serde_json;       // Full serde_json crate
+use api::base64;           // Full base64 crate
+use api::tokio;            // Full tokio crate
+use api::log;              // Full log crate
+```
+
+### HttpRequest
+
+```rust
+pub struct HttpRequest {
+    pub method: String,                        // "GET", "POST", etc.
+    pub path: String,                          // "/items/123"
+    pub query: HashMap<String, String>,        // Query parameters
+    pub path_params: HashMap<String, String>,  // Route parameters (:id)
+}
+```
+
+**Methods:**
+
+| Method | Returns | Description |
+|--------|---------|-------------|
+| `query("name")` | `Option<String>` | Get query parameter |
+| `query_param("name")` | `Option<&String>` | Get query parameter (reference) |
+| `path_param("name")` | `Option<&String>` | Get path parameter |
+| `header("name")` | `Option<&String>` | Get header (case-insensitive) |
+| `headers()` | `&HashMap<String, String>` | Get all headers |
+| `body_bytes()` | `&[u8]` | Get raw body bytes |
+| `body_len()` | `usize` | Get body length |
+| `body_string()` | `Result<String, String>` | Get body as UTF-8 string |
+| `body_json<T>()` | `Result<T, String>` | Parse body as JSON |
+| `is_json()` | `bool` | Check if Content-Type is JSON |
+| `is_multipart()` | `bool` | Check if Content-Type is multipart |
+| `is_content_type("type")` | `bool` | Check Content-Type |
+| `parse_multipart()` | `Result<Vec<MultipartField>, String>` | Parse multipart body |
+
+### HttpResponse
+
+**Quick responses:**
+
+```rust
+// JSON success
+json_response(&json!({"status": "ok"}))
+
+// JSON with struct
+#[derive(Serialize)]
+struct User { id: u32, name: String }
+json_response(&User { id: 1, name: "Alice".into() })
+
+// Error responses
+error_response(400, "Bad request")
+error_response(404, "Not found")
+error_response(500, "Server error")
+```
+
+**Custom responses:**
+
+```rust
+use api::Bytes;
+
+// Custom status + headers
+http::Response::builder()
+    .status(201)
+    .header("Content-Type", "application/json")
+    .header("Access-Control-Allow-Origin", "*")
+    .body(Bytes::from(r#"{"created": true}"#))
+    .unwrap()
+
+// Binary (image, file)
+http::Response::builder()
+    .status(200)
+    .header("Content-Type", "image/png")
+    .header("Access-Control-Allow-Origin", "*")
+    .body(Bytes::from(image_bytes))
+    .unwrap()
+```
+
+### Handler Requirements
+
+All handlers **must** follow this exact pattern:
+
+```rust
+pub async fn handler_name(req: HttpRequest) -> HttpResponse {
+    // ...
+}
+```
+
+- `pub` - Must be public
+- `async fn` - Must be async
+- Parameter: `req: HttpRequest` (name should be `req`, `request`, or contain `http`)
+- Return: `HttpResponse`
+
+---
+
+## API Reference
+
+### Request Handling Examples
+
+```rust
+use api::{HttpRequest, HttpResponse, json, json_response, error_response, Deserialize};
+
+// Query parameters: /search?q=hello&limit=10
+pub async fn handle_search(req: HttpRequest) -> HttpResponse {
+    let query = req.query("q").unwrap_or_default();
+    let limit: usize = req.query("limit")
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(10);
+
+    json_response(&json!({
+        "query": query,
+        "limit": limit,
+        "results": []
+    }))
+}
+
+// Path parameters: /items/:id
+pub async fn handle_get_item(req: HttpRequest) -> HttpResponse {
+    let id = req.path_params.get("id").cloned().unwrap_or_default();
+
+    if id.is_empty() {
+        return error_response(400, "Missing ID");
+    }
+
+    json_response(&json!({"id": id}))
+}
+
+// JSON body parsing
+pub async fn handle_create(req: HttpRequest) -> HttpResponse {
+    #[derive(Deserialize)]
+    struct CreateRequest { name: String, email: String }
+
+    let data: CreateRequest = match req.body_json() {
+        Ok(d) => d,
+        Err(e) => return error_response(400, &format!("Invalid JSON: {}", e)),
+    };
+
+    if data.name.is_empty() {
+        return error_response(400, "Name is required");
+    }
+
+    json_response(&json!({"created": true, "name": data.name}))
+}
+
+// File uploads
+pub async fn handle_upload(req: HttpRequest) -> HttpResponse {
+    if !req.is_multipart() {
+        return error_response(400, "Expected multipart form data");
+    }
+
+    match req.parse_multipart() {
+        Ok(fields) => {
+            for field in fields {
+                if field.is_file() {
+                    let filename = field.filename.unwrap_or_default();
+                    let size = field.data.len();
+                    // Save field.data to disk...
+                }
+            }
+            json_response(&json!({"uploaded": true}))
+        }
+        Err(e) => error_response(400, &e),
+    }
+}
+```
+
+### Common Patterns
+
+**CRUD Operations:**
+
+```rust
+use api::{HttpRequest, HttpResponse, json, json_response, error_response, Serialize, Deserialize};
+use std::sync::Mutex;
+use std::collections::HashMap;
+
+static ITEMS: Mutex<HashMap<u32, Item>> = Mutex::new(HashMap::new());
+static NEXT_ID: Mutex<u32> = Mutex::new(1);
+
+#[derive(Clone, Serialize, Deserialize)]
+struct Item { id: u32, name: String }
+
+// LIST: GET /items
+pub async fn handle_list(req: HttpRequest) -> HttpResponse {
+    let items = ITEMS.lock().unwrap();
+    let list: Vec<&Item> = items.values().collect();
+    json_response(&list)
+}
+
+// GET: GET /items/:id
+pub async fn handle_get(req: HttpRequest) -> HttpResponse {
+    let id: u32 = req.path_params.get("id")
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(0);
+
+    let items = ITEMS.lock().unwrap();
+    match items.get(&id) {
+        Some(item) => json_response(item),
+        None => error_response(404, "Item not found"),
+    }
+}
+
+// CREATE: POST /items
+pub async fn handle_create(req: HttpRequest) -> HttpResponse {
+    #[derive(Deserialize)]
+    struct Input { name: String }
+
+    let input: Input = match req.body_json() {
+        Ok(d) => d,
+        Err(e) => return error_response(400, &e),
+    };
+
+    let mut next_id = NEXT_ID.lock().unwrap();
+    let id = *next_id;
+    *next_id += 1;
+
+    let item = Item { id, name: input.name };
+    ITEMS.lock().unwrap().insert(id, item.clone());
+
+    json_response(&item)
+}
+
+// DELETE: DELETE /items/:id
+pub async fn handle_delete(req: HttpRequest) -> HttpResponse {
+    let id: u32 = req.path_params.get("id")
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(0);
+
+    match ITEMS.lock().unwrap().remove(&id) {
+        Some(_) => json_response(&json!({"deleted": true})),
+        None => error_response(404, "Item not found"),
+    }
+}
+```
+
+**Pagination:**
+
+```rust
+pub async fn handle_list(req: HttpRequest) -> HttpResponse {
+    let page: usize = req.query("page")
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(1);
+
+    let per_page: usize = req.query("per_page")
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(20)
+        .min(100);
+
+    let total = 100;
+
+    json_response(&json!({
+        "data": [],
+        "pagination": {
+            "page": page,
+            "per_page": per_page,
+            "total": total,
+            "total_pages": (total + per_page - 1) / per_page
+        }
+    }))
+}
+```
+
+**Logging:**
+
+```rust
+use api::log;
+
+pub async fn handle_debug(req: HttpRequest) -> HttpResponse {
+    log::info!("Request: {} {}", req.method, req.path);
+    log::debug!("Query: {:?}", req.query);
+    log::warn!("Warning message");
+    log::error!("Error message");
+
+    json_response(&json!({"logged": true}))
+}
+```
+
+---
 
 ## Examples
 
-### Complete Example: Notes Plugin
+### Complete Plugin: Notes API
 
-See `src/plugins/developer/projects/demo` for a complete fullstack example.
+**Cargo.toml**
+```toml
+[package]
+name = "notes"
+version = "1.0.0"
+edition = "2021"
 
-Check the `src/plugins/` directory for built-in examples:
-- `dashboard` - Dashboard with widget grid
-- `developer` - Developer IDE with project management
-- `system` - System widgets (CPU, Memory, Clock, etc.)
+[routes]
+"GET /notes" = "list_notes"
+"GET /notes/:id" = "get_note"
+"POST /notes" = "create_note"
+"DELETE /notes/:id" = "delete_note"
 
-### Complete Example: Chat Plugin
+[profile.release]
+opt-level = "z"
+lto = true
+codegen-units = 1
+strip = true
+```
 
-**Backend (router.rs):**
+**mod.rs**
 ```rust
-use api::core::*;
+pub mod router;
 
-pub async fn register_routes(ctx: &Context) -> Result<()> {
-    let mut router = Router::new();
-    route!(router, POST "/send_message" => handle_send_message);
-    ctx.register_router("chat", router).await;
-    Ok(())
-}
+use api::{Plugin, PluginMetadata};
 
-#[derive(Deserialize)]
-struct SendMessageRequest {
-    username: String,
-    message: String,
-}
+pub struct NotesPlugin;
 
-async fn handle_send_message(body: String) -> HttpResponse {
-    let ctx = Context::global();
-
-    if let Ok(req) = serde_json::from_str::<SendMessageRequest>(&body) {
-        // Emit event to WebSocket
-        ctx.emit("chat:message", json!({
-            "username": req.username,
-            "message": req.message,
-            "timestamp": timestamp()
-        })).await;
-
-        json_response(&json!({ "status": "sent" }))
-    } else {
-        error_response(400, "Invalid request")
+impl Plugin for NotesPlugin {
+    fn metadata(&self) -> PluginMetadata {
+        PluginMetadata {
+            id: "notes".into(),
+            name: "Notes".into(),
+            version: "1.0.0".into(),
+            description: "Simple notes API".into(),
+            author: "WebArcade".into(),
+            dependencies: vec![],
+        }
     }
 }
 ```
 
-**Frontend Widget:**
-```jsx
-import { createSignal, createEffect, onCleanup, For } from 'solid-js';
-import { ws } from '@/api/bridge';
+**router.rs**
+```rust
+use api::{HttpRequest, HttpResponse, json, json_response, error_response, Serialize, Deserialize};
+use std::sync::Mutex;
+use std::collections::HashMap;
 
-export default function ChatWidget() {
-  const [messages, setMessages] = createSignal([]);
+static NOTES: Mutex<HashMap<u32, Note>> = Mutex::new(HashMap::new());
+static NEXT_ID: Mutex<u32> = Mutex::new(1);
 
-  createEffect(() => {
-    const socket = ws();
+#[derive(Clone, Serialize, Deserialize)]
+struct Note { id: u32, title: String, content: String }
 
-    const handleMessage = (event) => {
-      const data = JSON.parse(event.data);
+pub async fn list_notes(req: HttpRequest) -> HttpResponse {
+    let notes = NOTES.lock().unwrap();
+    let list: Vec<&Note> = notes.values().collect();
+    json_response(&list)
+}
 
-      if (data.event_type === 'chat:message') {
-        setMessages(prev => [...prev, data.payload].slice(-50)); // Keep last 50
-      }
+pub async fn get_note(req: HttpRequest) -> HttpResponse {
+    let id: u32 = req.path_params.get("id")
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(0);
+
+    let notes = NOTES.lock().unwrap();
+    match notes.get(&id) {
+        Some(note) => json_response(note),
+        None => error_response(404, "Note not found"),
+    }
+}
+
+pub async fn create_note(req: HttpRequest) -> HttpResponse {
+    #[derive(Deserialize)]
+    struct Input { title: String, content: String }
+
+    let input: Input = match req.body_json() {
+        Ok(d) => d,
+        Err(e) => return error_response(400, &e),
     };
 
-    socket.addEventListener('message', handleMessage);
+    let mut next_id = NEXT_ID.lock().unwrap();
+    let id = *next_id;
+    *next_id += 1;
 
-    onCleanup(() => {
-      socket.removeEventListener('message', handleMessage);
-    });
-  });
+    let note = Note { id, title: input.title, content: input.content };
+    NOTES.lock().unwrap().insert(id, note.clone());
 
-  return (
-    <div class="h-full flex flex-col">
-      <div class="flex-1 overflow-y-auto space-y-1">
-        <For each={messages()}>
-          {(msg) => (
-            <div class="text-xs">
-              <span class="font-bold text-primary">{msg.username}:</span>
-              <span class="ml-1">{msg.message}</span>
-            </div>
-          )}
-        </For>
-      </div>
-    </div>
-  );
+    json_response(&note)
+}
+
+pub async fn delete_note(req: HttpRequest) -> HttpResponse {
+    let id: u32 = req.path_params.get("id")
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(0);
+
+    match NOTES.lock().unwrap().remove(&id) {
+        Some(_) => json_response(&json!({"deleted": true})),
+        None => error_response(404, "Note not found"),
+    }
 }
 ```
 
-## Building Plugins for Distribution
+**index.jsx**
+```jsx
+import { createPlugin } from '@/api/plugin';
 
-### Using the Developer IDE
+export default createPlugin({
+    id: 'notes',
+    name: 'Notes',
+    version: '1.0.0',
 
-1. Open the Developer IDE
-2. Select your plugin from the dropdown
-3. Click **"Build"** in the toolbar
-4. The plugin will be compiled to `dist/plugins/your-plugin-name.zip`
-5. Distribute the `.zip` file
+    async onStart(api) {
+        console.log('Notes plugin started!');
+    }
+});
+```
 
-### Manual Build
+---
+
+## Building & Distribution
+
+### Build Process
+
+When you click "Build" or "Build & Reload" in the Developer IDE:
+
+1. **Backend Compilation** (if `mod.rs` exists):
+   - Creates build directory
+   - Copies `.rs` files
+   - **Auto-generates `lib.rs`** with FFI wrappers for each route handler
+   - Injects `api` crate dependency
+   - Runs `cargo build --release`
+
+2. **Frontend Bundling** (if `index.jsx` exists):
+   - Runs `bun install` / `npm install` for dependencies
+   - Bundles with RSpack into `plugin.js`
+
+3. **Package Creation**:
+   - Creates `dist/plugins/{plugin-id}/` with compiled files
+   - Generates `package.json` manifest
+   - Creates distributable `.zip` file
+
+4. **Installation** (Build & Reload):
+   - Unloads old plugin DLL
+   - Copies to `%LOCALAPPDATA%/WebArcade/plugins/`
+   - Loads new DLL and registers routes
+   - Hot-reloads frontend
+
+### Generated lib.rs
+
+The builder auto-generates FFI wrapper code for each handler:
+
+```rust
+// Auto-generated - DO NOT EDIT
+#[no_mangle]
+pub extern "C" fn handle_hello(
+    request_ptr: *const u8,
+    request_len: usize,
+    runtime_ptr: *const ()
+) -> *const u8 {
+    // Parses JSON request into HttpRequest
+    // Bridges to your async handler
+    // Serializes response back to FFI JSON
+}
+```
+
+**You write clean Rust** → **Builder handles FFI complexity**
+
+### Manual Distribution
 
 ```bash
-# Build Rust backend (if applicable)
-cd src/plugins/developer/projects/my-plugin
-cargo build --release
-
-# Bundle frontend with rspack/webpack
-npm run build:plugin
-
-# Create zip
-zip -r my-plugin.zip package.json plugin.js my-plugin.dll
+# Your plugin zip contains:
+my-plugin.zip
+├── package.json      # Manifest with routes
+├── my-plugin.dll     # Windows binary
+├── plugin.js         # Frontend bundle
 ```
+
+Users can drag & drop the `.zip` into WebArcade to install.
+
+---
 
 ## Security
 
-Since WebArcade is **open-source**, developers have access to the codebase. To maintain security:
-
 ### For Plugin Developers
 
-- ✅ **Use api wrapper**: Provides safe, sandboxed access to plugin APIs
-- ✅ **Declare permissions clearly**: Document what your plugin accesses (database, network, filesystem)
-- ✅ **Follow security best practices**: Validate inputs, sanitize outputs, use HTTPS for network calls
-- ❌ **Avoid direct FFI**: Don't create manual `#[no_mangle]` exports to bypass the API wrapper
+- ✅ Use the `api` crate for all backend functionality
+- ✅ Validate all inputs
+- ✅ Handle errors gracefully
+- ❌ Don't try to bypass the FFI boundary manually
 
 ### For Users
 
-- ✅ **Install trusted plugins**: Only install plugins from known developers or the official marketplace
-- ✅ **Review source code**: Check the plugin's source if available
-- ✅ **Check permissions**: Understand what APIs the plugin uses before installing
-- ⚠️ **Understand risks**: Plugins have access to WebArcade's runtime environment
+- ✅ Only install plugins from trusted sources
+- ✅ Review source code when available
+- ⚠️ Plugins have access to the system - install responsibly
 
-### Future Enhancements
+---
 
-- 🔐 **Plugin signing**: Cryptographic signatures for verified plugins
-- 📋 **Permission system**: Plugins declare required permissions (database, network, filesystem)
-- 🛡️ **Sandboxing**: Process isolation for untrusted plugins
-- 🏪 **Plugin marketplace**: Curated, reviewed plugins with reputation scores
+## Troubleshooting
 
-## Tips
+### Common Errors
 
-- **Use unique IDs**: Plugin IDs must be unique across all plugins
-- **Follow naming conventions**: Use kebab-case for IDs (e.g., `my-awesome-plugin`)
-- **Test thoroughly**: Test your plugin before distributing
-- **Keep it small**: Only include necessary files in the zip
-- **Version properly**: Use semantic versioning (major.minor.patch)
-- **Import widgets**: Always import and register widgets in index.jsx
-- **Use api crate**: Stick to the safe API wrapper for backend code
+**"no method named `query` found"**
+- Use `req.query("param")` not `req.query.get("param")`
+
+**"the trait `Default` is not implemented"**
+- Ensure handler signature is `pub async fn handler(req: HttpRequest) -> HttpResponse`
+- Parameter must be named `req` and typed `HttpRequest`
+
+**"unresolved import `api::Request`"**
+- Use `api::HttpRequest` or `api::Request` (alias)
+
+**Build succeeds but handler returns error**
+- Check routes in `Cargo.toml` match handler function names exactly
+- Ensure handlers are `pub`
+
+**IDE doesn't detect plugin**
+- Create `index.jsx` file (required for IDE detection)
+
+**DLL won't reload**
+- Try "Unload" before "Build & Reload"
+- Restart WebArcade if file is locked
+
+---
 
 ## Contributing
-
-We welcome contributions! Please:
 
 1. Fork the repository
 2. Create a feature branch
 3. Make your changes
 4. Submit a pull request
 
-## Documentation
+---
 
-- **Plugin Development**: See [PLUGIN_DEVELOPMENT.md](./PLUGIN_DEVELOPMENT.md) for detailed plugin development guide
-- **API Documentation**: See [src-tauri/api/README.md](./src-tauri/api/README.md) for Rust API reference
-- **API Design**: See [src-tauri/api/DESIGN.md](./src-tauri/api/DESIGN.md) for API architecture details
+## Quick Reference
 
-## Getting Help
+### Imports Cheat Sheet
 
-- Check existing plugins in `src/plugins/` and `src/plugins/developer/projects/`
-- Review the Plugin API in `src/api/plugin/`
-- Review the API crate in `src-tauri/api/`
-- Open an issue on GitHub for questions
+```rust
+use api::{
+    HttpRequest,              // Request type
+    HttpResponse,             // Response type
+    json,                     // json!() macro
+    json_response,            // JSON 200 response
+    error_response,           // Error response
+    Serialize, Deserialize,   // Serde traits
+    Bytes,                    // For custom responses
+};
+```
+
+### Handler Template
+
+```rust
+pub async fn handle_something(req: HttpRequest) -> HttpResponse {
+    // 1. Extract parameters
+    let id = req.path_params.get("id").cloned().unwrap_or_default();
+    let filter = req.query("filter").unwrap_or_default();
+
+    // 2. Validate
+    if id.is_empty() {
+        return error_response(400, "Missing ID");
+    }
+
+    // 3. Process
+    // ... your logic ...
+
+    // 4. Return response
+    json_response(&json!({
+        "success": true,
+        "data": {}
+    }))
+}
+```
+
+### Status Codes
+
+| Code | Usage |
+|------|-------|
+| 200 | Success |
+| 201 | Created |
+| 400 | Bad Request |
+| 401 | Unauthorized |
+| 403 | Forbidden |
+| 404 | Not Found |
+| 500 | Server Error |
+
+---
 
 ## License
 
-[Add your license information here]
+[MIT License]
 
 ---
 

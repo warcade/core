@@ -5,12 +5,10 @@
   "type": "module",
   "description": "🚀 High-speed development framework for web and desktop applications",
   "scripts": {
-    "create-plugin": "node scripts/create_plugin.js",
-    "discover": "node scripts/discover-plugins.cjs",
-    "dev": "bun run kill && bun run discover && npx tauri dev",
-    "build": "bun run kill && bun run discover && npx tauri build",
-    "build:debug": "bun run kill && bun run discover && npx tauri build --debug",
-    "dev:verbose": "bun run kill && bun run discover && set RUST_LOG=debug&& npx tauri dev",
+    "dev": "bun run kill && npx tauri dev",
+    "build": "bun run kill && npx tauri build",
+    "build:debug": "bun run kill && npx tauri build --debug",
+    "dev:verbose": "bun run kill && set RUST_LOG=debug&& npx tauri dev",
     "kill": "npx kill-port 3000 3001 || (taskkill /F /IM node.exe 2>nul || pkill -f \"rspack\\|tauri\" 2>/dev/null || echo \"Ports cleared\")",
     "clean": "bun run kill && rm -rf dist bridge/target src-tauri/target",
     "lint": "oxlint"
@@ -19,11 +17,7 @@
     "@monaco-editor/loader": "^1.5.0",
     "@tabler/icons-solidjs": "^3.34.1",
     "daisyui": "^5.0.50",
-    "date-fns": "^4.1.0",
-    "draggabilly": "^3.0.0",
     "kill-port": "^2.0.1",
-    "monaco-editor": "^0.54.0",
-    "packery": "^3.0.0",
     "solid-js": "^1.9.7",
     "solid-refresh": "^0.7.5"
   },

@@ -3,7 +3,6 @@
 
 pub mod modules;
 pub mod core;
-pub mod plugins;
 
 use std::env;
 use std::net::SocketAddr;
@@ -19,14 +18,14 @@ use hyper::body::Bytes;
 use http_body_util::{Full, combinators::BoxBody};
 use std::convert::Infallible;
 
-use crate::bridge::core::{EventBus, ServiceRegistry, PluginManager, WebSocketBridge, RouterRegistry, DynamicPluginLoader};
+use crate::bridge::core::{EventBus, WebSocketBridge, RouterRegistry, DynamicPluginLoader};
 
 /// Start the WebArcade bridge server
 pub async fn run_server() -> Result<()> {
-    // Initialize logger with timestamp
-    env_logger::Builder::from_default_env()
+    // Initialize logger with timestamp (use try_init to avoid panic if already initialized)
+    let _ = env_logger::Builder::from_default_env()
         .format_timestamp_secs()
-        .init();
+        .try_init();
 
     info!("🎮 WebArcade Bridge - Plugin System v2.0");
     info!("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
@@ -39,36 +38,19 @@ pub async fn run_server() -> Result<()> {
     info!("📦 Initializing core systems...");
 
     let event_bus = Arc::new(EventBus::new());
-    let service_registry = Arc::new(ServiceRegistry::new());
 
-    // Get database path
-    let db_path = crate::bridge::core::database::get_database_path();
-    crate::bridge::core::database::ensure_database_dir()?;
+    // Get data path for plugins
+    let data_dir = dirs::data_local_dir()
+        .ok_or_else(|| anyhow::anyhow!("Failed to get local data directory"))?
+        .join("WebArcade");
 
-    info!("💾 Database: {}", db_path.display());
+    std::fs::create_dir_all(&data_dir)?;
 
     // Create router registry
     let router_registry = RouterRegistry::new();
 
-    // Create plugin manager
-    let mut plugin_manager = PluginManager::new(
-        event_bus.clone(),
-        service_registry.clone(),
-        router_registry.clone_registry(),
-        db_path.to_string_lossy().to_string(),
-    );
-
-    // Register static (compiled) plugins
-    info!("📦 Registering static plugins...");
-    crate::bridge::plugins::register_all_plugins(&mut plugin_manager);
-
-    // Initialize static plugins
-    info!("🔧 Initializing static plugins...");
-    plugin_manager.init_all().await?;
-
-    // Start static plugins
-    info!("🚀 Starting static plugins...");
-    plugin_manager.start_all().await?;
+    // Set global router registry for dynamic plugin registration
+    crate::bridge::core::plugin_exports::set_global_router_registry(router_registry.clone_registry());
 
     // Load dynamic (runtime) plugins
     info!("📦 Loading dynamic plugins...");
@@ -388,25 +370,15 @@ pub async fn run_server() -> Result<()> {
                         }
                     }
 
-                    // Register the router
+                    // Register the router (synchronously to avoid race condition)
                     let plugin_id = plugin_info.id.clone();
-                    let registry_clone = router_registry.clone_registry();
-                    tokio::spawn(async move {
-                        registry_clone.register(plugin_id, plugin_router).await;
-                    });
+                    router_registry.register(plugin_id, plugin_router).await;
                 }
             }
         }
         Err(e) => {
             info!("⚠️  No dynamic plugins loaded: {}", e);
         }
-    }
-
-    // List loaded static plugins
-    let loaded_plugins = plugin_manager.list_plugins();
-    info!("✅ Loaded {} static plugins:", loaded_plugins.len());
-    for plugin in &loaded_plugins {
-        info!("   - {} v{}: {}", plugin.name, plugin.version, plugin.description);
     }
 
     info!("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
@@ -430,23 +402,25 @@ pub async fn run_server() -> Result<()> {
     info!("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
     info!("✨ WebArcade Bridge is ready!");
     info!("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-    println!("\n🟢 SERVER READY - You can now use the application!\n");
 
     loop {
         let (stream, _) = listener.accept().await?;
         let io = TokioIo::new(stream);
         let router_registry = router_registry.clone_registry();
 
-        tokio::spawn(async move {
-            if let Err(err) = http1::Builder::new()
-                .serve_connection(io, service_fn(move |req| {
-                    let router = router_registry.clone_registry();
-                    async move {
-                        Ok::<_, std::convert::Infallible>(handle_request(req, router).await)
-                    }
-                }))
-                .await
-            {
+        tokio::task::spawn(async move {
+            let service = service_fn(move |req| {
+                let router = router_registry.clone_registry();
+                async move {
+                    Ok::<_, std::convert::Infallible>(handle_request(req, router).await)
+                }
+            });
+
+            let conn = http1::Builder::new()
+                .serve_connection(io, service)
+                .with_upgrades();
+
+            if let Err(err) = conn.await {
                 error!("Error serving connection: {:?}", err);
             }
         });
@@ -458,6 +432,18 @@ async fn handle_request(req: Request<Incoming>, router_registry: RouterRegistry)
     let path = req.uri().path().to_string();
     let query = req.uri().query().unwrap_or("").to_string();
 
+    // Handle CORS preflight OPTIONS requests
+    if method == hyper::Method::OPTIONS {
+        return Response::builder()
+            .status(StatusCode::OK)
+            .header("Access-Control-Allow-Origin", "*")
+            .header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS, PATCH")
+            .header("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Requested-With")
+            .header("Access-Control-Max-Age", "86400")
+            .body(full_body(""))
+            .unwrap();
+    }
+
     // Health check endpoint
     if path == "/health" || path == "/api/health" {
         return health_response();
@@ -467,6 +453,115 @@ async fn handle_request(req: Request<Incoming>, router_registry: RouterRegistry)
     if path == "/api/plugins/list" {
         return modules::system_api::handle_list_plugins();
     }
+
+    // Plugin build endpoint (core functionality, not a plugin)
+    if path.starts_with("/api/build/") && method == hyper::Method::POST {
+        let plugin_id = &path[11..]; // "/api/build/".len() = 11
+        if !plugin_id.is_empty() {
+            let result = modules::plugin_builder::build_plugin(plugin_id);
+            let json = serde_json::to_string(&result).unwrap_or_else(|_| {
+                r#"{"success":false,"error":"Failed to serialize build result"}"#.to_string()
+            });
+            return Response::builder()
+                .status(if result.success { StatusCode::OK } else { StatusCode::INTERNAL_SERVER_ERROR })
+                .header("Content-Type", "application/json")
+                .header("Access-Control-Allow-Origin", "*")
+                .body(full_body(&json))
+                .unwrap();
+        }
+    }
+
+    // Developer API endpoints (built-in, not a plugin)
+    if path == "/developer/plugins" && method == hyper::Method::GET {
+        return modules::developer_api::handle_list_plugins();
+    }
+
+    if path.starts_with("/developer/tree/") && method == hyper::Method::GET {
+        let plugin_id = &path[16..]; // "/developer/tree/".len() = 16
+        return modules::developer_api::handle_get_tree(plugin_id);
+    }
+
+    if path.starts_with("/developer/file/") {
+        let rest = &path[16..]; // "/developer/file/".len() = 16
+        let parts: Vec<&str> = rest.splitn(2, '/').collect();
+
+        if parts.len() >= 1 {
+            let plugin_id = parts[0];
+            let file_path = if parts.len() > 1 { parts[1] } else { "" };
+
+            match method {
+                hyper::Method::GET => {
+                    return modules::developer_api::handle_get_file(plugin_id, file_path);
+                }
+                hyper::Method::PUT => {
+                    use http_body_util::BodyExt;
+                    // Read body for file content
+                    let body_bytes = match req.collect().await {
+                        Ok(collected) => collected.to_bytes(),
+                        Err(_) => return Response::builder()
+                            .status(StatusCode::BAD_REQUEST)
+                            .header("Content-Type", "application/json")
+                            .header("Access-Control-Allow-Origin", "*")
+                            .body(full_body(r#"{"error":"Failed to read request body"}"#))
+                            .unwrap(),
+                    };
+                    let content = String::from_utf8_lossy(&body_bytes);
+                    return modules::developer_api::handle_save_file(plugin_id, file_path, &content);
+                }
+                hyper::Method::POST => {
+                    use http_body_util::BodyExt;
+                    // Create file - read JSON body
+                    let body_bytes = match req.collect().await {
+                        Ok(collected) => collected.to_bytes(),
+                        Err(_) => return Response::builder()
+                            .status(StatusCode::BAD_REQUEST)
+                            .header("Content-Type", "application/json")
+                            .header("Access-Control-Allow-Origin", "*")
+                            .body(full_body(r#"{"error":"Failed to read request body"}"#))
+                            .unwrap(),
+                    };
+                    let request: modules::developer_api::CreateFileRequest = match serde_json::from_slice(&body_bytes) {
+                        Ok(r) => r,
+                        Err(e) => return Response::builder()
+                            .status(StatusCode::BAD_REQUEST)
+                            .header("Content-Type", "application/json")
+                            .header("Access-Control-Allow-Origin", "*")
+                            .body(full_body(&format!(r#"{{"error":"Invalid JSON: {}"}}"#, e)))
+                            .unwrap(),
+                    };
+                    return modules::developer_api::handle_create_file(plugin_id, request);
+                }
+                hyper::Method::DELETE => {
+                    return modules::developer_api::handle_delete_file(plugin_id, file_path);
+                }
+                _ => {}
+            }
+        }
+    }
+
+    if path == "/developer/create" && method == hyper::Method::POST {
+        use http_body_util::BodyExt;
+        let body_bytes = match req.collect().await {
+            Ok(collected) => collected.to_bytes(),
+            Err(_) => return Response::builder()
+                .status(StatusCode::BAD_REQUEST)
+                .header("Content-Type", "application/json")
+                .header("Access-Control-Allow-Origin", "*")
+                .body(full_body(r#"{"error":"Failed to read request body"}"#))
+                .unwrap(),
+        };
+        let request: modules::developer_api::CreatePluginRequest = match serde_json::from_slice(&body_bytes) {
+            Ok(r) => r,
+            Err(e) => return Response::builder()
+                .status(StatusCode::BAD_REQUEST)
+                .header("Content-Type", "application/json")
+                .header("Access-Control-Allow-Origin", "*")
+                .body(full_body(&format!(r#"{{"error":"Invalid JSON: {}"}}"#, e)))
+                .unwrap(),
+        };
+        return modules::developer_api::handle_create_plugin(request);
+    }
+
     if path.starts_with("/api/plugins/") && path.len() > 13 {
         let parts: Vec<&str> = path[13..].split('/').collect();
         if parts.len() >= 2 {
@@ -527,7 +622,10 @@ fn error_response(status: StatusCode, message: &str) -> Response<BoxBody<Bytes, 
 }
 
 fn full_body(s: &str) -> BoxBody<Bytes, Infallible> {
-    use http_body_util::combinators::BoxBody;
     use http_body_util::BodyExt;
-    BoxBody::new(Full::new(Bytes::from(s.to_string())).map_err(|err: Infallible| match err {}))
+
+    // Simpler approach using BodyExt::boxed()
+    Full::new(Bytes::from(s.to_string()))
+        .map_err(|_: std::convert::Infallible| unreachable!())
+        .boxed()
 }

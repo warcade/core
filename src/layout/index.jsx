@@ -1,20 +1,20 @@
-import { createSignal, onMount, onCleanup, Show, For } from 'solid-js';
+import { createSignal, onMount, onCleanup, Show } from 'solid-js';
 import TopMenu from '@/panels/topMenu';
+import Toolbar from '@/panels/toolbar';
 import Viewport from '@/panels/viewport';
 import Footer from '@/panels/footer';
 import RightPanel from '@/panels/rightPanel';
 import LeftPanel from '@/panels/leftPanel';
+import BottomPanel from '@/panels/bottomPanel';
 import { ViewportContextMenuProvider } from '@/ui/ViewportContextMenu.jsx';
 import { keyboardShortcuts } from '@/components/KeyboardShortcuts';
-import { editorActions, editorStore } from './stores/EditorStore.jsx';
-import { propertiesPanelVisible, leftPanelVisible, footerVisible, backgroundLayers } from '@/api/plugin';
+import { propertiesPanelVisible, leftPanelVisible, footerVisible, bottomPanelVisible } from '@/api/plugin';
 
 const Layout = () => {
   const [globalTooltip, setGlobalTooltip] = createSignal(null);
   const [contextMenuAPI, setContextMenuAPI] = createSignal(null);
 
   onMount(() => {
-
     // Listen for global tooltip events
     const handleTooltipShow = (e) => setGlobalTooltip(e.detail);
     const handleTooltipHide = () => setGlobalTooltip(null);
@@ -30,45 +30,15 @@ const Layout = () => {
       }
     }, 100);
 
-    // Register keyboard shortcut for toggling right panel (P key)
-    const unregisterPanelToggle = keyboardShortcuts.register((event) => {
-      // Toggle right panel with 'P' key
-      if (event.key.toLowerCase() === 'p' && !event.ctrlKey && !event.altKey && !event.shiftKey && !event.metaKey) {
-        event.preventDefault();
-        event.stopPropagation();
-        const isOpen = editorStore.panels.isScenePanelOpen;
-        editorActions.setScenePanelOpen(!isOpen);
-      }
-    });
-
     onCleanup(() => {
       document.removeEventListener('global:tooltip-show', handleTooltipShow);
       document.removeEventListener('global:tooltip-hide', handleTooltipHide);
       keyboardShortcuts.disableContextMenu();
-      if (unregisterPanelToggle) {
-        unregisterPanelToggle();
-      }
     });
   });
 
   return (
-    <ViewportContextMenuProvider editorActions={editorActions} onAPIReady={setContextMenuAPI}>
-      {/* Background Layers - render behind the main UI */}
-      {/* Don't sort - use z-index for stacking instead to avoid re-renders */}
-      <For each={Array.from(backgroundLayers().entries())}>
-        {([layerId, layer]) => {
-          const LayerComponent = layer.component;
-          return (
-            <div
-              class="fixed inset-0 pointer-events-auto"
-              style={{ 'z-index': layer.zIndex !== undefined ? layer.zIndex : 0 }}
-            >
-              <LayerComponent />
-            </div>
-          );
-        }}
-      </For>
-
+    <ViewportContextMenuProvider onAPIReady={setContextMenuAPI}>
       <div
         class="fixed bg-base-100 inset-0 flex flex-col pointer-events-none z-10 transition-opacity duration-300"
         onContextMenu={(e) => e.preventDefault()}
@@ -77,22 +47,30 @@ const Layout = () => {
           <TopMenu />
         </div>
 
+        {/* Toolbar - below top menu */}
+        <div class="pointer-events-auto">
+          <Toolbar />
+        </div>
 
         <div
-          class="flex-1 flex overflow-hidden pointer-events-auto"
+          class="flex-1 flex flex-col overflow-hidden pointer-events-auto"
           style={{
             'padding-bottom': footerVisible() ? '24px' : '0px'
           }}
         >
-          <Show when={leftPanelVisible()}>
-            <LeftPanel />
-          </Show>
-          <div class="flex-1 relative overflow-hidden min-w-0">
-            <Viewport />
+          <div class="flex-1 flex overflow-hidden">
+            <Show when={leftPanelVisible()}>
+              <LeftPanel />
+            </Show>
+            <div class="flex-1 relative overflow-hidden min-w-0">
+              <Viewport />
+            </div>
+            <Show when={propertiesPanelVisible()}>
+              <RightPanel />
+            </Show>
           </div>
-          <Show when={propertiesPanelVisible()}>
-            <RightPanel />
-          </Show>
+          {/* Bottom Panel - above footer, below viewport */}
+          <BottomPanel />
         </div>
 
         <Show when={footerVisible()}>
@@ -102,7 +80,7 @@ const Layout = () => {
 
       {/* Global Tooltip - appears above everything */}
       <Show when={globalTooltip()}>
-        <div class="fixed z-[99999] bg-black text-white text-xs p-3 pointer-events-none shadow-xl border border-gray-600 max-w-xs" 
+        <div class="fixed z-[99999] bg-black text-white text-xs p-3 pointer-events-none shadow-xl border border-gray-600 max-w-xs"
              style={`left: ${globalTooltip().x}px; top: ${globalTooltip().y}px;`}>
           <div class="font-semibold mb-2 text-white truncate">{globalTooltip().asset.name}</div>
           <div class="space-y-1 text-gray-300">

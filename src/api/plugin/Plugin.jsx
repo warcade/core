@@ -77,13 +77,16 @@ export function createPlugin(config) {
         if (index > -1) updateCallbacks.splice(index, 1);
       },
 
-      menu: (menuId, config) => 
+      menu: (menuId, config) =>
         api.registerTopMenuItem(menuId, { ...config, plugin: id }),
-      
-      tab: (tabId, config) => 
-        api.registerPropertyTab(tabId, { ...config, plugin: id }),
-      
-      panel: (tabId, config) => 
+
+      leftPanel: (config) =>
+        api.registerLeftPanel({ ...config, plugin: id }),
+
+      rightPanel: (config) =>
+        api.registerRightPanel({ ...config, plugin: id }),
+
+      panel: (tabId, config) =>
         api.registerBottomPanelTab(tabId, { ...config, plugin: id }),
       
       viewport: (typeId, config) => 
@@ -94,9 +97,6 @@ export function createPlugin(config) {
       
       footer: (buttonId, config) =>
         api.registerFooterButton(buttonId, { ...config, plugin: id }),
-
-      leftMenuItem: (itemId, config) =>
-        api.registerLeftPanelMenuItem(itemId, { ...config, plugin: id }),
 
       open: (typeId, options = {}) =>
         api.createViewportTab(typeId, options),

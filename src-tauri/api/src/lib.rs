@@ -1,96 +1,56 @@
-//! # WebArcade Plugin API
+//! # WebArcade Plugin API (Lightweight)
 //!
-//! This crate provides the official API for creating WebArcade plugins.
+//! Minimal API for building WebArcade plugins with fast compile times.
+//! This crate provides only what's needed for FFI plugin communication.
 //!
 //! ## Quick Start
 //!
 //! ```rust
-//! use webarcade_api::prelude::*;
+//! use api::prelude::*;
 //!
 //! pub struct MyPlugin;
 //!
 //! impl Plugin for MyPlugin {
-//!     plugin_metadata!("my-plugin", "My Plugin", "1.0.0", "Description");
-//!
-//!     async fn init(&self, ctx: &Context) -> Result<()> {
-//!         // Initialize your plugin
-//!         Ok(())
+//!     fn metadata(&self) -> PluginMetadata {
+//!         PluginMetadata {
+//!             id: "my-plugin".into(),
+//!             name: "My Plugin".into(),
+//!             version: "1.0.0".into(),
+//!             description: "A plugin".into(),
+//!             author: "You".into(),
+//!             dependencies: vec![],
+//!         }
 //!     }
 //! }
 //! ```
 
 // Core modules
 pub mod plugin;
-pub mod context;
-pub mod router;
 pub mod http;
-pub mod database;
-pub mod events;
-pub mod macros;
-pub mod vtable;
-pub mod time;
 pub mod ffi_http;
 
-// WebArcade API Suite - Complete toolkit for plugin development
-pub mod json;
-pub mod form;
-pub mod encoding;
-pub mod crypto;
-pub mod validate;
-pub mod text;
-pub mod path;
-pub mod fs;
-pub mod env;
-pub mod sys;
-pub mod error;
-pub mod collections;
-pub mod fetch;
-pub mod process;
-pub mod cache;
-pub mod state;
-pub mod schedule;
-pub mod archive;
-pub mod regex_utils;
-pub mod mime;
-pub mod websocket;
-pub mod csv;
-pub mod ini;
-pub mod template;
-pub mod query;
-pub mod test_suite;
-
-// Core module - import everything you need with one line
-pub mod core;
-
-// Re-export commonly used types at the root
+// Re-export core types
 pub use plugin::{Plugin, PluginMetadata};
-pub use context::Context;
-pub use router::Router;
-pub use http::{HttpResponse, HttpRequest, json_response, error_response};
-pub use database::Database;
-pub use events::Event;
+pub use http::{HttpRequest, HttpResponse, MultipartField, json_response, error_response};
+pub use ffi_http::{Request as FfiRequest, Response as FfiResponse};
 
-// Re-export from dependencies (both as items and as modules for derive macros)
-pub use async_trait::async_trait;
-pub use anyhow::{Result, Error};
+// Backward compatibility aliases
+pub use http::HttpRequest as Request;
+pub use http::HttpResponse as Response;
+
+// Re-export dependencies for use in generated code
 pub use serde::{Serialize, Deserialize};
-pub use serde_json::{json, Value};
-
-// Re-export as modules so derive macros can find them
-pub use serde;
-pub use serde_json;
-
-// Re-export HTTP and async runtime dependencies
-pub use hyper;
-pub use http_body_util;
+pub use serde_json::{self, json, Value};
+pub use base64;
 pub use tokio;
 pub use log;
+pub use bytes::Bytes;
 
-// Re-export time utilities
-pub use chrono;
-
-// Re-export common utilities
-pub use regex;
-pub use uuid;
-pub use base64;
-pub use rand;
+// Prelude for convenient imports
+pub mod prelude {
+    pub use crate::plugin::{Plugin, PluginMetadata};
+    pub use crate::http::{HttpRequest, HttpResponse, MultipartField, json_response, error_response};
+    pub use crate::ffi_http::{Request as FfiRequest, Response as FfiResponse};
+    pub use serde::{Serialize, Deserialize};
+    pub use serde_json::{json, Value};
+}

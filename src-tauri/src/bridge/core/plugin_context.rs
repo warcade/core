@@ -1,6 +1,5 @@
 use std::sync::Arc;
 use std::future::Future;
-use rusqlite::Connection;
 use anyhow::Result;
 use serde::Serialize;
 use serde_json::Value;
@@ -16,7 +15,6 @@ pub struct PluginContext {
     event_bus: Arc<EventBus>,
     service_registry: Arc<ServiceRegistry>,
     router_registry: RouterRegistry,
-    db_path: String,
 }
 
 impl PluginContext {
@@ -25,103 +23,19 @@ impl PluginContext {
         event_bus: Arc<EventBus>,
         service_registry: Arc<ServiceRegistry>,
         router_registry: RouterRegistry,
-        db_path: String,
+        _db_path: String, // Keep for API compatibility but unused
     ) -> Self {
         Self {
             plugin_id,
             event_bus,
             service_registry,
             router_registry,
-            db_path,
         }
     }
 
     /// Get plugin ID
     pub fn plugin_id(&self) -> &str {
         &self.plugin_id
-    }
-
-    // ==================== Database ====================
-
-    /// Get database connection
-    pub fn db(&self) -> Result<Connection> {
-        Ok(Connection::open(&self.db_path)?)
-    }
-
-    /// Run database migrations for this plugin
-    pub fn migrate(&self, migrations: &[&str]) -> Result<()> {
-        let conn = self.db()?;
-
-        // Create migrations table if it doesn't exist
-        conn.execute(
-            "CREATE TABLE IF NOT EXISTS plugin_migrations (
-                plugin_id TEXT NOT NULL,
-                version INTEGER NOT NULL,
-                executed_at INTEGER NOT NULL,
-                PRIMARY KEY (plugin_id, version)
-            )",
-            [],
-        )?;
-
-        // Get current version
-        let current_version: i32 = conn.query_row(
-            "SELECT COALESCE(MAX(version), 0) FROM plugin_migrations WHERE plugin_id = ?1",
-            [&self.plugin_id],
-            |row| row.get(0),
-        ).unwrap_or(0);
-
-        // Execute pending migrations
-        for (i, sql) in migrations.iter().enumerate() {
-            let version = (i + 1) as i32;
-            if version > current_version {
-                log::info!("[{}] Running migration {}", self.plugin_id, version);
-                conn.execute_batch(sql)?;
-                conn.execute(
-                    "INSERT INTO plugin_migrations (plugin_id, version, executed_at) VALUES (?1, ?2, ?3)",
-                    rusqlite::params![&self.plugin_id, version, current_timestamp()],
-                )?;
-            }
-        }
-
-        Ok(())
-    }
-
-    /// Execute a query and return multiple rows
-    pub fn query<P, F, T>(&self, query: &str, params: P, mapper: F) -> Result<Vec<T>>
-    where
-        P: rusqlite::Params,
-        F: FnMut(&rusqlite::Row) -> rusqlite::Result<T>,
-    {
-        let conn = self.db()?;
-        let mut stmt = conn.prepare(query)?;
-        let rows = stmt.query_map(params, mapper)?
-            .collect::<rusqlite::Result<Vec<_>>>()?;
-        Ok(rows)
-    }
-
-    /// Execute a query and return a single row
-    pub fn query_row<P, T, F>(&self, query: &str, params: P, mapper: F) -> Result<T>
-    where
-        P: rusqlite::Params,
-        F: FnOnce(&rusqlite::Row) -> rusqlite::Result<T>,
-    {
-        let conn = self.db()?;
-        Ok(conn.query_row(query, params, mapper)?)
-    }
-
-    /// Execute a write query (INSERT, UPDATE, DELETE)
-    pub fn execute<P>(&self, query: &str, params: P) -> Result<usize>
-    where
-        P: rusqlite::Params,
-    {
-        let conn = self.db()?;
-        Ok(conn.execute(query, params)?)
-    }
-
-    /// Execute a batch of SQL statements
-    pub fn execute_batch(&self, sql: &str) -> Result<()> {
-        let conn = self.db()?;
-        Ok(conn.execute_batch(sql)?)
     }
 
     // ==================== Events ====================
@@ -181,11 +95,4 @@ impl PluginContext {
     pub fn router_registry(&self) -> &RouterRegistry {
         &self.router_registry
     }
-}
-
-fn current_timestamp() -> i64 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap()
-        .as_secs() as i64
 }

@@ -1,5 +1,5 @@
-// Prevents additional console window on Windows in release, DO NOT REMOVE!!
-#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+// Prevents additional console window on Windows in release
+#![windows_subsystem = "windows"]
 
 use std::sync::{Arc, Mutex};
 use tauri::{Emitter, Listener, Manager};
@@ -11,7 +11,6 @@ mod plugin_installer;
 // Re-export bridge modules at crate root for plugin compatibility
 pub use bridge::core;
 pub use bridge::modules;
-pub use bridge::plugins;
 
 // Global log buffer for capturing bridge logs
 static LOG_BUFFER: Mutex<Option<VecDeque<String>>> = Mutex::new(None);
@@ -97,23 +96,35 @@ async fn install_plugin_from_zip(
 
 
 fn start_bridge_server() {
-    let start_msg = "Starting integrated bridge server...";
-    println!("{}", start_msg);
-    add_log(format!("[BRIDGE] {}", start_msg));
+    add_log("[BRIDGE] Starting integrated bridge server...".to_string());
 
     // Start the bridge server in a separate tokio runtime
     std::thread::spawn(|| {
-        let runtime = tokio::runtime::Runtime::new().expect("Failed to create tokio runtime");
+        // Build runtime with explicit configuration for reliability
+        let runtime = match tokio::runtime::Builder::new_multi_thread()
+            .worker_threads(4)
+            .enable_all()
+            .thread_name("bridge-worker")
+            .build()
+        {
+            Ok(rt) => rt,
+            Err(e) => {
+                eprintln!("Failed to create tokio runtime: {}", e);
+                return;
+            }
+        };
+
+        let _guard = runtime.enter();
+
         runtime.block_on(async {
             add_log("[BRIDGE] Tokio runtime created".to_string());
+
             match bridge::run_server().await {
                 Ok(_) => {
-                    add_log("[BRIDGE] Server started successfully".to_string());
+                    add_log("[BRIDGE] Server stopped".to_string());
                 }
                 Err(e) => {
-                    let error_msg = format!("Bridge server error: {}", e);
-                    eprintln!("{}", error_msg);
-                    add_log(format!("[BRIDGE ERROR] {}", error_msg));
+                    add_log(format!("[BRIDGE ERROR] {}", e));
                 }
             }
         });

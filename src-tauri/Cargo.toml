@@ -16,10 +16,6 @@ tauri-build = { version = "2.0", features = [] }
 serde_json = "1.0"
 serde = { version = "1.0", features = ["derive"] }
 tauri = { version = "2.0", features = [] }
-image = "0.24"
-rusttype = "0.9"
-rayon = "1.8"
-screenshots = "0.8"
 base64 = "0.22"
 
 # Bridge dependencies - Async runtime
@@ -32,80 +28,45 @@ hyper-util = { version = "0.1", features = ["tokio"] }
 http-body-util = "0.1"
 bytes = "1.0"
 futures-util = "0.3"
-tokio-tungstenite = { version = "0.24" }
-
-# Bridge dependencies - Serialization
-simd-json = "0.13"
-
-# Bridge dependencies - Cryptography
-sha1 = "0.10"
-sha2 = "0.10"
-hmac = "0.12"
-hex = "0.4"
-aes-gcm = "0.10"
-
-# Bridge dependencies - File system
-notify = "6.1"
-filetime = "0.2"
-
-# Bridge dependencies - Time
-chrono = { version = "0.4", features = ["serde"] }
+tokio-tungstenite = "0.24"
 
 # Bridge dependencies - Utilities
 lazy_static = "1.4"
 once_cell = "1.19"
 log = "0.4"
 env_logger = "0.10"
-percent-encoding = "2.3"
+urlencoding = "2.1"
 regex = "1.0"
-dashmap = "6.0"
-
-# Bridge dependencies - System
-sysinfo = "0.30"
-nvml-wrapper = { version = "0.10", optional = true }
+toml = "0.8"
+chrono = "0.4"
 
 # Bridge dependencies - Error handling
-thiserror = "1.0"
 anyhow = "1.0"
 async-trait = "0.1"
 
-# Bridge dependencies - Twitch integration
-twitch-irc = "5.0"
+# Bridge dependencies - HTTP client
 reqwest = { version = "0.12", features = ["json"] }
-toml = "0.8"
-url = "2.5"
-urlencoding = "2.1"
-
-# Bridge dependencies - Random
-rand = "0.8"
-fastrand = "2.0"
 
 # Bridge dependencies - System utilities
 dirs = "5.0"
 
-# Bridge dependencies - Database
-rusqlite = { version = "0.32", features = ["bundled"] }
-
 # WebArcade plugin API
 api = { path = "./api" }
 
-# Bridge dependencies - Audio playback
-rodio = "0.17"
-
-# Bridge dependencies - File upload and zip extraction
-multer = "3.0"
+# Bridge dependencies - File extraction
 zip = "0.6"
 
 # Bridge dependencies - Dynamic plugin loading
 libloading = "0.8"
 
-# Bridge dependencies - Discord integration
-serenity = { version = "0.12", default-features = false, features = ["client", "gateway", "rustls_backend", "model", "cache"] }
-
-# Bridge dependencies - OBS WebSocket integration
-obws = "0.11"
-
 [features]
 default = ["custom-protocol"]
 custom-protocol = ["tauri/custom-protocol"]
-nvidia = ["nvml-wrapper"]
+
+# Release profile - debug-assertions required for hyper/tokio async compatibility
+[profile.release]
+opt-level = "z"
+lto = true
+codegen-units = 1
+debug-assertions = true
+strip = true

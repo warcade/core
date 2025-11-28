@@ -4,129 +4,76 @@ import pluginStore, { PLUGIN_STATES, setPluginConfigs } from './store.jsx';
 const PluginAPIContext = createContext();
 
 const [topMenuItems, setTopMenuItems] = createSignal(new Map());
-const [propertyTabs, setPropertyTabs] = createSignal(new Map());
+const [topMenuButtons, setTopMenuButtons] = createSignal(new Map());
+const [leftPanelComponent, setLeftPanelComponent] = createSignal(null);
+const [rightPanelComponent, setRightPanelComponent] = createSignal(null);
 const [viewportTypes, setViewportTypes] = createSignal(new Map());
 const [footerButtons, setFooterButtons] = createSignal(new Map());
-const [leftPanelMenuItems, setLeftPanelMenuItems] = createSignal(new Map());
 const [registeredPlugins, setRegisteredPlugins] = createSignal(new Map());
-const [widgets, setWidgets] = createSignal(new Map());
-const [backgroundLayers, setBackgroundLayers] = createSignal(new Map());
+const [bottomPanelTabs, setBottomPanelTabs] = createSignal(new Map());
+const [toolbarItems, setToolbarItems] = createSignal(new Map());
+const [toolbarGroups, setToolbarGroups] = createSignal(new Map());
 const [propertiesPanelVisible, setPropertiesPanelVisible] = createSignal(true);
 const [leftPanelVisible, setLeftPanelVisible] = createSignal(true);
 const [horizontalMenuButtonsEnabled, setHorizontalMenuButtonsEnabled] = createSignal(true);
 const [footerVisible, setFooterVisible] = createSignal(true);
 const [viewportTabsVisible, setViewportTabsVisible] = createSignal(true);
+const [bottomPanelVisible, setBottomPanelVisible] = createSignal(false);
+const [toolbarVisible, setToolbarVisible] = createSignal(true);
 const [layoutComponents, setLayoutComponents] = createSignal(new Map());
 
 class PluginLoader {
   constructor(PluginAPI) {
     this.PluginAPI = PluginAPI;
     this.updateInterval = null;
-    this.pluginDirectories = [
-      '/src/plugins'
-    ];
-  }
-
-  isCorePlugin(pluginPath) {
-    // Core plugins are bridge, default, and plugins manager
-    const corePluginIds = ['bridge', 'default', 'plugins'];
-    const pluginId = pluginPath.split('/').filter(Boolean).pop();
-    return corePluginIds.includes(pluginId);
   }
 
   async discoverPlugins() {
-    // Auto-discovering plugins
+    // Discovering plugins from backend
     const discovered = new Map();
 
-    const autoDiscoveredPlugins = await this.scanForPlugins();
-    
-    autoDiscoveredPlugins.forEach(plugin => {
+    const plugins = await this.scanForPlugins();
+
+    plugins.forEach(plugin => {
       discovered.set(plugin.id, plugin);
       this.setPluginState(plugin.id, PLUGIN_STATES.DISCOVERED);
     });
 
-    // Auto-discovery completed
     return discovered;
   }
 
   async scanForPlugins() {
     const plugins = [];
 
-    // Get plugin configs from store instead of importing JSON
-    const pluginConfigs = pluginStore.getPluginConfigs();
-
-    for (const [id, pluginConfig] of pluginConfigs) {
-      try {
-        if (pluginConfig.id.includes('test') && process.env.NODE_ENV === 'production') {
-          continue;
-        }
-
-        const pathParts = pluginConfig.path.split('/').filter(p => p && p !== 'src' && p !== 'plugins' && p !== 'ui');
-        const pluginName = pluginConfig.name || (pathParts
-          .map(part => part.split(/[-_]/)
-            .map(word => word.charAt(0).toUpperCase() + word.slice(1))
-            .join(' '))
-          .join(' ') + ' Plugin');
-
-        const isCore = this.isCorePlugin(pluginConfig.path);
-
-        const plugin = {
-          id: pluginConfig.id,
-          path: pluginConfig.path,
-          enabled: isCore ? true : pluginConfig.enabled, // Core plugins are always enabled
-          isCore: isCore,
-          isRuntime: false, // Static plugin
-          manifest: {
-            name: pluginName,
-            version: pluginConfig.version || '1.0.0',
-            description: pluginConfig.description || `Plugin: ${pluginName}`,
-            author: pluginConfig.author || 'Renzora Engine Team',
-            main: pluginConfig.main,
-            dependencies: [],
-            permissions: this.inferPermissions(pluginConfig.path),
-            apiVersion: '1.0.0',
-            priority: pluginConfig.priority || 1,
-            isCore: isCore
-          }
-        };
-
-        plugins.push(plugin);
-      } catch (error) {
-      }
-    }
-
-    // Fetch runtime plugins from backend
+    // Fetch all plugins from backend (all plugins are now dynamic)
     try {
-      console.log('[PluginLoader] Fetching runtime plugins from backend...');
+      console.log('[PluginLoader] Fetching plugins from backend...');
       const response = await fetch('http://localhost:3001/api/plugins/list');
-      console.log('[PluginLoader] Runtime plugins response:', response.status, response.ok);
+      console.log('[PluginLoader] Plugins response:', response.status, response.ok);
 
       if (response.ok) {
         const data = await response.json();
-        console.log('[PluginLoader] Runtime plugins data:', data);
+        console.log('[PluginLoader] Plugins data:', data);
 
         for (const runtimePlugin of data.plugins) {
           // Check if this plugin has a frontend (plugin.js exists)
-          // We'll try to load it and handle errors if it doesn't exist
-          const hasFrontend = runtimePlugin.has_plugin_js !== false; // Default to true, backend can explicitly set to false
+          const hasFrontend = runtimePlugin.has_plugin_js !== false;
 
           if (hasFrontend) {
             const pluginConfig = {
               id: runtimePlugin.id,
-              path: `/runtime/${runtimePlugin.id}`, // Virtual path for runtime plugins
+              path: `/runtime/${runtimePlugin.id}`,
               name: runtimePlugin.name || runtimePlugin.id,
               version: runtimePlugin.version || '1.0.0',
-              description: runtimePlugin.description || `Runtime plugin: ${runtimePlugin.name || runtimePlugin.id}`,
+              description: runtimePlugin.description || `Plugin: ${runtimePlugin.name || runtimePlugin.id}`,
               author: runtimePlugin.author || 'Plugin Developer',
-              main: 'plugin.js', // Runtime plugins always use plugin.js
+              main: 'plugin.js',
               enabled: true,
-              priority: 100, // Lower priority than core plugins
-              widget: null,
-              widgets: null,
-              has_backend: runtimePlugin.has_dll || false // Backend plugins have .dll files
+              priority: runtimePlugin.priority || 100,
+              has_backend: runtimePlugin.has_dll || false
             };
 
-            // Register runtime plugin config in store so it can be tracked
+            // Register plugin config in store
             setPluginConfigs(prev => new Map(prev.set(runtimePlugin.id, pluginConfig)));
 
             const plugin = {
@@ -134,7 +81,7 @@ class PluginLoader {
               path: `/runtime/${runtimePlugin.id}`,
               enabled: true,
               isCore: false,
-              isRuntime: true, // Runtime plugin flag
+              isRuntime: true,
               manifest: {
                 name: pluginConfig.name,
                 version: pluginConfig.version,
@@ -147,17 +94,16 @@ class PluginLoader {
                 priority: pluginConfig.priority
               }
             };
-            console.log('[PluginLoader] Adding runtime plugin:', plugin.id, '(has_backend:', pluginConfig.has_backend, ')');
+            console.log('[PluginLoader] Adding plugin:', plugin.id, '(has_backend:', pluginConfig.has_backend, ')');
             plugins.push(plugin);
           } else {
-            console.log('[PluginLoader] Skipping runtime plugin (no frontend):', runtimePlugin.id);
+            console.log('[PluginLoader] Skipping plugin (no frontend):', runtimePlugin.id);
           }
         }
-        console.log('[PluginLoader] Total runtime plugins added:', data.plugins.filter(p => p.has_plugin_js !== false).length);
+        console.log('[PluginLoader] Total plugins loaded:', plugins.length);
       }
     } catch (error) {
-      // Runtime plugins not available, continue with static plugins only
-      console.error('[PluginLoader] Failed to fetch runtime plugins:', error);
+      console.error('[PluginLoader] Failed to fetch plugins:', error);
     }
 
     plugins.sort((a, b) => a.manifest.priority - b.manifest.priority);
@@ -166,84 +112,21 @@ class PluginLoader {
 
   async loadPluginDynamic(id, path, mainFile) {
     try {
-      // Check if this is a runtime plugin
-      if (path.startsWith('/runtime/')) {
-        // Load runtime plugin from backend
-        const pluginId = path.replace('/runtime/', '');
-        const pluginUrl = `http://localhost:3001/api/plugins/${pluginId}/${mainFile}`;
+      // All plugins are loaded from the backend
+      const pluginId = path.replace('/runtime/', '');
+      const pluginUrl = `http://localhost:3001/api/plugins/${pluginId}/${mainFile}`;
 
-        console.log(`[PluginLoader] Loading runtime plugin "${id}" from ${pluginUrl}`);
+      console.log(`[PluginLoader] Loading plugin "${id}" from ${pluginUrl}`);
 
-        // Dynamically import the plugin.js file (CSS is bundled inside)
-        const pluginModule = await import(/* webpackIgnore: true */ pluginUrl);
-        console.log(`[PluginLoader] Successfully loaded runtime plugin "${id}"`, pluginModule);
-        console.log(`[PluginLoader] Module keys for "${id}":`, Object.keys(pluginModule));
-        console.log(`[PluginLoader] Module.default for "${id}":`, pluginModule.default);
-        return pluginModule;
-      }
-
-      // Static plugin - use require.context for build-time plugins
-      // Path from src/api/plugin/index.jsx to src/plugins/
-      // Exclude developer/projects directory from context
-      const pluginContext = require.context('../../plugins', true, /\.(jsx|js)$/, 'lazy');
-      const allKeys = pluginContext.keys().filter(key => !key.includes('/developer/projects/'));
-
-      // Path format: /src/plugins/plugin_name -> ./plugin_name/index.jsx
-      const relativePath = path.replace('/src/plugins', '.');
-      const mainPath = `${relativePath}/${mainFile}`;
-
-      // Check if this exact path exists
-      if (allKeys.includes(mainPath)) {
-        const pluginModule = pluginContext(mainPath);
-        return pluginModule;
-      }
-
-      // Try without extension
-      const pathWithoutExt = mainPath.replace(/\.(jsx|js)$/, '');
-      const tryPaths = [
-        `${pathWithoutExt}.jsx`,
-        `${pathWithoutExt}.js`,
-        `${pathWithoutExt}/index.jsx`,
-        `${pathWithoutExt}/index.js`
-      ];
-
-      for (const tryPath of tryPaths) {
-        if (allKeys.includes(tryPath)) {
-          const pluginModule = pluginContext(tryPath);
-          return pluginModule;
-        }
-      }
-
-      throw new Error(`Plugin file not found: ${mainPath}. Available: ${allKeys.join(', ')}`);
-
+      // Dynamically import the plugin.js file
+      const pluginModule = await import(/* webpackIgnore: true */ pluginUrl);
+      console.log(`[PluginLoader] Successfully loaded plugin "${id}"`, pluginModule);
+      console.log(`[PluginLoader] Module keys for "${id}":`, Object.keys(pluginModule));
+      console.log(`[PluginLoader] Module.default for "${id}":`, pluginModule.default);
+      return pluginModule;
     } catch (error) {
       throw error;
     }
-  }
-
-  inferPermissions(pluginPath) {
-    const permissions = [];
-    
-    if (pluginPath.includes('/core/')) {
-      permissions.push('core-engine', 'ui-core');
-    }
-    if (pluginPath.includes('/editor')) {
-      permissions.push('ui-core', 'file-access', 'viewport-management');
-    }
-    if (pluginPath.includes('/splash')) {
-      permissions.push('ui-core', 'viewport-management');
-    }
-    if (pluginPath.includes('/menu')) {
-      permissions.push('ui-core');
-    }
-    if (pluginPath.includes('/bridge')) {
-      permissions.push('file-access', 'network-access');
-    }
-    if (pluginPath.includes('/render')) {
-      permissions.push('rendering', 'gpu-access');
-    }
-    
-    return permissions.length > 0 ? permissions : ['ui-core'];
   }
 
   async loadPlugin(pluginInfo) {
@@ -406,8 +289,6 @@ class PluginLoader {
       // Set the plugin context for auto-registration
       this.PluginAPI.setCurrentPluginContext(pluginId);
 
-      // Auto-load widget if it exists
-      await this.autoLoadWidget(pluginId, plugin);
 
       if (typeof plugin.instance.onStart === 'function') {
         // Wrap onStart in createRoot to properly handle SolidJS effects
@@ -441,109 +322,6 @@ class PluginLoader {
     }
   }
 
-  // Helper method to load and register a widget
-  async loadWidgetComponent(pluginId, widgetPath, widgetConfig) {
-    try {
-      // Exclude developer/projects directory from context
-      const pluginContext = require.context('../../plugins', true, /\.(jsx|js)$/, 'lazy');
-      const allKeys = pluginContext.keys().filter(key => !key.includes('/developer/projects/'));
-      const relativePath = widgetPath.replace('/src/plugins', '.');
-
-      console.log(`[loadWidgetComponent] Looking for: ${relativePath}`);
-      console.log(`[loadWidgetComponent] Available keys: ${allKeys.filter(k => k.includes('system/widgets')).join(', ')}`);
-
-      if (allKeys.includes(relativePath)) {
-        console.log(`[loadWidgetComponent] Found widget file: ${relativePath}`);
-        const widgetModule = await pluginContext(relativePath);
-        const WidgetComponent = widgetModule.default;
-
-        if (WidgetComponent) {
-          this.PluginAPI.registerWidget(widgetConfig.id, {
-            ...widgetConfig,
-            component: WidgetComponent
-          });
-          console.log(`[loadWidgetComponent] Successfully registered widget: ${widgetConfig.id}`);
-          return true;
-        } else {
-          console.error(`[loadWidgetComponent] Widget module has no default export: ${relativePath}`);
-        }
-      } else {
-        console.error(`[loadWidgetComponent] Widget file not found in context: ${relativePath}`);
-      }
-      return false;
-    } catch (error) {
-      console.error(`[loadWidgetComponent] Error loading widget ${widgetPath}:`, error);
-      return false;
-    }
-  }
-
-  async autoLoadWidget(pluginId, plugin) {
-    try {
-      const pluginConfig = pluginStore.getPluginConfig(pluginId);
-      if (!pluginConfig?.widget) return;
-
-      const widgetPath = `${plugin.path}/${pluginConfig.widget}`;
-      const widgetId = `${pluginId}-widget`;
-      const widgetTitle = plugin.manifest.name || pluginId.split('-').map(w =>
-        w.charAt(0).toUpperCase() + w.slice(1)
-      ).join(' ');
-
-      let widgetIcon = null;
-      if (plugin.instance && typeof plugin.instance.getIcon === 'function') {
-        widgetIcon = plugin.instance.getIcon();
-      }
-
-      this.loadWidgetComponent(pluginId, widgetPath, {
-        id: widgetId,
-        title: widgetTitle,
-        component: null, // Will be set by loadWidgetComponent
-        icon: widgetIcon,
-        description: `${widgetTitle} widget`,
-        defaultSize: { w: 2, h: 3 },
-        order: plugin.manifest.priority || 100
-      });
-    } catch (error) {
-      // Silently fail widget auto-loading
-    }
-  }
-
-  async autoLoadWidgetsFromDirectory(pluginId) {
-    try {
-      const pluginConfig = pluginStore.getPluginConfig(pluginId);
-      if (!pluginConfig?.widgets || pluginConfig.widgets.length === 0) return;
-
-      for (const widgetFile of pluginConfig.widgets) {
-        const widgetPath = `${pluginConfig.path}/widgets/${widgetFile}`;
-        const widgetName = widgetFile.replace('.jsx', '').replace(/Widget$/, '');
-        const widgetId = `${pluginId}-${widgetName.toLowerCase()}`;
-
-        let widgetIcon = null;
-        try {
-          const icons = require('@tabler/icons-solidjs');
-          const iconName = `Icon${widgetName}`;
-          widgetIcon = icons[iconName] || icons.IconBox;
-        } catch (e) {
-          // Icon not found, will use default
-        }
-
-        const loaded = this.loadWidgetComponent(pluginId, widgetPath, {
-          id: widgetId,
-          title: widgetName,
-          component: null, // Will be set by loadWidgetComponent
-          icon: widgetIcon,
-          description: `${widgetName} widget`,
-          defaultSize: { w: 1, h: 1 },
-          order: 100
-        });
-
-        if (loaded) {
-          console.log(`  ✓ Auto-loaded widget: ${widgetId}`);
-        }
-      }
-    } catch (error) {
-      // Silently fail
-    }
-  }
 
   async loadAllPlugins() {
     // Loading all plugins
@@ -600,12 +378,6 @@ class PluginLoader {
     }
 
     await Promise.all(startPromises);
-
-    // Auto-load widgets from widgets directories
-    const runningPlugins = pluginStore.getRunningPlugins();
-    for (const plugin of runningPlugins) {
-      await this.autoLoadWidgetsFromDirectory(plugin.id);
-    }
 
     // Plugin loading completed
   }
@@ -776,18 +548,28 @@ export class PluginAPI {
         }
         return newMap;
       });
-      
-      // Remove property tabs
-      setPropertyTabs(prev => {
+
+      // Remove top menu buttons
+      setTopMenuButtons(prev => {
         const newMap = new Map(prev);
-        for (const [key, tab] of newMap) {
-          if (tab.plugin === pluginId) {
+        for (const [key, button] of newMap) {
+          if (button.plugin === pluginId) {
             newMap.delete(key);
           }
         }
         return newMap;
       });
-      
+
+      // Remove left panel component if owned by this plugin
+      if (leftPanelComponent()?.plugin === pluginId) {
+        setLeftPanelComponent(null);
+      }
+
+      // Remove right panel component if owned by this plugin
+      if (rightPanelComponent()?.plugin === pluginId) {
+        setRightPanelComponent(null);
+      }
+
       // Remove viewport types
       setViewportTypes(prev => {
         const newMap = new Map(prev);
@@ -810,11 +592,33 @@ export class PluginAPI {
         return newMap;
       });
 
-      // Remove left panel menu items
-      setLeftPanelMenuItems(prev => {
+      // Remove bottom panel tabs
+      setBottomPanelTabs(prev => {
+        const newMap = new Map(prev);
+        for (const [key, tab] of newMap) {
+          if (tab.plugin === pluginId) {
+            newMap.delete(key);
+          }
+        }
+        return newMap;
+      });
+
+      // Remove toolbar items
+      setToolbarItems(prev => {
         const newMap = new Map(prev);
         for (const [key, item] of newMap) {
           if (item.plugin === pluginId) {
+            newMap.delete(key);
+          }
+        }
+        return newMap;
+      });
+
+      // Remove toolbar groups
+      setToolbarGroups(prev => {
+        const newMap = new Map(prev);
+        for (const [key, group] of newMap) {
+          if (group.plugin === pluginId) {
             newMap.delete(key);
           }
         }
@@ -826,28 +630,6 @@ export class PluginAPI {
         const newMap = new Map(prev);
         for (const [key, component] of newMap) {
           if (component.plugin === pluginId) {
-            newMap.delete(key);
-          }
-        }
-        return newMap;
-      });
-
-      // Remove widgets
-      setWidgets(prev => {
-        const newMap = new Map(prev);
-        for (const [key, widget] of newMap) {
-          if (widget.plugin === pluginId) {
-            newMap.delete(key);
-          }
-        }
-        return newMap;
-      });
-
-      // Remove background layers
-      setBackgroundLayers(prev => {
-        const newMap = new Map(prev);
-        for (const [key, layer] of newMap) {
-          if (layer.plugin === pluginId) {
             newMap.delete(key);
           }
         }
@@ -929,19 +711,21 @@ export class PluginAPI {
     return true;
   }
 
-  registerPropertyTab(id, config) {
-    const tab = {
-      id,
-      title: config.title,
+  registerLeftPanel(config) {
+    const panel = {
       component: config.component,
-      icon: config.icon,
-      order: config.order || 100,
-      condition: config.condition || (() => true),
-      viewport: config.viewport || null, // Optional: associated viewport type ID
       plugin: config.plugin || this.getCurrentPluginId() || 'unknown'
     };
+    setLeftPanelComponent(panel);
+    return true;
+  }
 
-    setPropertyTabs(prev => new Map(prev.set(id, tab)));
+  registerRightPanel(config) {
+    const panel = {
+      component: config.component,
+      plugin: config.plugin || this.getCurrentPluginId() || 'unknown'
+    };
+    setRightPanelComponent(panel);
     return true;
   }
 
@@ -970,24 +754,34 @@ export class PluginAPI {
   setupViewportLifecycleListeners(viewportTypeId, onActivate, onDeactivate) {
     // Listen for tab activation
     if (onActivate) {
-      document.addEventListener('viewport:tab-activated', (event) => {
+      document.addEventListener('viewport:tab-activated', async (event) => {
         const { tabId } = event.detail;
-        // Check if the activated tab is of this viewport type
-        const tab = viewportStore.tabs.find(t => t.id === tabId);
-        if (tab && tab.type === viewportTypeId) {
-          onActivate(this, tab);
+        // Dynamically import viewportStore to check tab type
+        try {
+          const { viewportStore } = await import('@/panels/viewport/store');
+          const tab = viewportStore.tabs.find(t => t.id === tabId);
+          if (tab && tab.type === viewportTypeId) {
+            onActivate(this, tab);
+          }
+        } catch (err) {
+          console.error('[PluginAPI] Failed to check tab activation:', err);
         }
       });
     }
 
     // Listen for tab deactivation
     if (onDeactivate) {
-      document.addEventListener('viewport:tab-deactivated', (event) => {
+      document.addEventListener('viewport:tab-deactivated', async (event) => {
         const { tabId } = event.detail;
-        // Check if the deactivated tab is of this viewport type
-        const tab = viewportStore.tabs.find(t => t.id === tabId);
-        if (tab && tab.type === viewportTypeId) {
-          onDeactivate(this, tab);
+        // Dynamically import viewportStore to check tab type
+        try {
+          const { viewportStore } = await import('@/panels/viewport/store');
+          const tab = viewportStore.tabs.find(t => t.id === tabId);
+          if (tab && tab.type === viewportTypeId) {
+            onDeactivate(this, tab);
+          }
+        } catch (err) {
+          console.error('[PluginAPI] Failed to check tab deactivation:', err);
         }
       });
     }
@@ -1007,62 +801,105 @@ export class PluginAPI {
     return true;
   }
 
-  registerLeftPanelMenuItem(id, config) {
-    const menuItem = {
+  registerTopMenuButton(id, config) {
+    const button = {
       id,
-      label: config.label,
-      icon: config.icon,
-      description: config.description || '',
-      onClick: config.onClick,
+      component: config.component,
       order: config.order || 100,
-      category: config.category || 'General',
       plugin: config.plugin || this.getCurrentPluginId() || 'unknown'
     };
 
-    setLeftPanelMenuItems(prev => new Map(prev.set(id, menuItem)));
+    setTopMenuButtons(prev => new Map(prev.set(id, button)));
     return true;
   }
 
-  registerWidget(id, config) {
-    const widget = {
+  registerBottomPanelTab(id, config) {
+    const tab = {
       id,
       title: config.title,
       component: config.component,
       icon: config.icon,
-      description: config.description || '',
-      defaultSize: config.defaultSize || { w: 2, h: 2 },
-      minSize: config.minSize || { w: 1, h: 1 },
-      maxSize: config.maxSize || { w: 12, h: 12 },
       order: config.order || 100,
+      closable: config.closable !== false,
       plugin: config.plugin || this.getCurrentPluginId() || 'unknown'
     };
 
-    setWidgets(prev => new Map(prev.set(id, widget)));
+    setBottomPanelTabs(prev => new Map(prev.set(id, tab)));
+
+    // Auto-show bottom panel when a tab is registered
+    if (config.autoShow !== false) {
+      setBottomPanelVisible(true);
+    }
+
     return true;
   }
 
-  registerBackgroundLayer(id, config) {
-    const layer = {
-      id,
-      component: config.component,
-      order: config.order !== undefined ? config.order : 100, // Lower order = further back
-      zIndex: config.zIndex !== undefined ? config.zIndex : 0,
-      plugin: config.plugin || this.getCurrentPluginId() || 'unknown'
-    };
-
-    setBackgroundLayers(prev => new Map(prev.set(id, layer)));
-    return true;
-  }
-
-  updateBackgroundLayerZIndex(id, newZIndex) {
-    setBackgroundLayers(prev => {
-      const layer = prev.get(id);
-      if (!layer) return prev;
-
+  unregisterBottomPanelTab(id) {
+    setBottomPanelTabs(prev => {
       const newMap = new Map(prev);
-      newMap.set(id, { ...layer, zIndex: newZIndex });
+      newMap.delete(id);
+
+      // Auto-hide bottom panel if no tabs remain
+      if (newMap.size === 0) {
+        setBottomPanelVisible(false);
+      }
+
       return newMap;
     });
+    return true;
+  }
+
+  registerToolbarItem(id, config) {
+    const item = {
+      id,
+      icon: config.icon,
+      label: config.label,
+      tooltip: config.tooltip || config.label,
+      onClick: config.onClick,
+      component: config.component, // Custom component instead of icon button
+      group: config.group || 'default',
+      order: config.order || 100,
+      disabled: config.disabled || (() => false),
+      active: config.active || (() => false),
+      visible: config.visible || (() => true),
+      separator: config.separator || false, // Add separator after this item
+      plugin: config.plugin || this.getCurrentPluginId() || 'unknown'
+    };
+
+    setToolbarItems(prev => new Map(prev.set(id, item)));
+    return true;
+  }
+
+  unregisterToolbarItem(id) {
+    setToolbarItems(prev => {
+      const newMap = new Map(prev);
+      newMap.delete(id);
+      return newMap;
+    });
+    return true;
+  }
+
+  registerToolbarGroup(id, config) {
+    const group = {
+      id,
+      label: config.label,
+      order: config.order || 100,
+      collapsible: config.collapsible !== false,
+      visible: config.visible || (() => true),
+      plugin: config.plugin || this.getCurrentPluginId() || 'unknown'
+    };
+
+    setToolbarGroups(prev => new Map(prev.set(id, group)));
+    return true;
+  }
+
+  unregisterToolbarGroup(id) {
+    setToolbarGroups(prev => {
+      const newMap = new Map(prev);
+      newMap.delete(id);
+      return newMap;
+    });
+    return true;
   }
 
   registerLayoutComponent(region, component) {
@@ -1114,11 +951,14 @@ export class PluginAPI {
   }
 
   menu(id, config) { return this.registerTopMenuItem(id, config); }
-  tab(id, config) { return this.registerPropertyTab(id, config); }
+  leftPanel(config) { return this.registerLeftPanel(config); }
+  rightPanel(config) { return this.registerRightPanel(config); }
   viewport(id, config) { return this.registerViewportType(id, config); }
   footer(id, config) { return this.registerFooterButton(id, config); }
-  widget(id, config) { return this.registerWidget(id, config); }
-  bg(id, config) { return this.registerBackgroundLayer(id, config); }
+  topMenuButton(id, config) { return this.registerTopMenuButton(id, config); }
+  bottomTab(id, config) { return this.registerBottomPanelTab(id, config); }
+  toolbar(id, config) { return this.registerToolbarItem(id, config); }
+  toolbarGroup(id, config) { return this.registerToolbarGroup(id, config); }
   open(typeId, options) { return this.createViewportTab(typeId, options); }
 
   createViewportTab(typeId, options = {}) {
@@ -1182,12 +1022,10 @@ export class PluginAPI {
 
   setLeftPanelVisible(visible) {
     setLeftPanelVisible(visible);
-    // Left panel visibility changed
   }
 
   showLeftPanel(visible = true) { return this.setLeftPanelVisible(visible); }
   hideLeftPanel() { return this.setLeftPanelVisible(false); }
-
 
   setHorizontalMenuButtonsEnabled(enabled) {
     setHorizontalMenuButtonsEnabled(enabled);
@@ -1209,7 +1047,23 @@ export class PluginAPI {
     setViewportTabsVisible(visible);
     // Viewport tabs visibility changed
   }
-  
+
+  setBottomPanelVisible(visible) {
+    setBottomPanelVisible(visible);
+  }
+
+  showBottomPanel(visible = true) { return this.setBottomPanelVisible(visible); }
+  hideBottomPanel() { return this.setBottomPanelVisible(false); }
+  toggleBottomPanel() { return this.setBottomPanelVisible(!bottomPanelVisible()); }
+
+  setToolbarVisible(visible) {
+    setToolbarVisible(visible);
+  }
+
+  showToolbar(visible = true) { return this.setToolbarVisible(visible); }
+  hideToolbar() { return this.setToolbarVisible(false); }
+  toggleToolbar() { return this.setToolbarVisible(!toolbarVisible()); }
+
   showTabs(visible = true) { return this.setViewportTabsVisible(visible); }
   hideTabs() { return this.setViewportTabsVisible(false); }
 
@@ -1218,11 +1072,6 @@ export class PluginAPI {
   getTopMenuItems() {
     return Array.from(topMenuItems().values()).sort((a, b) => a.order - b.order);
   }
-
-  getPropertyTabs() {
-    return Array.from(propertyTabs().values()).sort((a, b) => a.order - b.order);
-  }
-
 
   getViewportTypes() {
     return Array.from(viewportTypes().values());
@@ -1233,16 +1082,24 @@ export class PluginAPI {
     return Array.from(footerButtons().values()).sort((a, b) => a.order - b.order);
   }
 
-  getLeftPanelMenuItems() {
-    return Array.from(leftPanelMenuItems().values()).sort((a, b) => a.order - b.order);
+  getBottomPanelTabs() {
+    return Array.from(bottomPanelTabs().values()).sort((a, b) => a.order - b.order);
   }
 
-  getWidgets() {
-    return Array.from(widgets().values()).sort((a, b) => a.order - b.order);
+  getBottomPanelVisible() {
+    return bottomPanelVisible();
   }
 
-  getBackgroundLayers() {
-    return Array.from(backgroundLayers().values()).sort((a, b) => a.order - b.order);
+  getToolbarItems() {
+    return Array.from(toolbarItems().values()).sort((a, b) => a.order - b.order);
+  }
+
+  getToolbarGroups() {
+    return Array.from(toolbarGroups().values()).sort((a, b) => a.order - b.order);
+  }
+
+  getToolbarVisible() {
+    return toolbarVisible();
   }
 
   getPlugins() {
@@ -1305,6 +1162,52 @@ export class PluginAPI {
     }
   }
 
+  /**
+   * Reload a single runtime plugin by ID (unload and reload)
+   * This is useful for hot-reloading plugins during development
+   */
+  async reloadRuntimePlugin(pluginId) {
+    console.log(`[PluginAPI] Reloading runtime plugin: ${pluginId}`);
+
+    try {
+      // Check if plugin is currently loaded
+      const existingPlugin = pluginStore.getPluginInstance(pluginId);
+
+      if (existingPlugin) {
+        console.log(`[PluginAPI] Unloading existing plugin: ${pluginId}`);
+        // Clean up UI elements registered by this plugin
+        this.cleanupPluginUIElements(pluginId);
+
+        // Unload the plugin instance
+        await pluginStore.unloadPlugin(pluginId);
+
+        // Remove from plugin configs so it gets re-discovered
+        pluginStore.removePluginConfig(pluginId);
+      }
+
+      // Re-discover plugins to pick up the updated version
+      const discovered = await this.pluginLoader.discoverPlugins();
+
+      // Find the plugin we want to reload
+      const pluginInfo = discovered.get(pluginId);
+
+      if (pluginInfo) {
+        console.log(`[PluginAPI] Loading updated plugin: ${pluginId}`);
+        await this.pluginLoader.loadPlugin(pluginInfo);
+        await this.pluginLoader.initializePlugin(pluginId);
+        await this.pluginLoader.startPlugin(pluginId);
+        console.log(`[PluginAPI] Plugin ${pluginId} reloaded successfully`);
+        return true;
+      } else {
+        console.warn(`[PluginAPI] Plugin ${pluginId} not found after rediscovery`);
+        return false;
+      }
+    } catch (error) {
+      console.error(`[PluginAPI] Failed to reload plugin ${pluginId}:`, error);
+      throw error;
+    }
+  }
+
   emit(eventType, data) {
     const event = new CustomEvent(`plugin:${eventType}`, { detail: data });
     document.dispatchEvent(event);
@@ -1322,7 +1225,6 @@ export class PluginAPI {
       id: this.id,
       version: this.version,
       registeredTopMenuItems: topMenuItems().size,
-      registeredPropertyTabs: propertyTabs().size,
       registeredPlugins: registeredPlugins().size
     };
   }
@@ -1377,18 +1279,22 @@ export { createPlugin } from './Plugin.jsx';
 
 export {
   topMenuItems,
-  propertyTabs,
+  topMenuButtons,
+  leftPanelComponent,
+  rightPanelComponent,
   viewportTypes,
   footerButtons,
-  leftPanelMenuItems,
   registeredPlugins,
-  widgets,
-  backgroundLayers,
+  bottomPanelTabs,
+  toolbarItems,
+  toolbarGroups,
   propertiesPanelVisible,
   leftPanelVisible,
   horizontalMenuButtonsEnabled,
   footerVisible,
   viewportTabsVisible,
+  bottomPanelVisible,
+  toolbarVisible,
   layoutComponents,
   PLUGIN_STATES
 };
