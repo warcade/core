@@ -6,15 +6,11 @@ import DevNotice from './components/DevNotice'
 import KeyboardShortcuts, { keyboardShortcuts } from './components/KeyboardShortcuts'
 import PluginInstaller from './components/PluginInstaller'
 import { usePluginAPI } from '@/api/plugin'
-import { initDeveloper } from '@/developer'
 
 // Component that initializes core modules after Engine/PluginAPIProvider is mounted
 function CoreModuleInitializer() {
   onMount(() => {
     const api = usePluginAPI();
-
-    // Initialize Developer IDE (built-in, not a plugin)
-    initDeveloper(api);
 
     // Open engine viewport by default after plugins are loaded
     const unsubscribe = api.on('api-initialized', () => {
