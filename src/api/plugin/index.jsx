@@ -5,14 +5,15 @@ const PluginAPIContext = createContext();
 
 const [topMenuItems, setTopMenuItems] = createSignal(new Map());
 const [topMenuButtons, setTopMenuButtons] = createSignal(new Map());
-const [leftPanelComponent, setLeftPanelComponent] = createSignal(null);
-const [rightPanelComponent, setRightPanelComponent] = createSignal(null);
+const [leftPanelComponents, setLeftPanelComponents] = createSignal(new Map()); // Map<viewportType, panelConfig>
+const [rightPanelComponents, setRightPanelComponents] = createSignal(new Map()); // Map<viewportType, panelConfig>
 const [viewportTypes, setViewportTypes] = createSignal(new Map());
 const [footerButtons, setFooterButtons] = createSignal(new Map());
 const [registeredPlugins, setRegisteredPlugins] = createSignal(new Map());
-const [bottomPanelTabs, setBottomPanelTabs] = createSignal(new Map());
+const [bottomPanelTabs, setBottomPanelTabs] = createSignal(new Map()); // Each tab has a 'viewports' array
 const [toolbarItems, setToolbarItems] = createSignal(new Map());
 const [toolbarGroups, setToolbarGroups] = createSignal(new Map());
+const [activeViewportType, setActiveViewportType] = createSignal(null); // Track currently active viewport type
 const [propertiesPanelVisible, setPropertiesPanelVisible] = createSignal(true);
 const [leftPanelVisible, setLeftPanelVisible] = createSignal(true);
 const [horizontalMenuButtonsEnabled, setHorizontalMenuButtonsEnabled] = createSignal(true);
@@ -504,9 +505,28 @@ export class PluginAPI {
     this.pluginLoader = new PluginLoader(this);
     this.initialized = false;
     this.currentRegistringPlugin = null; // Track which plugin is currently registering
-    
+
     // Set up plugin store event listeners for reactive UI updates
     this.setupPluginStoreListeners();
+
+    // Set up global viewport type tracking
+    this.setupViewportTypeTracking();
+  }
+
+  setupViewportTypeTracking() {
+    // Track which viewport type is currently active
+    document.addEventListener('viewport:tab-activated', async (event) => {
+      const { tabId } = event.detail;
+      try {
+        const { viewportStore } = await import('@/panels/viewport/store');
+        const tab = viewportStore.tabs.find(t => t.id === tabId);
+        if (tab) {
+          setActiveViewportType(tab.type);
+        }
+      } catch (err) {
+        console.error('[PluginAPI] Failed to track viewport type:', err);
+      }
+    });
   }
   
   // Helper method to get the current plugin ID for registration
@@ -560,15 +580,27 @@ export class PluginAPI {
         return newMap;
       });
 
-      // Remove left panel component if owned by this plugin
-      if (leftPanelComponent()?.plugin === pluginId) {
-        setLeftPanelComponent(null);
-      }
+      // Remove left panel components owned by this plugin
+      setLeftPanelComponents(prev => {
+        const newMap = new Map(prev);
+        for (const [key, panel] of newMap) {
+          if (panel.plugin === pluginId) {
+            newMap.delete(key);
+          }
+        }
+        return newMap;
+      });
 
-      // Remove right panel component if owned by this plugin
-      if (rightPanelComponent()?.plugin === pluginId) {
-        setRightPanelComponent(null);
-      }
+      // Remove right panel components owned by this plugin
+      setRightPanelComponents(prev => {
+        const newMap = new Map(prev);
+        for (const [key, panel] of newMap) {
+          if (panel.plugin === pluginId) {
+            newMap.delete(key);
+          }
+        }
+        return newMap;
+      });
 
       // Remove viewport types
       setViewportTypes(prev => {
@@ -712,20 +744,30 @@ export class PluginAPI {
   }
 
   registerLeftPanel(config) {
+    // Get the viewport type from config, or from the currently active viewport
+    const viewportType = config.viewport || activeViewportType() || 'global';
+
     const panel = {
       component: config.component,
-      plugin: config.plugin || this.getCurrentPluginId() || 'unknown'
+      plugin: config.plugin || this.getCurrentPluginId() || 'unknown',
+      viewport: viewportType
     };
-    setLeftPanelComponent(panel);
+
+    setLeftPanelComponents(prev => new Map(prev.set(viewportType, panel)));
     return true;
   }
 
   registerRightPanel(config) {
+    // Get the viewport type from config, or from the currently active viewport
+    const viewportType = config.viewport || activeViewportType() || 'global';
+
     const panel = {
       component: config.component,
-      plugin: config.plugin || this.getCurrentPluginId() || 'unknown'
+      plugin: config.plugin || this.getCurrentPluginId() || 'unknown',
+      viewport: viewportType
     };
-    setRightPanelComponent(panel);
+
+    setRightPanelComponents(prev => new Map(prev.set(viewportType, panel)));
     return true;
   }
 
@@ -814,6 +856,9 @@ export class PluginAPI {
   }
 
   registerBottomPanelTab(id, config) {
+    // Get the viewport type from config, or from the currently active viewport
+    const viewportType = config.viewport || activeViewportType() || 'global';
+
     const tab = {
       id,
       title: config.title,
@@ -821,14 +866,18 @@ export class PluginAPI {
       icon: config.icon,
       order: config.order || 100,
       closable: config.closable !== false,
-      plugin: config.plugin || this.getCurrentPluginId() || 'unknown'
+      plugin: config.plugin || this.getCurrentPluginId() || 'unknown',
+      viewport: viewportType
     };
 
     setBottomPanelTabs(prev => new Map(prev.set(id, tab)));
 
-    // Auto-show bottom panel when a tab is registered
+    // Auto-show bottom panel when a tab is registered (only if active viewport matches)
     if (config.autoShow !== false) {
-      setBottomPanelVisible(true);
+      const currentViewport = activeViewportType();
+      if (tab.viewport === currentViewport) {
+        setBottomPanelVisible(true);
+      }
     }
 
     return true;
@@ -1277,15 +1326,61 @@ export function Engine(props) {
 
 export { createPlugin } from './Plugin.jsx';
 
+// Computed signals that return the correct panel for the active viewport
+const leftPanelComponent = () => {
+  const currentViewport = activeViewportType();
+  const panels = leftPanelComponents();
+
+  // Only return panel if it exists for the current viewport type
+  if (currentViewport && panels.has(currentViewport)) {
+    return panels.get(currentViewport);
+  }
+
+  // No panel for this viewport - return null to hide it
+  return null;
+};
+
+const rightPanelComponent = () => {
+  const currentViewport = activeViewportType();
+  const panels = rightPanelComponents();
+
+  // Only return panel if it exists for the current viewport type
+  if (currentViewport && panels.has(currentViewport)) {
+    return panels.get(currentViewport);
+  }
+
+  // No panel for this viewport - return null to hide it
+  return null;
+};
+
+// Computed signal that returns bottom panel tabs filtered by active viewport
+const filteredBottomPanelTabs = () => {
+  const currentViewport = activeViewportType();
+  const allTabs = bottomPanelTabs();
+  const result = new Map();
+
+  for (const [id, tab] of allTabs) {
+    // Only include tab if it matches the current viewport
+    if (tab.viewport === currentViewport) {
+      result.set(id, tab);
+    }
+  }
+
+  return result;
+};
+
 export {
   topMenuItems,
   topMenuButtons,
   leftPanelComponent,
   rightPanelComponent,
+  leftPanelComponents,
+  rightPanelComponents,
   viewportTypes,
   footerButtons,
   registeredPlugins,
   bottomPanelTabs,
+  filteredBottomPanelTabs,
   toolbarItems,
   toolbarGroups,
   propertiesPanelVisible,
@@ -1296,6 +1391,7 @@ export {
   bottomPanelVisible,
   toolbarVisible,
   layoutComponents,
+  activeViewportType,
   PLUGIN_STATES
 };
 

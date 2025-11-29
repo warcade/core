@@ -1,0 +1,7 @@
+{
+  "name": "webarcade-bundler",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "WebArcade plugin bundler - uses main project's node_modules in dev mode"
+}

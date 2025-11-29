@@ -67,8 +67,11 @@ const RightPanel = () => {
 
   const panelComponent = createMemo(() => rightPanelComponent()?.component);
 
+  // Check if there's a panel for the current viewport
+  const hasPanelForViewport = createMemo(() => rightPanelComponent() !== null);
+
   return (
-    <Show when={propertiesPanelVisible()}>
+    <Show when={propertiesPanelVisible() && hasPanelForViewport()}>
       <div
         ref={panelRef}
         className="relative no-select flex-shrink-0 h-full"

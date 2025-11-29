@@ -1,6 +1,6 @@
 import { Show, For, createSignal, createEffect, onCleanup, onMount } from 'solid-js';
 import PanelResizer from '@/ui/PanelResizer.jsx';
-import { bottomPanelTabs, bottomPanelVisible, pluginAPI } from '@/api/plugin';
+import { filteredBottomPanelTabs, bottomPanelVisible, pluginAPI } from '@/api/plugin';
 
 const BottomPanel = () => {
   const [panelHeight, setPanelHeight] = createSignal(200);
@@ -8,15 +8,15 @@ const BottomPanel = () => {
   const [dragOffset, setDragOffset] = createSignal(0);
   const [activeTab, setActiveTab] = createSignal(null);
 
-  // Auto-select first tab when tabs change
+  // Auto-select first tab when tabs change (uses filtered tabs based on active viewport)
   createEffect(() => {
-    const tabs = Array.from(bottomPanelTabs().values()).sort((a, b) => a.order - b.order);
+    const tabs = Array.from(filteredBottomPanelTabs().values()).sort((a, b) => a.order - b.order);
     if (tabs.length > 0 && !activeTab()) {
       setActiveTab(tabs[0].id);
     } else if (tabs.length === 0) {
       setActiveTab(null);
     } else if (activeTab() && !tabs.find(t => t.id === activeTab())) {
-      // Active tab was removed, select the first one
+      // Active tab was removed or no longer visible for this viewport, select the first one
       setActiveTab(tabs[0]?.id || null);
     }
   });
@@ -79,7 +79,7 @@ const BottomPanel = () => {
   };
 
   const getTabs = () => {
-    return Array.from(bottomPanelTabs().values()).sort((a, b) => a.order - b.order);
+    return Array.from(filteredBottomPanelTabs().values()).sort((a, b) => a.order - b.order);
   };
 
   const getActiveTabComponent = () => {
