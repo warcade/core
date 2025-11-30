@@ -63,13 +63,13 @@ export async function bundlePluginFrontend(pluginDir, outputDir) {
     devtool: false,
 
     // Externals: Don't bundle shared dependencies - use globals from host app
+    // Note: @tabler/icons-solidjs is NOT externalized - it gets tree-shaken per plugin
     externals: {
       'solid-js': 'SolidJS',
       'solid-js/web': 'SolidJSWeb',
       'solid-js/store': 'SolidJSStore',
       '@/api/plugin': 'WebArcadeAPI',
       '@/api/bridge': 'WebArcadeAPI',
-      '@tabler/icons-solidjs': 'TablerIconsSolidJS',
     },
 
     // Configure output to access externals from global scope

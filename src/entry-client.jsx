@@ -2,16 +2,15 @@ import { render } from 'solid-js/web'
 import * as SolidJS from 'solid-js'
 import * as SolidJSWeb from 'solid-js/web'
 import * as SolidJSStore from 'solid-js/store'
-import * as TablerIconsSolidJS from '@tabler/icons-solidjs'
 import { createPlugin, usePluginAPI, viewportTypes } from './api/plugin'
 import { api, BRIDGE_API, WEBARCADE_WS } from './api/bridge'
 import App from './App'
 
 // Expose SolidJS globally for runtime plugins
+// Note: @tabler/icons-solidjs is NOT exposed globally - plugins bundle their own icons for tree-shaking
 window.SolidJS = SolidJS
 window.SolidJSWeb = SolidJSWeb
 window.SolidJSStore = SolidJSStore
-window.TablerIconsSolidJS = TablerIconsSolidJS
 
 // Expose plugin API globally
 window.WebArcadeAPI = {
