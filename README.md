@@ -75,14 +75,28 @@ webarcade/
 
 ### Plugin Layout
 
-Plugins live in the `plugins/` directory:
+Plugins live in the `plugins/` directory with different layouts for development and production:
 
-| Type | Example | Description |
-|------|---------|-------------|
-| **Source** | `plugins/my-plugin/` | Directory with source code |
-| **Compiled** | `plugins/my-plugin.dll` | Single DLL with everything embedded |
+**Development:**
+```
+plugins/
+├── my-plugin/              # Source directory
+│   ├── index.jsx           # Frontend entry
+│   ├── mod.rs              # Backend entry
+│   └── my-plugin.dll       # Compiled DLL (inside source dir)
+└── other-plugin/
+    └── ...
+```
 
-**Flow:** Edit `plugins/my-plugin/` → Build with CLI → Creates `plugins/my-plugin.dll`
+**Production (bundled app):**
+```
+plugins/
+├── my-plugin.dll           # DLLs directly in plugins/
+├── other-plugin.dll
+└── ...
+```
+
+**Flow:** Edit `plugins/my-plugin/` → Build with CLI → Creates `plugins/my-plugin/my-plugin.dll`
 
 ---
 
@@ -147,11 +161,12 @@ plugins/my-plugin/          # Source directory
 └── viewport.jsx            # UI component (optional)
 ```
 
-After building:
+After building (development):
 ```
-plugins/
-├── my-plugin/              # Source (keep for development)
-└── my-plugin.dll           # Compiled plugin (everything embedded)
+plugins/my-plugin/
+├── index.jsx               # Source files...
+├── mod.rs
+└── my-plugin.dll           # Compiled DLL inside source dir
 ```
 
 > **Note:** `index.jsx` is required - it identifies the directory as a plugin.
@@ -434,14 +449,19 @@ This makes distribution simple - just copy the `.dll` file.
    - Generates FFI wrapper code (`lib.rs`)
    - Embeds frontend + manifest into DLL
    - Compiles to platform binary (.dll/.so/.dylib)
+   - Cleans up temporary build artifacts
 
-3. **Output** (`plugins/my-plugin.dll`)
-   - Single file with everything embedded
-   - Frontend extracted at runtime via FFI
+3. **Output**
+   - Development: `plugins/my-plugin/my-plugin.dll` (inside source dir)
+   - Production: `plugins/my-plugin.dll` (flat structure, no source)
 
 ### Runtime Loading
 
-1. **Backend**: Bridge scans `plugins/` for `.dll` files
+The loader supports both development and production layouts:
+
+1. **Backend**: Bridge scans `plugins/` directory
+   - Development: Looks for DLLs inside subdirectories (`plugins/name/name.dll`)
+   - Production: Looks for DLLs directly in folder (`plugins/name.dll`)
    - Loads DLL via `libloading`
    - Extracts manifest from DLL via FFI
    - Registers routes from embedded manifest
