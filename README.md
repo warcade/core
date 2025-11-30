@@ -43,6 +43,11 @@ bun run dev
 bun run build
 ```
 
+After building, you'll find:
+- **Installer:** `src-tauri/target/release/bundle/nsis/` (Windows `.exe` installer)
+- **Binary:** `src-tauri/target/release/Webarcade.exe` (standalone executable)
+- **Plugins:** `src-tauri/target/release/plugins/` (bundled DLLs)
+
 ### Available Scripts
 
 | Script | Description |
