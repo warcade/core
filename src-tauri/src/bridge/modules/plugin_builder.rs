@@ -33,41 +33,101 @@ pub struct BuildResult {
     pub logs: Vec<BuildLog>,
 }
 
+/// Get the repo root directory by navigating up from the executable
+/// Only returns Some when in dev mode (target/debug), not for release builds
+fn get_repo_root() -> Option<PathBuf> {
+    let exe_path = std::env::current_exe().ok()?;
+
+    // Check if we're in target/debug (dev mode only, not release)
+    let exe_str = exe_path.to_str()?;
+    if exe_str.contains("target\\debug") || exe_str.contains("target/debug") {
+        // Navigate: exe -> debug -> target -> src-tauri -> repo_root
+        exe_path.parent() // debug
+            .and_then(|p| p.parent()) // target
+            .and_then(|p| p.parent()) // src-tauri
+            .and_then(|p| p.parent()) // repo root
+            .map(|p| p.to_path_buf())
+    } else {
+        // Production or release build: repo root doesn't apply
+        None
+    }
+}
+
+/// Get the projects directory (plugin source code)
+/// - Development: {repo_root}/projects
+/// - Production: not applicable (no source in production)
+fn get_projects_dir() -> Option<PathBuf> {
+    get_repo_root().map(|root| root.join("projects"))
+}
+
+/// Get the plugins directory (compiled output)
+/// - Development: {repo_root}/plugins
+/// - Production: {exe_dir}/plugins
+fn get_plugins_dir() -> PathBuf {
+    if let Some(repo_root) = get_repo_root() {
+        repo_root.join("plugins")
+    } else {
+        // Production fallback
+        std::env::current_exe()
+            .ok()
+            .and_then(|p| p.parent().map(|p| p.to_path_buf()))
+            .unwrap_or_default()
+            .join("plugins")
+    }
+}
+
+/// Get the build directory (temporary build artifacts)
+/// - Development: {repo_root}/build
+/// - Production: {temp_dir}/webarcade-build
+fn get_build_root() -> PathBuf {
+    if let Some(repo_root) = get_repo_root() {
+        repo_root.join("build")
+    } else {
+        std::env::temp_dir().join("webarcade-build")
+    }
+}
+
 pub struct PluginBuilder {
     plugin_dir: PathBuf,
     plugin_id: String,
     build_dir: PathBuf,
+    output_dir: PathBuf,
     project_root: PathBuf,
 }
 
 impl PluginBuilder {
     pub fn new(plugin_id: &str) -> Result<Self> {
-        // Get project root - try executable location first, fall back to current dir
-        let project_root = std::env::current_exe()
-            .ok()
-            .and_then(|p| p.parent().map(|p| p.to_path_buf()))
-            .unwrap_or_else(|| std::env::current_dir().unwrap_or_default());
+        // Get project root (repo root in dev, exe dir in prod)
+        let project_root = get_repo_root()
+            .unwrap_or_else(|| {
+                std::env::current_exe()
+                    .ok()
+                    .and_then(|p| p.parent().map(|p| p.to_path_buf()))
+                    .unwrap_or_else(|| std::env::current_dir().unwrap_or_default())
+            });
 
-        // Check for plugin in AppData/Local/WebArcade/projects
-        let appdata_dir = dirs::data_local_dir()
-            .or_else(|| dirs::data_dir())
-            .expect("Could not determine data directory");
-
-        let webarcade_dir = appdata_dir.join("WebArcade");
-        let plugin_dir = webarcade_dir.join("projects").join(plugin_id);
+        // Plugin source directory
+        let plugin_dir = get_projects_dir()
+            .map(|p| p.join(plugin_id))
+            .ok_or_else(|| anyhow::anyhow!("Cannot determine projects directory"))?;
 
         if !plugin_dir.exists() {
             anyhow::bail!("Plugin directory does not exist: {:?}", plugin_dir);
         }
 
-        // Build directory goes to AppData as well (works in both dev and production)
-        let build_dir = webarcade_dir.join("build").join(plugin_id);
+        // Temporary build directory
+        let build_dir = get_build_root().join(plugin_id);
         fs::create_dir_all(&build_dir)?;
+
+        // Output directory (where compiled plugin goes)
+        let output_dir = get_plugins_dir().join(plugin_id);
+        fs::create_dir_all(&output_dir)?;
 
         Ok(Self {
             plugin_dir,
             plugin_id: plugin_id.to_string(),
             build_dir,
+            output_dir,
             project_root,
         })
     }
@@ -205,12 +265,8 @@ impl PluginBuilder {
     }
 
     fn install_plugin(&self, logs: &mut Vec<BuildLog>) -> Result<()> {
-        // Get the plugins directory
-        let plugins_dir = dirs::data_local_dir()
-            .ok_or_else(|| anyhow::anyhow!("Failed to get local data directory"))?
-            .join("WebArcade")
-            .join("plugins")
-            .join(&self.plugin_id);
+        // Use the output_dir we already computed
+        let plugins_dir = &self.output_dir;
 
         logs.push(BuildLog {
             log_type: "info".to_string(),
@@ -928,11 +984,16 @@ pub extern "C" fn plugin_metadata() -> *const u8 {{
         use zip::write::FileOptions;
         use zip::ZipWriter;
 
-        // Put zip files in AppData/Local/WebArcade/dist
-        let appdata_dir = dirs::data_local_dir()
-            .or_else(|| dirs::data_dir())
-            .expect("Could not determine data directory");
-        let dist_root = appdata_dir.join("WebArcade").join("dist");
+        // Put zip files in {repo_root}/dist or {exe_dir}/dist
+        let dist_root = if let Some(repo_root) = get_repo_root() {
+            repo_root.join("dist")
+        } else {
+            std::env::current_exe()
+                .ok()
+                .and_then(|p| p.parent().map(|p| p.to_path_buf()))
+                .unwrap_or_default()
+                .join("dist")
+        };
         fs::create_dir_all(&dist_root)?;
 
         let zip_path = dist_root.join(format!("{}.zip", self.plugin_id));

@@ -3,8 +3,10 @@ dist
 .env*.local
 /node_modules
 
-# Project data
+# Plugin source, compiled output, and build artifacts
 projects/
+plugins/
+build/
 
 # Database and data files
 data/

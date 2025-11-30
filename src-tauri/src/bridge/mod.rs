@@ -19,6 +19,75 @@ use http_body_util::{Full, combinators::BoxBody};
 use std::convert::Infallible;
 
 use crate::bridge::core::{EventBus, WebSocketBridge, RouterRegistry, DynamicPluginLoader};
+use std::path::PathBuf;
+
+/// Get the plugins directory based on environment
+/// - Development: {repo_root}/plugins (detected by checking if exe is in target/debug or target/release)
+/// - Production: {exe_dir}/plugins (next to the executable)
+fn get_plugins_dir() -> PathBuf {
+    let exe_path = std::env::current_exe().ok();
+    let exe_dir = exe_path.as_ref()
+        .and_then(|p| p.parent().map(|p| p.to_path_buf()));
+
+    // Check if we're in development mode by looking for "target\debug" in path
+    // Note: target\release is NOT dev mode - it's a production build being tested
+    let is_dev = exe_path.as_ref()
+        .and_then(|p| p.to_str())
+        .map(|s| s.contains("target\\debug") || s.contains("target/debug"))
+        .unwrap_or(false);
+
+    if is_dev {
+        // Development: use repo root's plugins/ directory
+        // Navigate up from src-tauri/target/debug to repo root
+        if let Some(exe) = &exe_path {
+            if let Some(target_dir) = exe.parent() { // debug or release
+                if let Some(target) = target_dir.parent() { // target
+                    if let Some(src_tauri) = target.parent() { // src-tauri
+                        if let Some(repo_root) = src_tauri.parent() { // repo root
+                            let plugins_dir = repo_root.join("plugins");
+                            if plugins_dir.exists() || std::fs::create_dir_all(&plugins_dir).is_ok() {
+                                log::info!("📁 Development mode: loading plugins from {:?}", plugins_dir);
+                                return plugins_dir;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        // Fallback: try current directory
+        let cwd_plugins = std::env::current_dir()
+            .unwrap_or_default()
+            .join("plugins");
+        log::info!("📁 Development mode (fallback): loading plugins from {:?}", cwd_plugins);
+        cwd_plugins
+    } else {
+        // Production: try multiple locations
+        // 1. First check next to executable (Windows MSI installs here)
+        if let Some(ref dir) = exe_dir {
+            let plugins_dir = dir.join("plugins");
+            if plugins_dir.exists() {
+                log::info!("📁 Production mode: loading plugins from {:?}", plugins_dir);
+                return plugins_dir;
+            }
+        }
+
+        // 2. Check in Resources folder (macOS .app bundle)
+        if let Some(ref dir) = exe_dir {
+            let resources_plugins = dir.join("../Resources/plugins");
+            if resources_plugins.exists() {
+                log::info!("📁 Production mode (Resources): loading plugins from {:?}", resources_plugins);
+                return resources_plugins;
+            }
+        }
+
+        // 3. Fallback to exe directory even if plugins folder doesn't exist yet
+        let plugins_dir = exe_dir
+            .unwrap_or_default()
+            .join("plugins");
+        log::info!("📁 Production mode (fallback): loading plugins from {:?}", plugins_dir);
+        plugins_dir
+    }
+}
 
 /// Start the WebArcade bridge server
 pub async fn run_server() -> Result<()> {
@@ -39,13 +108,6 @@ pub async fn run_server() -> Result<()> {
 
     let event_bus = Arc::new(EventBus::new());
 
-    // Get data path for plugins
-    let data_dir = dirs::data_local_dir()
-        .ok_or_else(|| anyhow::anyhow!("Failed to get local data directory"))?
-        .join("WebArcade");
-
-    std::fs::create_dir_all(&data_dir)?;
-
     // Create router registry
     let router_registry = RouterRegistry::new();
 
@@ -54,10 +116,7 @@ pub async fn run_server() -> Result<()> {
 
     // Load dynamic (runtime) plugins
     info!("📦 Loading dynamic plugins...");
-    let plugins_dir = dirs::data_local_dir()
-        .expect("Failed to get local data directory")
-        .join("WebArcade")
-        .join("plugins");
+    let plugins_dir = get_plugins_dir();
 
     let mut dynamic_loader = DynamicPluginLoader::new(plugins_dir.clone());
 

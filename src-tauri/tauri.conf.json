@@ -33,7 +33,9 @@
         {
           "identifier": "main-capability",
           "description": "Capability for main window",
-          "windows": ["main"],
+          "windows": [
+            "main"
+          ],
           "permissions": [
             "core:default",
             "core:app:default",
@@ -202,8 +204,13 @@
       "icons/128x128@2x.png",
       "icons/icon.ico"
     ],
-    "resources": [
-      "scripts/build_plugin.js"
-    ]
+    "resources": {
+      "scripts/build_plugin.js": "scripts/",
+      "../plugins/demo/": "plugins/demo/",
+      "../plugins/engine/": "plugins/engine/",
+      "../plugins/filesystem/": "plugins/filesystem/",
+      "../plugins/systemMonitor/": "plugins/systemMonitor/",
+      "../plugins/themes/": "plugins/themes/"
+    }
   }
 }
