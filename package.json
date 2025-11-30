@@ -22,7 +22,8 @@
     "daisyui": "^5.0.50",
     "kill-port": "^2.0.1",
     "solid-js": "^1.9.7",
-    "solid-refresh": "^0.7.5"
+    "solid-refresh": "^0.7.5",
+    "web-audio-daw": "^4.13.4"
   },
   "devDependencies": {
     "@rspack/cli": "^1.4.11",

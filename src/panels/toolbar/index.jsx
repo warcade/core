@@ -1,11 +1,29 @@
 import { Show, For, createMemo } from 'solid-js';
 import { toolbarItems, toolbarGroups, toolbarVisible } from '@/api/plugin';
+import { viewportStore } from '@/panels/viewport/store';
 
 const Toolbar = () => {
-  // Get sorted toolbar items grouped by their group
+  // Get the current viewport type directly from the store
+  const currentViewportType = () => {
+    const activeTab = viewportStore.tabs.find(t => t.id === viewportStore.activeTabId);
+    return activeTab?.type || null;
+  };
+
+  // Get sorted toolbar items grouped by their group, filtered by active viewport
   const groupedItems = createMemo(() => {
-    const items = Array.from(toolbarItems().values()).sort((a, b) => a.order - b.order);
-    const groups = Array.from(toolbarGroups().values()).sort((a, b) => a.order - b.order);
+    const currentViewport = currentViewportType();
+    const allItems = Array.from(toolbarItems().values());
+    const allGroups = Array.from(toolbarGroups().values());
+
+    // Filter items by current viewport
+    const items = allItems
+      .filter(item => item.viewport === currentViewport)
+      .sort((a, b) => a.order - b.order);
+
+    // Filter groups by current viewport
+    const groups = allGroups
+      .filter(group => group.viewport === currentViewport)
+      .sort((a, b) => a.order - b.order);
 
     // Create a map of group id to items
     const groupMap = new Map();
@@ -44,8 +62,8 @@ const Toolbar = () => {
 
   return (
     <Show when={toolbarVisible() && hasItems()}>
-      <div class="flex-shrink-0 bg-base-200 border-b border-base-300 px-2 py-1">
-        <div class="flex items-center gap-1">
+      <div class="flex-shrink-0 flex items-stretch bg-base-200 border-b border-base-300 px-2 py-1" data-tauri-drag-region>
+        <div class="flex items-center gap-1" style={{ '-webkit-app-region': 'no-drag' }}>
           <For each={groupedItems()}>
             {(group, groupIndex) => (
               <>
@@ -85,6 +103,8 @@ const Toolbar = () => {
             )}
           </For>
         </div>
+        {/* Spacer for window dragging */}
+        <div class="flex-1" data-tauri-drag-region />
       </div>
     </Show>
   );

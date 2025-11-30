@@ -1,9 +1,63 @@
 import { createSignal, createMemo, For, Show, onMount, onCleanup, createEffect } from 'solid-js';
-import { IconFileText, IconX, IconStar, IconCopy, IconPlayerPlay, IconPlayerPause, IconChairDirector, IconChevronDown } from '@tabler/icons-solidjs';
+import { IconFileText, IconX, IconStar, IconCopy, IconPlayerPlay, IconPlayerPause, IconChairDirector, IconChevronDown, IconMinus, IconSquare } from '@tabler/icons-solidjs';
 import { viewportStore, viewportActions } from "./store";
 import { viewportTypes } from "@/api/plugin";
+import { getCurrentWindow } from '@tauri-apps/api/window';
 
-const ViewportTabs = () => {
+const ViewportTabs = (props) => {
+  const [isMaximized, setIsMaximized] = createSignal(false);
+
+  // Check maximize state for window controls
+  createEffect(() => {
+    if (props.showWindowControls && typeof window !== 'undefined' && window.__TAURI_INTERNALS__) {
+      const checkMaximizeState = async () => {
+        try {
+          const currentWindow = getCurrentWindow();
+          const maximized = await currentWindow.isMaximized();
+          setIsMaximized(maximized);
+        } catch (error) {}
+      };
+      checkMaximizeState();
+
+      const handleResize = () => checkMaximizeState();
+      window.addEventListener('resize', handleResize);
+      onCleanup(() => window.removeEventListener('resize', handleResize));
+    }
+  });
+
+  // Window control handlers
+  const handleMinimize = async () => {
+    try {
+      const win = getCurrentWindow();
+      await win.minimize();
+    } catch (error) {}
+  };
+
+  const handleMaximize = async () => {
+    try {
+      const win = getCurrentWindow();
+      const currentMaximized = await win.isMaximized();
+      if (currentMaximized) {
+        await win.unmaximize();
+        setIsMaximized(false);
+      } else {
+        await win.maximize();
+        setIsMaximized(true);
+      }
+    } catch (error) {}
+  };
+
+  const handleClose = async () => {
+    try {
+      const { emit } = await import('@tauri-apps/api/event');
+      await emit('proceed-with-close');
+    } catch (error) {
+      try {
+        const win = getCurrentWindow();
+        await win.close();
+      } catch (e) {}
+    }
+  };
   const [contextMenu, setContextMenu] = createSignal(null);
   const [editingTab, setEditingTab] = createSignal(null);
   const [editingName, setEditingName] = createSignal('');
@@ -231,8 +285,8 @@ const ViewportTabs = () => {
 
   return (
     <>
-      <div ref={containerRef} className="flex items-stretch h-8 overflow-hidden relative bg-base-200">
-        <div ref={tabsContainerRef} className="flex items-center min-w-0 flex-1 overflow-x-hidden">
+      <div ref={containerRef} className="flex items-stretch h-8 overflow-hidden relative bg-base-200" data-tauri-drag-region>
+        <div ref={tabsContainerRef} className="flex items-center min-w-0 overflow-x-hidden" style={{ '-webkit-app-region': 'no-drag' }}>
           <For each={tabs()}>
             {(tab, index) => {
               const Icon = getViewportIcon(tab.type);
@@ -242,7 +296,7 @@ const ViewportTabs = () => {
               return (
                 <div
                   classList={{
-                    'group flex items-center gap-2 px-3 py-1 border-r border-neutral cursor-pointer transition-all select-none min-w-0 max-w-48 flex-shrink-0 h-full relative border-t border-b border-neutral': true,
+                    'group flex items-center gap-2 px-3 py-1 border-r border-base-300 cursor-pointer transition-all select-none min-w-0 max-w-48 flex-shrink-0 h-full relative border-t border-b border-base-300': true,
                     'bg-primary/15 text-primary': isActive(),
                     'text-base-content/60 hover:text-base-content': !isActive(),
                     'hidden': !isVisible()
@@ -302,9 +356,12 @@ const ViewportTabs = () => {
           </For>
         </div>
 
+        {/* Spacer for window dragging - fills remaining space after tabs */}
+        <div class="flex-1 min-w-4" data-tauri-drag-region />
+
         {/* Dropdown button for overflow tabs */}
         <Show when={overflowTabs().length > 0}>
-          <div className="relative flex items-center">
+          <div className="relative flex items-center" style={{ '-webkit-app-region': 'no-drag' }}>
             <button
               ref={dropdownButtonRef}
               onClick={() => {
@@ -314,11 +371,45 @@ const ViewportTabs = () => {
                 }
                 setOverflowDropdown(!overflowDropdown());
               }}
-              className="flex items-center justify-center px-2 h-full border-r border-t border-b border-neutral bg-base-300 hover:bg-base-200 text-base-content/60 hover:text-base-content transition-colors"
+              className="flex items-center justify-center px-2 h-full border-r border-t border-b border-base-300 bg-base-300 hover:bg-base-200 text-base-content/60 hover:text-base-content transition-colors"
               title={`${overflowTabs().length} more tab${overflowTabs().length > 1 ? 's' : ''}`}
             >
               <IconChevronDown className="w-4 h-4" />
               <span className="text-xs ml-1">{overflowTabs().length}</span>
+            </button>
+          </div>
+        </Show>
+
+        {/* Window Controls - shown when top menu is hidden */}
+        <Show when={props.showWindowControls && typeof window !== 'undefined' && window.__TAURI_INTERNALS__}>
+          <div
+            className="flex items-center"
+            style={{ '-webkit-app-region': 'no-drag' }}
+          >
+            <button
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                handleMinimize();
+              }}
+              className="w-8 h-8 flex items-center justify-center text-base-content/60 hover:text-base-content hover:bg-base-300 transition-colors cursor-pointer"
+              title="Minimize"
+            >
+              <IconMinus className="w-4 h-4" />
+            </button>
+            <button
+              onClick={handleMaximize}
+              className="w-8 h-8 flex items-center justify-center text-base-content/60 hover:text-base-content hover:bg-base-300 transition-colors cursor-pointer"
+              title={isMaximized() ? "Restore" : "Maximize"}
+            >
+              {isMaximized() ? <IconCopy className="w-4 h-4" /> : <IconSquare className="w-4 h-4" />}
+            </button>
+            <button
+              onClick={handleClose}
+              className="w-8 h-8 flex items-center justify-center text-base-content/60 hover:text-error hover:bg-error/10 transition-colors cursor-pointer"
+              title="Close"
+            >
+              <IconX className="w-4 h-4" />
             </button>
           </div>
         </Show>

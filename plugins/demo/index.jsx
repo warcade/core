@@ -1,10 +1,6 @@
 import { createPlugin } from '@/api/plugin';
 import { IconCheck, IconX, IconBox } from '@tabler/icons-solidjs';
 import DemoViewport from './DemoViewport.jsx';
-import DemoLeftPanel from './DemoLeftPanel.jsx';
-import DemoRightPanel from './DemoRightPanel.jsx';
-import DemoBottomPanel from './DemoBottomPanel.jsx';
-import DemoFooterButton from './DemoFooterButton.jsx';
 
 export default createPlugin({
   id: 'demo',
@@ -21,26 +17,6 @@ export default createPlugin({
       label: 'Demo',
       component: DemoViewport,
       description: 'Demo viewport showcasing all UI features'
-    });
-
-    // Register left panel (scoped to demo-viewport)
-    api.leftPanel({
-      component: DemoLeftPanel,
-      viewport: 'demo-viewport'
-    });
-
-    // Register right panel (scoped to demo-viewport)
-    api.rightPanel({
-      component: DemoRightPanel,
-      viewport: 'demo-viewport'
-    });
-
-    // Register bottom panel tab (scoped to demo-viewport)
-    api.bottomTab('demo-console', {
-      title: 'Demo Console',
-      component: DemoBottomPanel,
-      viewport: 'demo-viewport',
-      order: 10
     });
 
     // Register toolbar buttons (simple static icons)
@@ -97,20 +73,8 @@ export default createPlugin({
       ]
     });
 
-    // Register footer button
-    api.footer('demo-status', {
-      component: DemoFooterButton,
-      order: 50,
-      section: 'status'
-    });
-
-    // Open the demo viewport and show panels
+    // Open the demo viewport
     api.open('demo-viewport');
-
-    // Show bottom panel after a short delay to ensure viewport is active
-    setTimeout(() => {
-      api.showBottomPanel(true);
-    }, 100);
 
     console.log('[Demo Plugin] All components registered successfully');
   },

@@ -33,9 +33,10 @@ export const viewportActions = {
   addViewportTab: (tab) => {
     const currentTabs = viewportStore.tabs;
     setViewportStore('tabs', (tabs) => [...tabs, tab]);
-    
+
     if (currentTabs.length === 0 || !viewportStore.activeTabId) {
-      setViewportStore('activeTabId', tab.id);
+      // Use setActiveViewportTab to ensure event is dispatched
+      viewportActions.setActiveViewportTab(tab.id);
     }
   },
   

@@ -3,6 +3,10 @@ import { IconChevronRight, IconMinus, IconSquare, IconCopy, IconX } from '@table
 import { topMenuItems, topMenuButtons, horizontalMenuButtonsEnabled } from '@/api/plugin';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import ViewportTabs from '@/panels/viewport/ViewportTabs.jsx';
+import { viewportStore } from '@/panels/viewport/store';
+
+// Signal to track if top menu has items (exported for ViewportTabs to use)
+export const [hasTopMenuItems, setHasTopMenuItems] = createSignal(false);
 
 function TopMenu() {
   const [activeMenu, setActiveMenu] = createSignal(null);
@@ -131,10 +135,20 @@ function TopMenu() {
     };
   };
 
-  // Create dynamic menu structure from plugin extensions only
+  // Get the current viewport type directly from the store
+  const currentViewportType = () => {
+    const activeTab = viewportStore.tabs.find(t => t.id === viewportStore.activeTabId);
+    return activeTab?.type || null;
+  };
+
+  // Create dynamic menu structure from plugin extensions only, filtered by viewport
   const menuStructure = createMemo(() => {
+    const currentViewport = currentViewportType();
     const pluginMenuItems = topMenuItems();
+
+    // Filter menu items by current viewport
     const pluginMenuArray = Array.from(pluginMenuItems.values())
+      .filter(item => item.viewport === currentViewport)
       .sort((a, b) => (a.order || 0) - (b.order || 0));
 
     const menuStructure = {};
@@ -149,6 +163,9 @@ function TopMenu() {
         }
       ];
     });
+
+    // Update the exported signal
+    setHasTopMenuItems(Object.keys(menuStructure).length > 0);
 
     return menuStructure;
   });
@@ -183,113 +200,119 @@ function TopMenu() {
     }
   };
 
+  // Check if we have any menus to show
+  const hasMenus = () => Object.keys(menuStructure()).length > 0;
+
   return (
     <>
-      <div
-        class="relative w-full h-8 bg-base-300 backdrop-blur-md shadow-sm flex items-center px-2"
-        data-tauri-drag-region
-      >
-        {/* Viewport Tabs */}
-        <div class="flex items-center overflow-hidden">
-          <ViewportTabs />
-        </div>
+      {/* Top row: Menu items + window controls - only show if there are menus */}
+      <Show when={hasMenus()}>
+        <div
+          class="relative w-full h-8 bg-base-300 backdrop-blur-md shadow-sm flex items-center px-2"
+          data-tauri-drag-region
+        >
+          {/* Show old menu buttons if horizontalMenuButtonsEnabled */}
+          <Show when={horizontalMenuButtonsEnabled()}>
+            <div
+              style={{
+                '-webkit-app-region': 'no-drag'
+              }}
+              class="flex items-center"
+            >
+              <For each={Object.entries(menuStructure())}>
+                {([menuName, _items]) => (
+                  <div class="relative inline-block">
+                    <button
+                      onClick={(e) => handleMenuClick(menuName, e)}
+                      onMouseEnter={(e) => {
+                        if (activeMenu()) {
 
-        {/* Draggable spacer - provides area to drag window */}
-        <div class="flex-1 min-w-16" data-tauri-drag-region />
+                          const rect = e.currentTarget.getBoundingClientRect();
+                          const position = calculateDropdownPosition(rect, 224);
+                          setMenuPosition({
+                            left: position.left,
+                            top: rect.bottom + 1
+                          });
+                          setActiveMenu(menuName);
+                        }
+                      }}
+                      class={`menu-button px-3 py-1 text-sm text-base-content hover:bg-base-300 rounded transition-colors cursor-pointer ${
+                        activeMenu() === menuName ? 'bg-base-300' : ''
+                      }`}
+                    >
+                      {menuName}
+                    </button>
+                  </div>
+                )}
+              </For>
+            </div>
+          </Show>
 
-        {/* Show old menu buttons if horizontalMenuButtonsEnabled */}
-        <Show when={horizontalMenuButtonsEnabled()}>
+          {/* Draggable spacer - provides area to drag window */}
+          <div class="flex-1 min-w-16" data-tauri-drag-region />
+
+          {/* Plugin-registered top menu buttons (notifications, settings, etc.) */}
           <div
+            class="flex items-center relative"
             style={{
-              '-webkit-app-region': 'no-drag'
+              '-webkit-app-region': 'no-drag',
+              'z-index': 150
             }}
-            class="flex items-center"
           >
-            <For each={Object.entries(menuStructure())}>
-              {([menuName, _items]) => (
-                <div class="relative inline-block">
-                  <button
-                    onClick={(e) => handleMenuClick(menuName, e)}
-                    onMouseEnter={(e) => {
-                      if (activeMenu()) {
-
-                        const rect = e.currentTarget.getBoundingClientRect();
-                        const position = calculateDropdownPosition(rect, 224);
-                        setMenuPosition({
-                          left: position.left,
-                          top: rect.bottom + 1
-                        });
-                        setActiveMenu(menuName);
-                      }
-                    }}
-                    class={`menu-button px-3 py-1 text-sm text-base-content hover:bg-base-300 rounded transition-colors cursor-pointer ${
-                      activeMenu() === menuName ? 'bg-base-300' : ''
-                    }`}
-                  >
-                    {menuName}
-                  </button>
-                </div>
-              )}
+            <For each={sortedTopMenuButtons()}>
+              {(button) => {
+                const Component = button.component;
+                return Component ? <Component /> : null;
+              }}
             </For>
           </div>
-        </Show>
 
-        {/* Plugin-registered top menu buttons (notifications, settings, etc.) */}
-        <div
-          class="flex items-center relative"
-          style={{
-            '-webkit-app-region': 'no-drag',
-            'z-index': 150
-          }}
-        >
-          <For each={sortedTopMenuButtons()}>
-            {(button) => {
-              const Component = button.component;
-              return Component ? <Component /> : null;
-            }}
-          </For>
-        </div>
-
-        {/* Tauri Window Controls - Only show in desktop app and hide in background mode */}
-        {typeof window !== 'undefined' && window.__TAURI_INTERNALS__ && (
-          <div
-            class="flex items-center gap-3 text-xs text-gray-500"
-            style={{
-              '-webkit-app-region': 'no-drag'
-            }}
-          >
-            <div class="flex items-center">
-              <button
-                onClick={(e) => {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  handleMinimize();
-                }}
-                class="w-8 h-8 flex items-center justify-center text-base-content/60 hover:text-base-content hover:bg-base-300 rounded transition-colors cursor-pointer"
-                title="Minimize"
-                style={{ '-webkit-app-region': 'no-drag' }}
-              >
-                <IconMinus class="w-4 h-4" />
-              </button>
-              <button
-                onClick={handleMaximize}
-                class="w-8 h-8 flex items-center justify-center text-base-content/60 hover:text-base-content hover:bg-base-300 rounded transition-colors cursor-pointer"
-                title={isMaximized() ? "Restore" : "Maximize"}
-                style={{ '-webkit-app-region': 'no-drag' }}
-              >
-                {isMaximized() ? <IconCopy class="w-4 h-4" /> : <IconSquare class="w-4 h-4" />}
-              </button>
-              <button
-                onClick={handleClose}
-                class="w-8 h-8 flex items-center justify-center text-base-content/60 hover:text-error hover:bg-error/10 rounded transition-colors cursor-pointer"
-                title="Close"
-                style={{ '-webkit-app-region': 'no-drag' }}
-              >
-                <IconX class="w-4 h-4" />
-              </button>
+          {/* Tauri Window Controls - Only show in desktop app and hide in background mode */}
+          {typeof window !== 'undefined' && window.__TAURI_INTERNALS__ && (
+            <div
+              class="flex items-center gap-3 text-xs text-gray-500"
+              style={{
+                '-webkit-app-region': 'no-drag'
+              }}
+            >
+              <div class="flex items-center">
+                <button
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    handleMinimize();
+                  }}
+                  class="w-8 h-8 flex items-center justify-center text-base-content/60 hover:text-base-content hover:bg-base-300 rounded transition-colors cursor-pointer"
+                  title="Minimize"
+                  style={{ '-webkit-app-region': 'no-drag' }}
+                >
+                  <IconMinus class="w-4 h-4" />
+                </button>
+                <button
+                  onClick={handleMaximize}
+                  class="w-8 h-8 flex items-center justify-center text-base-content/60 hover:text-base-content hover:bg-base-300 rounded transition-colors cursor-pointer"
+                  title={isMaximized() ? "Restore" : "Maximize"}
+                  style={{ '-webkit-app-region': 'no-drag' }}
+                >
+                  {isMaximized() ? <IconCopy class="w-4 h-4" /> : <IconSquare class="w-4 h-4" />}
+                </button>
+                <button
+                  onClick={handleClose}
+                  class="w-8 h-8 flex items-center justify-center text-base-content/60 hover:text-error hover:bg-error/10 rounded transition-colors cursor-pointer"
+                  title="Close"
+                  style={{ '-webkit-app-region': 'no-drag' }}
+                >
+                  <IconX class="w-4 h-4" />
+                </button>
+              </div>
             </div>
-          </div>
-        )}
+          )}
+        </div>
+      </Show>
+
+      {/* Second row: Viewport Tabs - pass whether to show window controls */}
+      <div class="w-full bg-base-200">
+        <ViewportTabs showWindowControls={!hasMenus()} />
       </div>
 
       <Show when={horizontalMenuButtonsEnabled() && activeMenu() && menuPosition()}>

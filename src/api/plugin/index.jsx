@@ -527,6 +527,21 @@ export class PluginAPI {
         console.error('[PluginAPI] Failed to track viewport type:', err);
       }
     });
+
+    // Also check for existing active tab on init (in case tab was set before listener)
+    setTimeout(async () => {
+      if (!activeViewportType()) {
+        try {
+          const { viewportStore } = await import('@/panels/viewport/store');
+          const activeTab = viewportStore.tabs.find(t => t.id === viewportStore.activeTabId);
+          if (activeTab) {
+            setActiveViewportType(activeTab.type);
+          }
+        } catch (err) {
+          // Ignore
+        }
+      }
+    }, 100);
   }
   
   // Helper method to get the current plugin ID for registration
@@ -729,6 +744,9 @@ export class PluginAPI {
   }
 
   registerTopMenuItem(id, config) {
+    // Get the viewport type from config, or from the currently active viewport
+    const viewportType = config.viewport || activeViewportType() || 'global';
+
     const menuItem = {
       id,
       label: config.label,
@@ -736,7 +754,8 @@ export class PluginAPI {
       icon: config.icon,
       submenu: config.submenu,
       order: config.order || 100,
-      plugin: config.plugin || this.getCurrentPluginId() || 'unknown'
+      plugin: config.plugin || this.getCurrentPluginId() || 'unknown',
+      viewport: viewportType
     };
 
     setTopMenuItems(prev => new Map(prev.set(id, menuItem)));
@@ -899,6 +918,9 @@ export class PluginAPI {
   }
 
   registerToolbarItem(id, config) {
+    // Get the viewport type from config, or from the currently active viewport
+    const viewportType = config.viewport || activeViewportType() || 'global';
+
     const item = {
       id,
       icon: config.icon,
@@ -912,7 +934,8 @@ export class PluginAPI {
       active: config.active || (() => false),
       visible: config.visible || (() => true),
       separator: config.separator || false, // Add separator after this item
-      plugin: config.plugin || this.getCurrentPluginId() || 'unknown'
+      plugin: config.plugin || this.getCurrentPluginId() || 'unknown',
+      viewport: viewportType
     };
 
     setToolbarItems(prev => new Map(prev.set(id, item)));
@@ -929,13 +952,17 @@ export class PluginAPI {
   }
 
   registerToolbarGroup(id, config) {
+    // Get the viewport type from config, or from the currently active viewport
+    const viewportType = config.viewport || activeViewportType() || 'global';
+
     const group = {
       id,
       label: config.label,
       order: config.order || 100,
       collapsible: config.collapsible !== false,
       visible: config.visible || (() => true),
-      plugin: config.plugin || this.getCurrentPluginId() || 'unknown'
+      plugin: config.plugin || this.getCurrentPluginId() || 'unknown',
+      viewport: viewportType
     };
 
     setToolbarGroups(prev => new Map(prev.set(id, group)));
@@ -1369,6 +1396,38 @@ const filteredBottomPanelTabs = () => {
   return result;
 };
 
+// Computed signal that returns toolbar items filtered by active viewport
+const filteredToolbarItems = () => {
+  const currentViewport = activeViewportType();
+  const allItems = toolbarItems();
+  const result = new Map();
+
+  for (const [id, item] of allItems) {
+    // Only include item if it matches the current viewport
+    if (item.viewport === currentViewport) {
+      result.set(id, item);
+    }
+  }
+
+  return result;
+};
+
+// Computed signal that returns toolbar groups filtered by active viewport
+const filteredToolbarGroups = () => {
+  const currentViewport = activeViewportType();
+  const allGroups = toolbarGroups();
+  const result = new Map();
+
+  for (const [id, group] of allGroups) {
+    // Only include group if it matches the current viewport
+    if (group.viewport === currentViewport) {
+      result.set(id, group);
+    }
+  }
+
+  return result;
+};
+
 export {
   topMenuItems,
   topMenuButtons,
@@ -1383,6 +1442,8 @@ export {
   filteredBottomPanelTabs,
   toolbarItems,
   toolbarGroups,
+  filteredToolbarItems,
+  filteredToolbarGroups,
   propertiesPanelVisible,
   leftPanelVisible,
   horizontalMenuButtonsEnabled,
