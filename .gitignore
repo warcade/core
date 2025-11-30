@@ -3,8 +3,8 @@ dist
 .env*.local
 /node_modules
 
-# Plugin build artifacts (compiled DLLs are auto-generated)
-plugins/**/*.dll
+# Plugin build artifacts (compiled DLLs are tracked via Git LFS for demo)
+# plugins/**/*.dll  # Now tracked via Git LFS
 plugins/**/*.so
 plugins/**/*.dylib
 build/
