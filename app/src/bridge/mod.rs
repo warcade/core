@@ -80,7 +80,10 @@ pub async fn run_server() -> Result<()> {
     info!("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
 
     // Get configuration
-    let port = env::var("BRIDGE_PORT").unwrap_or_else(|_| "3001".to_string());
+    // Static files are served on port 3000 (FILE_PORT)
+    // Bridge API is served on port 3001 (BRIDGE_PORT)
+    let file_port = env::var("FILE_PORT").unwrap_or_else(|_| "3000".to_string());
+    let bridge_port = env::var("BRIDGE_PORT").unwrap_or_else(|_| "3001".to_string());
     let ws_port = env::var("WS_PORT").unwrap_or_else(|_| "3002".to_string());
 
     // Initialize core systems
@@ -161,7 +164,6 @@ pub async fn run_server() -> Result<()> {
                                     use hyper::body::Bytes;
                                     use http_body_util::combinators::BoxBody;
                                     use http_body_util::BodyExt;
-                                    use libloading::Symbol;
                                     use std::collections::HashMap;
 
                                     // Extract method before consuming request
@@ -264,26 +266,58 @@ pub async fn run_server() -> Result<()> {
                                     };
 
                                     // Look up the plugin library
-                                    let libs = crate::bridge::core::plugin_exports::PLUGIN_LIBRARIES.lock().unwrap();
+                                    let lib = {
+                                        let libs = crate::bridge::core::plugin_exports::PLUGIN_LIBRARIES.lock().unwrap();
+                                        libs.get(&plugin_id).cloned()
+                                    };
 
-                                    if let Some(lib) = libs.get(&plugin_id) {
-                                        // Get the shared runtime pointer
-                                        let runtime_ptr = crate::bridge::core::plugin_exports::get_shared_runtime_ptr();
+                                    if let Some(lib) = lib {
+                                        // The DLL handler creates its own runtime internally,
+                                        // so we just pass a null pointer for the runtime_ptr parameter
+                                        let runtime_ptr: *const () = std::ptr::null();
 
                                         // New handler signature: extern "C" fn(*const u8, usize, *const ()) -> *const u8
                                         // Args: request_json_ptr, request_json_len, runtime_ptr -> response_json_ptr
-                                        let result: Result<Symbol<extern "C" fn(*const u8, usize, *const ()) -> *const u8>, _> = unsafe {
+                                        let result: Result<libloading::Symbol<extern "C" fn(*const u8, usize, *const ()) -> *const u8>, _> = unsafe {
                                             lib.get(handler_name.as_bytes())
                                         };
 
-                                        let response_ptr = match result {
+                                        let response_json_str = match result {
                                             Ok(handler_fn) => {
-                                                // Call the handler with full HTTP context and shared runtime
-                                                handler_fn(request_json.as_ptr(), request_json.len(), runtime_ptr)
+                                                // Call the handler with full HTTP context
+                                                let ptr = handler_fn(request_json.as_ptr(), request_json.len(), runtime_ptr);
+                                                if ptr.is_null() {
+                                                    let error_json = serde_json::json!({
+                                                        "error": "Handler returned null"
+                                                    }).to_string();
+
+                                                    return hyper::Response::builder()
+                                                        .status(500)
+                                                        .header("Content-Type", "application/json")
+                                                        .header("Access-Control-Allow-Origin", "*")
+                                                        .body(BoxBody::new(Full::new(Bytes::from(error_json))))
+                                                        .unwrap();
+                                                }
+
+                                                // Read the response JSON string from the pointer
+                                                let response_str = unsafe {
+                                                    let c_str = std::ffi::CStr::from_ptr(ptr as *const i8);
+                                                    c_str.to_string_lossy().into_owned()
+                                                };
+
+                                                // Free the string (if the plugin exports free_string)
+                                                let free_result: Result<libloading::Symbol<extern "C" fn(*mut u8)>, _> = unsafe {
+                                                    lib.get(b"free_string")
+                                                };
+                                                if let Ok(free_fn) = free_result {
+                                                    free_fn(ptr as *mut u8);
+                                                }
+
+                                                response_str
                                             }
                                             Err(e) => {
                                                 let error_json = serde_json::json!({
-                                                    "error": format!("Handler function '{}' not found in plugin: {}", handler_name, e)
+                                                    "error": format!("Handler function '{}' not found: {}", handler_name, e)
                                                 }).to_string();
 
                                                 return hyper::Response::builder()
@@ -294,33 +328,6 @@ pub async fn run_server() -> Result<()> {
                                                     .unwrap();
                                             }
                                         };
-
-                                        if response_ptr.is_null() {
-                                            let error_json = serde_json::json!({
-                                                "error": "Handler returned null"
-                                            }).to_string();
-
-                                            return hyper::Response::builder()
-                                                .status(500)
-                                                .header("Content-Type", "application/json")
-                                                .header("Access-Control-Allow-Origin", "*")
-                                                .body(BoxBody::new(Full::new(Bytes::from(error_json))))
-                                                .unwrap();
-                                        }
-
-                                        // Read the response JSON string from the pointer
-                                        let response_json_str = unsafe {
-                                            let c_str = std::ffi::CStr::from_ptr(response_ptr as *const i8);
-                                            c_str.to_string_lossy().into_owned()
-                                        };
-
-                                        // Free the string (if the plugin exports free_string)
-                                        let free_result: Result<Symbol<extern "C" fn(*mut u8)>, _> = unsafe {
-                                            lib.get(b"free_string")
-                                        };
-                                        if let Ok(free_fn) = free_result {
-                                            free_fn(response_ptr as *mut u8);
-                                        }
 
                                         // Parse the response JSON to extract status, headers, and body
                                         let response_data: serde_json::Value = match serde_json::from_str(&response_json_str) {
@@ -438,18 +445,49 @@ pub async fn run_server() -> Result<()> {
         }
     });
 
-    // Start HTTP server
-    let addr: SocketAddr = format!("127.0.0.1:{}", port).parse()?;
-    let listener = TcpListener::bind(addr).await?;
+    // Start static file server on port 3000
+    let file_addr: SocketAddr = format!("127.0.0.1:{}", file_port).parse()?;
+    let file_listener = TcpListener::bind(file_addr).await?;
+    info!("📁 Static file server listening on http://{}", file_addr);
 
-    info!("🌐 HTTP server listening on http://{}", addr);
+    tokio::spawn(async move {
+        loop {
+            match file_listener.accept().await {
+                Ok((stream, _)) => {
+                    let io = TokioIo::new(stream);
+                    tokio::task::spawn(async move {
+                        let service = service_fn(|req| async move {
+                            Ok::<_, std::convert::Infallible>(handle_static_request(req).await)
+                        });
+
+                        let conn = http1::Builder::new()
+                            .serve_connection(io, service)
+                            .with_upgrades();
+
+                        if let Err(err) = conn.await {
+                            error!("Error serving static file connection: {:?}", err);
+                        }
+                    });
+                }
+                Err(e) => {
+                    error!("Failed to accept static file connection: {}", e);
+                }
+            }
+        }
+    });
+
+    // Start Bridge API server on port 3001
+    let bridge_addr: SocketAddr = format!("127.0.0.1:{}", bridge_port).parse()?;
+    let bridge_listener = TcpListener::bind(bridge_addr).await?;
+
+    info!("🌐 Bridge API server listening on http://{}", bridge_addr);
     info!("📡 WebSocket server listening on ws://127.0.0.1:{}", ws_port);
     info!("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
     info!("✨ WebArcade Bridge is ready!");
     info!("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
 
     loop {
-        let (stream, _) = listener.accept().await?;
+        let (stream, _) = bridge_listener.accept().await?;
         let io = TokioIo::new(stream);
         let router_registry = router_registry.clone_registry();
 
@@ -457,7 +495,7 @@ pub async fn run_server() -> Result<()> {
             let service = service_fn(move |req| {
                 let router = router_registry.clone_registry();
                 async move {
-                    Ok::<_, std::convert::Infallible>(handle_request(req, router).await)
+                    Ok::<_, std::convert::Infallible>(handle_api_request(req, router).await)
                 }
             });
 
@@ -466,7 +504,7 @@ pub async fn run_server() -> Result<()> {
                 .with_upgrades();
 
             if let Err(err) = conn.await {
-                error!("Error serving connection: {:?}", err);
+                error!("Error serving API connection: {:?}", err);
             }
         });
     }
@@ -513,11 +551,19 @@ fn serve_static_file(path: &str) -> Option<Response<BoxBody<Bytes, Infallible>>>
             _ => "application/octet-stream",
         };
 
+        // Cache hashed assets (contain hash in filename) for 1 year
+        // Don't cache HTML files - they should always be fresh
+        let cache_control = if extension == Some("html") {
+            "no-cache, no-store, must-revalidate"
+        } else {
+            "public, max-age=31536000"
+        };
+
         return Some(Response::builder()
             .status(StatusCode::OK)
             .header("Content-Type", content_type)
             .header("Access-Control-Allow-Origin", "*")
-            .header("Cache-Control", "public, max-age=31536000")
+            .header("Cache-Control", cache_control)
             .body(BoxBody::new(Full::new(Bytes::from(contents.to_vec())).map_err(|_: std::convert::Infallible| unreachable!())))
             .unwrap());
     }
@@ -525,7 +571,35 @@ fn serve_static_file(path: &str) -> Option<Response<BoxBody<Bytes, Infallible>>>
     None
 }
 
-async fn handle_request(req: Request<Incoming>, router_registry: RouterRegistry) -> Response<BoxBody<Bytes, Infallible>> {
+/// Handle static file requests on port 3000
+/// This server only serves static files (embedded dist/) and SPA fallback
+async fn handle_static_request(req: Request<Incoming>) -> Response<BoxBody<Bytes, Infallible>> {
+    let method = req.method().clone();
+    let path = req.uri().path().to_string();
+
+    // Handle CORS preflight OPTIONS requests
+    if method == hyper::Method::OPTIONS {
+        return Response::builder()
+            .status(StatusCode::OK)
+            .header("Access-Control-Allow-Origin", "*")
+            .header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS, PATCH")
+            .header("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Requested-With")
+            .header("Access-Control-Max-Age", "86400")
+            .body(full_body(""))
+            .unwrap();
+    }
+
+    // Serve static files (or SPA fallback for paths without extension)
+    if let Some(response) = serve_static_file(&path) {
+        return response;
+    }
+
+    error_response(StatusCode::NOT_FOUND, &format!("Not found: {}", path))
+}
+
+/// Handle API requests on port 3001
+/// This server handles plugin routes and API endpoints only
+async fn handle_api_request(req: Request<Incoming>, router_registry: RouterRegistry) -> Response<BoxBody<Bytes, Infallible>> {
     let method = req.method().clone();
     let path = req.uri().path().to_string();
     let query = req.uri().query().unwrap_or("").to_string();
@@ -561,12 +635,7 @@ async fn handle_request(req: Request<Incoming>, router_registry: RouterRegistry)
         }
     }
 
-    // Try serving static files from embedded dist/ first
-    if let Some(response) = serve_static_file(&path) {
-        return response;
-    }
-
-    // Parse plugin name from path
+    // Parse plugin name from path and try plugin routes
     // Expected format: /{plugin_name}/{route}
     if path.len() > 1 {
         let path_parts: Vec<&str> = path.trim_start_matches('/').split('/').collect();
@@ -578,6 +647,8 @@ async fn handle_request(req: Request<Incoming>, router_registry: RouterRegistry)
                 "/".to_string()
             };
 
+            log::debug!("Trying plugin route: plugin={}, path={}", plugin_name, plugin_path);
+
             // Try to route to plugin
             if let Some(response) = router_registry.route(
                 plugin_name,
@@ -586,12 +657,15 @@ async fn handle_request(req: Request<Incoming>, router_registry: RouterRegistry)
                 &query,
                 req,
             ).await {
+                log::debug!("Plugin route matched!");
                 return response;
+            } else {
+                log::debug!("No plugin route matched");
             }
         }
     }
 
-    error_response(StatusCode::NOT_FOUND, &format!("Not found: {}", path))
+    error_response(StatusCode::NOT_FOUND, &format!("API route not found: {}", path))
 }
 
 fn health_response() -> Response<BoxBody<Bytes, Infallible>> {

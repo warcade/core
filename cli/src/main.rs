@@ -1,18 +1,19 @@
-//! WebArcade CLI - Plugin Builder
+//! WebArcade CLI - Plugin Builder & App Packager
 //!
-//! A standalone CLI tool for building WebArcade plugins from source.
-//!
-//! Plugins are stored as source directories in plugins/ and compiled to single .dll files.
-//! The .dll contains everything: compiled Rust, bundled frontend JS, and manifest.
+//! A standalone CLI tool for building WebArcade plugins and packaging the app.
 //!
 //! Usage:
 //!   webarcade new <plugin-id>       Create a new plugin project
 //!   webarcade build <plugin-id>     Build a specific plugin
 //!   webarcade build --all           Build all plugins
 //!   webarcade list                  List available plugins
+//!   webarcade package               Package the app (interactive)
+//!   webarcade package --locked      Package with embedded plugins
 
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
+use dialoguer::{Input, Select, Confirm, theme::ColorfulTheme};
+use console::style;
 use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -20,11 +21,11 @@ use std::process::Command;
 
 #[derive(Parser)]
 #[command(name = "webarcade")]
-#[command(about = "WebArcade CLI - Build and manage plugins")]
+#[command(about = "WebArcade CLI - Build plugins and package apps")]
 #[command(version)]
 struct Cli {
     #[command(subcommand)]
-    command: Commands,
+    command: Option<Commands>,
 }
 
 #[derive(Subcommand)]
@@ -57,41 +58,233 @@ enum Commands {
     },
     /// List available plugins in projects/
     List,
+    /// Package the app for distribution
+    Package {
+        /// Skip interactive prompts and use current config
+        #[arg(long)]
+        skip_prompts: bool,
+
+        /// Use locked mode (embed plugins in binary)
+        #[arg(long)]
+        locked: bool,
+
+        /// App name (skips prompt)
+        #[arg(long)]
+        name: Option<String>,
+
+        /// App version (skips prompt)
+        #[arg(long)]
+        version: Option<String>,
+
+        /// App description (skips prompt)
+        #[arg(long)]
+        description: Option<String>,
+
+        /// App author (skips prompt)
+        #[arg(long)]
+        author: Option<String>,
+    },
 }
 
 fn main() {
     let cli = Cli::parse();
 
-    match cli.command {
+    let result = match cli.command {
+        Some(cmd) => run_command(cmd),
+        None => interactive_menu(),
+    };
+
+    if let Err(e) = result {
+        eprintln!("{} {}", style("Error:").red().bold(), e);
+        std::process::exit(1);
+    }
+}
+
+fn run_command(cmd: Commands) -> Result<()> {
+    match cmd {
         Commands::New { plugin_id, name, author, frontend_only } => {
-            if let Err(e) = create_plugin(&plugin_id, name, author, frontend_only) {
-                eprintln!("Error: {}", e);
-                std::process::exit(1);
-            }
+            create_plugin(&plugin_id, name, author, frontend_only)
         }
         Commands::Build { plugin_id, all } => {
             if all {
-                if let Err(e) = build_all_plugins() {
-                    eprintln!("Error: {}", e);
-                    std::process::exit(1);
-                }
+                build_all_plugins()
             } else if let Some(id) = plugin_id {
-                if let Err(e) = build_plugin(&id) {
-                    eprintln!("Error: {}", e);
-                    std::process::exit(1);
-                }
+                build_plugin(&id)
             } else {
-                eprintln!("Please specify a plugin ID or use --all");
-                std::process::exit(1);
+                anyhow::bail!("Please specify a plugin ID or use --all");
             }
         }
-        Commands::List => {
-            if let Err(e) = list_plugins() {
-                eprintln!("Error: {}", e);
-                std::process::exit(1);
+        Commands::List => list_plugins(),
+        Commands::Package { skip_prompts, locked, name, version, description, author } => {
+            package_app(skip_prompts, locked, name, version, description, author)
+        }
+    }
+}
+
+fn print_banner() {
+    println!();
+    println!("{}", style(r#"
+    ╦ ╦┌─┐┌┐ ╔═╗┬─┐┌─┐┌─┐┌┬┐┌─┐
+    ║║║├┤ ├┴┐╠═╣├┬┘│  ├─┤ ││├┤
+    ╚╩╝└─┘└─┘╩ ╩┴└─└─┘┴ ┴─┴┘└─┘"#).cyan().bold());
+    println!("    {}", style("Build amazing desktop apps with ease").dim());
+    println!();
+}
+
+fn wait_for_enter() {
+    println!();
+    print!("{}", style("Press Enter to continue...").dim());
+    std::io::stdout().flush().unwrap();
+    let _ = std::io::stdin().read_line(&mut String::new());
+}
+
+fn clear_screen() {
+    // Clear screen and move cursor to top
+    print!("\x1B[2J\x1B[1;1H");
+    std::io::stdout().flush().unwrap();
+}
+
+fn interactive_menu() -> Result<()> {
+    let theme = ColorfulTheme::default();
+
+    clear_screen();
+    print_banner();
+
+    loop {
+        let menu_items = vec![
+            "📦 Package App        - Build and create installer",
+            "🔨 Build Plugin       - Compile a plugin",
+            "✨ Create Plugin      - Create a new plugin project",
+            "📋 List Plugins       - Show available plugins",
+            "🚪 Exit",
+        ];
+
+        let selection = Select::with_theme(&theme)
+            .with_prompt("What would you like to do?")
+            .items(&menu_items)
+            .default(0)
+            .interact()?;
+
+        println!();
+
+        let result = match selection {
+            0 => package_app(false, false, None, None, None, None),
+            1 => interactive_build_plugin(),
+            2 => interactive_create_plugin(),
+            3 => list_plugins(),
+            4 => {
+                println!("{}", style("👋 Goodbye! Happy coding!").cyan());
+                println!();
+                return Ok(());
+            }
+            _ => Ok(()),
+        };
+
+        if let Err(e) = result {
+            eprintln!("{} {}", style("Error:").red().bold(), e);
+        }
+
+        wait_for_enter();
+        clear_screen();
+        print_banner();
+    }
+}
+
+fn interactive_build_plugin() -> Result<()> {
+    let theme = ColorfulTheme::default();
+    let plugins_dir = get_plugins_dir()?;
+
+    // Get list of plugin directories
+    let mut plugins: Vec<String> = Vec::new();
+    if plugins_dir.exists() {
+        for entry in fs::read_dir(&plugins_dir)? {
+            let entry = entry?;
+            if entry.path().is_dir() {
+                plugins.push(entry.file_name().to_string_lossy().to_string());
             }
         }
     }
+
+    if plugins.is_empty() {
+        println!("{}", style("No plugins found. Create one first!").yellow());
+        return Ok(());
+    }
+
+    // Add "Build All" option
+    let mut options = vec!["🔨 Build All Plugins".to_string()];
+    for plugin in &plugins {
+        options.push(format!("   {}", plugin));
+    }
+    options.push("← Back".to_string());
+
+    let selection = Select::with_theme(&theme)
+        .with_prompt("Select a plugin to build")
+        .items(&options)
+        .default(0)
+        .interact()?;
+
+    println!();
+
+    if selection == 0 {
+        build_all_plugins()
+    } else if selection == options.len() - 1 {
+        Ok(()) // Back to menu
+    } else {
+        let plugin_id = &plugins[selection - 1];
+        build_plugin(plugin_id)
+    }
+}
+
+fn interactive_create_plugin() -> Result<()> {
+    let theme = ColorfulTheme::default();
+
+    let plugin_id: String = Input::with_theme(&theme)
+        .with_prompt("Plugin ID (e.g., my-plugin)")
+        .validate_with(|input: &String| {
+            if input.is_empty() {
+                Err("Plugin ID cannot be empty")
+            } else if !input.chars().all(|c| c.is_alphanumeric() || c == '-' || c == '_') {
+                Err("Plugin ID can only contain letters, numbers, hyphens, and underscores")
+            } else {
+                Ok(())
+            }
+        })
+        .interact_text()?;
+
+    let display_name: String = Input::with_theme(&theme)
+        .with_prompt("Display name")
+        .default(plugin_id.split(|c| c == '-' || c == '_')
+            .map(|s| {
+                let mut chars = s.chars();
+                match chars.next() {
+                    Some(c) => c.to_uppercase().chain(chars).collect(),
+                    None => String::new(),
+                }
+            })
+            .collect::<Vec<String>>()
+            .join(" "))
+        .interact_text()?;
+
+    let author: String = Input::with_theme(&theme)
+        .with_prompt("Author")
+        .default("WebArcade".to_string())
+        .interact_text()?;
+
+    let plugin_types = vec![
+        "Full-stack (frontend + Rust backend)",
+        "Frontend-only (just JavaScript)",
+    ];
+    let type_selection = Select::with_theme(&theme)
+        .with_prompt("Plugin type")
+        .items(&plugin_types)
+        .default(0)
+        .interact()?;
+
+    let frontend_only = type_selection == 1;
+
+    println!();
+
+    create_plugin(&plugin_id, Some(display_name), Some(author), frontend_only)
 }
 
 /// Get the repo root directory (where cli, plugins, app folders are)
@@ -618,7 +811,7 @@ impl PluginBuilder {
         self.copy_rust_files(&self.plugin_dir, &rust_build_dir)?;
 
         // Find API crate
-        let api_path = self.repo_root.join("src-tauri").join("api");
+        let api_path = self.repo_root.join("api");
         if !api_path.join("Cargo.toml").exists() {
             anyhow::bail!("API crate not found at: {}", api_path.display());
         }
@@ -761,12 +954,11 @@ rustflags = ["-C", "link-args=-undefined dynamic_lookup"]
 
             format!(r##"
 #[no_mangle]
-pub extern "C" fn {handler_name}(request_ptr: *const u8, request_len: usize, runtime_ptr: *const ()) -> *const u8 {{
+pub extern "C" fn {handler_name}(request_ptr: *const u8, request_len: usize, _runtime_ptr: *const ()) -> *const u8 {{
     use std::panic;
     use std::ffi::CString;
     use api::ffi_http::Response as FFIResponse;
     use api::http::HttpRequest;
-    use api::tokio::runtime::Runtime;
 
     let result = panic::catch_unwind(|| {{
         let _http_request = match HttpRequest::from_ffi_json(request_ptr, request_len) {{
@@ -780,8 +972,13 @@ pub extern "C" fn {handler_name}(request_ptr: *const u8, request_len: usize, run
         #[allow(unused_variables)]
         let http_request = _http_request;
 
-        let runtime = unsafe {{ &*(runtime_ptr as *const Runtime) }};
-        runtime.block_on(async {{
+        // Create a dedicated single-threaded runtime for this handler
+        // This avoids deadlock when called from within an existing async context
+        let rt = api::tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .expect("Failed to create handler runtime");
+        rt.block_on(async {{
             let handler_result = {handler_call};
             let response = handler_result;
 
@@ -1163,4 +1360,283 @@ pub extern "C" fn has_frontend() -> bool {{
 
         Ok(routes)
     }
+}
+
+// ============================================================================
+// PACKAGE COMMAND - Interactive app packaging
+// ============================================================================
+
+#[derive(Debug, Clone)]
+struct AppConfig {
+    name: String,
+    version: String,
+    description: String,
+    author: String,
+    identifier: String,
+    locked: bool,
+}
+
+impl AppConfig {
+    fn from_cargo_toml(cargo_toml_path: &Path) -> Result<Self> {
+        let content = fs::read_to_string(cargo_toml_path)?;
+        let doc: toml::Value = content.parse()?;
+
+        let package = doc.get("package").context("Missing [package] section")?;
+        let packager = doc.get("package")
+            .and_then(|p| p.get("metadata"))
+            .and_then(|m| m.get("packager"));
+
+        Ok(Self {
+            name: package.get("name")
+                .and_then(|v| v.as_str())
+                .unwrap_or("MyApp")
+                .to_string(),
+            version: package.get("version")
+                .and_then(|v| v.as_str())
+                .unwrap_or("0.1.0")
+                .to_string(),
+            description: package.get("description")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string(),
+            author: packager
+                .and_then(|p| p.get("authors"))
+                .and_then(|a| a.as_array())
+                .and_then(|arr| arr.first())
+                .and_then(|v| v.as_str())
+                .unwrap_or("Unknown")
+                .to_string(),
+            identifier: packager
+                .and_then(|p| p.get("identifier"))
+                .and_then(|v| v.as_str())
+                .unwrap_or("com.app.myapp")
+                .to_string(),
+            locked: false,
+        })
+    }
+
+    fn write_to_cargo_toml(&self, cargo_toml_path: &Path) -> Result<()> {
+        let content = fs::read_to_string(cargo_toml_path)?;
+        let mut doc: toml_edit::DocumentMut = content.parse()?;
+
+        // Update [package] section
+        doc["package"]["name"] = toml_edit::value(&self.name);
+        doc["package"]["version"] = toml_edit::value(&self.version);
+        doc["package"]["description"] = toml_edit::value(&self.description);
+
+        // Update [package.metadata.packager] section
+        if doc.get("package").is_none() {
+            doc["package"] = toml_edit::table();
+        }
+        if doc["package"].get("metadata").is_none() {
+            doc["package"]["metadata"] = toml_edit::table();
+        }
+        if doc["package"]["metadata"].get("packager").is_none() {
+            doc["package"]["metadata"]["packager"] = toml_edit::table();
+        }
+
+        doc["package"]["metadata"]["packager"]["product-name"] = toml_edit::value(&self.name);
+        doc["package"]["metadata"]["packager"]["identifier"] = toml_edit::value(&self.identifier);
+
+        // Update authors array
+        let mut authors = toml_edit::Array::new();
+        authors.push(&self.author);
+        doc["package"]["metadata"]["packager"]["authors"] = toml_edit::value(authors);
+
+        // Update binaries path to match package name
+        if let Some(binaries) = doc["package"]["metadata"]["packager"].get_mut("binaries") {
+            if let Some(arr) = binaries.as_array_of_tables_mut() {
+                if let Some(first) = arr.iter_mut().next() {
+                    first["path"] = toml_edit::value(&self.name);
+                }
+            }
+        }
+
+        // Update appdata-paths for cleanup on uninstall
+        let mut appdata = toml_edit::Array::new();
+        appdata.push(format!("$LOCALAPPDATA\\{}", &self.name));
+        doc["package"]["metadata"]["packager"]["nsis"]["appdata-paths"] = toml_edit::value(appdata);
+
+        fs::write(cargo_toml_path, doc.to_string())?;
+        Ok(())
+    }
+}
+
+fn package_app(
+    skip_prompts: bool,
+    locked: bool,
+    name: Option<String>,
+    version: Option<String>,
+    description: Option<String>,
+    author: Option<String>,
+) -> Result<()> {
+    let repo_root = get_repo_root()?;
+    let app_dir = repo_root.join("app");
+    let cargo_toml_path = app_dir.join("Cargo.toml");
+
+    if !cargo_toml_path.exists() {
+        anyhow::bail!("app/Cargo.toml not found. Are you in the correct directory?");
+    }
+
+    println!();
+    println!("{}", style("╔══════════════════════════════════════════╗").cyan());
+    println!("{}", style("║       WebArcade App Packager             ║").cyan());
+    println!("{}", style("╚══════════════════════════════════════════╝").cyan());
+    println!();
+
+    // Load existing config
+    let mut config = AppConfig::from_cargo_toml(&cargo_toml_path)?;
+    config.locked = locked;
+
+    let theme = ColorfulTheme::default();
+
+    if !skip_prompts {
+        // Interactive prompts
+        config.name = if let Some(n) = name {
+            n
+        } else {
+            Input::with_theme(&theme)
+                .with_prompt("App name")
+                .default(config.name)
+                .interact_text()?
+        };
+
+        config.version = if let Some(v) = version {
+            v
+        } else {
+            Input::with_theme(&theme)
+                .with_prompt("Version")
+                .default(config.version)
+                .interact_text()?
+        };
+
+        config.description = if let Some(d) = description {
+            d
+        } else {
+            Input::with_theme(&theme)
+                .with_prompt("Description")
+                .default(config.description)
+                .allow_empty(true)
+                .interact_text()?
+        };
+
+        config.author = if let Some(a) = author {
+            a
+        } else {
+            Input::with_theme(&theme)
+                .with_prompt("Author")
+                .default(config.author)
+                .interact_text()?
+        };
+
+        // Generate identifier from name
+        let default_identifier = format!(
+            "com.{}.app",
+            config.name.to_lowercase().replace(' ', "").replace('-', "")
+        );
+        config.identifier = Input::with_theme(&theme)
+            .with_prompt("Identifier")
+            .default(if config.identifier == "com.app.myapp" { default_identifier } else { config.identifier })
+            .interact_text()?;
+
+        // Plugin mode selection
+        let plugin_modes = vec!["Unlocked (plugins loaded from disk)", "Locked (plugins embedded in binary)"];
+        let mode_index = Select::with_theme(&theme)
+            .with_prompt("Plugin mode")
+            .items(&plugin_modes)
+            .default(if config.locked { 1 } else { 0 })
+            .interact()?;
+        config.locked = mode_index == 1;
+
+        println!();
+        println!("{}", style("Configuration:").bold());
+        println!("  Name:        {}", style(&config.name).green());
+        println!("  Version:     {}", style(&config.version).green());
+        println!("  Description: {}", style(&config.description).green());
+        println!("  Author:      {}", style(&config.author).green());
+        println!("  Identifier:  {}", style(&config.identifier).green());
+        println!("  Plugin mode: {}", style(if config.locked { "Locked" } else { "Unlocked" }).green());
+        println!();
+
+        if !Confirm::with_theme(&theme)
+            .with_prompt("Proceed with packaging?")
+            .default(true)
+            .interact()? {
+            println!("Packaging cancelled.");
+            return Ok(());
+        }
+    } else {
+        // Use provided args or defaults
+        if let Some(n) = name { config.name = n; }
+        if let Some(v) = version { config.version = v; }
+        if let Some(d) = description { config.description = d; }
+        if let Some(a) = author { config.author = a; }
+    }
+
+    println!();
+    println!("{} Updating configuration...", style("[1/4]").bold().dim());
+    config.write_to_cargo_toml(&cargo_toml_path)?;
+    println!("  {} Cargo.toml updated", style("✓").green());
+
+    println!("{} Building frontend...", style("[2/4]").bold().dim());
+    let frontend_status = Command::new("bun")
+        .current_dir(&repo_root)
+        .args(["run", "build:prod"])
+        .status()
+        .context("Failed to run bun")?;
+
+    if !frontend_status.success() {
+        anyhow::bail!("Frontend build failed");
+    }
+    println!("  {} Frontend built", style("✓").green());
+
+    println!("{} Compiling Rust binary...", style("[3/4]").bold().dim());
+    let mut cargo_args = vec!["build", "--release"];
+    if config.locked {
+        cargo_args.push("--features");
+        cargo_args.push("locked-plugins");
+    }
+
+    let cargo_status = Command::new("cargo")
+        .current_dir(&app_dir)
+        .args(&cargo_args)
+        .status()
+        .context("Failed to run cargo build")?;
+
+    if !cargo_status.success() {
+        anyhow::bail!("Cargo build failed");
+    }
+    println!("  {} Binary compiled", style("✓").green());
+
+    println!("{} Creating installer...", style("[4/4]").bold().dim());
+    let packager_status = Command::new("cargo")
+        .current_dir(&app_dir)
+        .args(["packager", "--release"])
+        .status()
+        .context("Failed to run cargo packager")?;
+
+    if !packager_status.success() {
+        anyhow::bail!("Packaging failed");
+    }
+    println!("  {} Installer created", style("✓").green());
+
+    // Find the output file
+    let output_dir = app_dir.join("target").join("release");
+    let installer_name = format!("{}_{}_x64-setup.exe", config.name, config.version);
+    let installer_path = output_dir.join(&installer_name);
+
+    println!();
+    println!("{}", style("╔══════════════════════════════════════════╗").green());
+    println!("{}", style("║           Packaging Complete!            ║").green());
+    println!("{}", style("╚══════════════════════════════════════════╝").green());
+    println!();
+    println!("  {} {}", style("Binary:").bold(), output_dir.join(format!("{}.exe", config.name)).display());
+    if installer_path.exists() {
+        println!("  {} {}", style("Installer:").bold(), installer_path.display());
+    } else {
+        println!("  {} {}", style("Installer:").bold(), output_dir.display());
+    }
+    println!();
+
+    Ok(())
 }

@@ -157,8 +157,9 @@ fn main() {
 }
 
 fn get_webview_url() -> &'static str {
-    // Always load from bridge server which serves embedded dist/
-    "http://127.0.0.1:3001"
+    // Load from static file server (port 3000)
+    // API calls go to port 3001 separately
+    "http://127.0.0.1:3000"
 }
 
 fn handle_ipc_command(request: &IpcRequest, window: &Window) -> IpcResponse {

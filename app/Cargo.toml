@@ -1,5 +1,5 @@
 [package]
-name = "Emils"
+name = "test"
 version = "0.1.0"
 edition = "2021"
 description = "game"
@@ -56,14 +56,15 @@ panic = "abort"     # Smaller binary
 strip = true        # Strip symbols
 
 [package.metadata.packager]
-product-name = "Emils"
+product-name = "test"
 identifier = "com.emils.app"
 icons = ["icon.ico", "icon.png"]
+authors = ["Unknown"]
 
 [[package.metadata.packager.binaries]]
-path = "Emils"
+path = "test"
 main = true
 
 [package.metadata.packager.nsis]
 display-language-selector = false
-appdata-paths = ["$LOCALAPPDATA\\Emils"]
+appdata-paths = ['$LOCALAPPDATA\test']

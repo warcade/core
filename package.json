@@ -10,6 +10,8 @@
     "app": "bun run build:prod && cd app && cargo build --release && cargo packager --release",
     "app:locked": "bun run build:prod && cd app && cargo build --release --features locked-plugins && cargo packager --release",
     "app:run": "cd app/target/release && Emils.exe",
+    "cli": "cd cli && cargo run --release",
+    "package": "cd cli && cargo run --release -- package",
     "clean": "rm -rf app/dist app/target cli/target",
     "lint": "oxlint",
     "plugin:new": "cd cli && cargo run --release -- new",

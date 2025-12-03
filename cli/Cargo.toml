@@ -12,8 +12,12 @@ path = "src/main.rs"
 anyhow = "1.0"
 clap = { version = "4.5", features = ["derive"] }
 serde_json = "1.0"
+serde = { version = "1.0", features = ["derive"] }
 toml = "0.8"
+toml_edit = "0.22"
 regex = "1.10"
+dialoguer = { version = "0.11", features = ["fuzzy-select"] }
+console = "0.15"
 
 [profile.release]
 opt-level = "z"
