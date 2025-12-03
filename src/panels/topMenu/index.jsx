@@ -1,12 +1,19 @@
 import { createSignal, createEffect, onCleanup, createMemo, For, Show } from 'solid-js';
 import { IconChevronRight, IconMinus, IconSquare, IconCopy, IconX } from '@tabler/icons-solidjs';
 import { topMenuItems, topMenuButtons, horizontalMenuButtonsEnabled, viewportTabsVisible } from '@/api/plugin';
-import { getCurrentWindow } from '@tauri-apps/api/window';
 import ViewportTabs from '@/panels/viewport/ViewportTabs.jsx';
 import { viewportStore } from '@/panels/viewport/store';
 
 // Signal to track if top menu has items (exported for ViewportTabs to use)
 export const [hasTopMenuItems, setHasTopMenuItems] = createSignal(false);
+
+// Helper to get window API
+const getWindowApi = () => {
+  if (typeof window !== 'undefined' && window.__WEBARCADE__) {
+    return window.__WEBARCADE__.window;
+  }
+  return null;
+};
 
 function TopMenu() {
   const [activeMenu, setActiveMenu] = createSignal(null);
@@ -16,11 +23,11 @@ function TopMenu() {
 
   // Check initial maximize state and listen for window changes
   createEffect(() => {
-    if (typeof window !== 'undefined' && window.__TAURI_INTERNALS__) {
+    const api = getWindowApi();
+    if (api) {
       const checkMaximizeState = async () => {
         try {
-          const currentWindow = getCurrentWindow();
-          const maximized = await currentWindow.isMaximized();
+          const maximized = await api.isMaximized();
           setIsMaximized(maximized);
         } catch (error) {
         }
@@ -40,25 +47,22 @@ function TopMenu() {
     }
   });
 
-  // Tauri window control functions
+  // Window control functions
   const handleMinimize = async () => {
     try {
-      const window = getCurrentWindow();
-      await window.minimize();
+      const api = getWindowApi();
+      if (api) await api.minimize();
     } catch (error) {
     }
   };
 
   const handleMaximize = async () => {
     try {
-      const window = getCurrentWindow();
-      const currentMaximized = await window.isMaximized();
-      if (currentMaximized) {
-        await window.unmaximize();
-        setIsMaximized(false);
-      } else {
-        await window.maximize();
-        setIsMaximized(true);
+      const api = getWindowApi();
+      if (api) {
+        await api.toggleMaximize();
+        const maximized = await api.isMaximized();
+        setIsMaximized(maximized);
       }
     } catch (error) {
     }
@@ -66,31 +70,12 @@ function TopMenu() {
 
   const handleClose = async () => {
     try {
-      const proceedWithClose = async () => {
-        try {
-          const { emit } = await import('@tauri-apps/api/event');
-          await emit('proceed-with-close');
-        } catch (closeError) {
-          try {
-            const window = getCurrentWindow();
-            await window.close();
-          } catch (windowError) {
-            alert('Unable to close the application. Please close manually.');
-          }
-        }
-      };
-
-      await proceedWithClose();
-
-    } catch (error) {
-      const closeAnyway = confirm('An error occurred while checking for unsaved changes. Do you want to close anyway?');
-      if (closeAnyway) {
-        try {
-          const { emit } = await import('@tauri-apps/api/event');
-          await emit('proceed-with-close');
-        } catch (exitError) {
-        }
+      const api = getWindowApi();
+      if (api) {
+        await api.close();
       }
+    } catch (error) {
+      alert('Unable to close the application. Please close manually.');
     }
   };
 
@@ -267,8 +252,8 @@ function TopMenu() {
             </For>
           </div>
 
-          {/* Tauri Window Controls - Only show in desktop app and hide in background mode */}
-          {typeof window !== 'undefined' && window.__TAURI_INTERNALS__ && (
+          {/* Window Controls - Only show in desktop app */}
+          {typeof window !== 'undefined' && (window.__WEBARCADE__ || window.__TAURI_INTERNALS__) && (
             <div
               class="flex items-center gap-3 text-xs text-gray-500"
               style={{

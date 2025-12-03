@@ -31,15 +31,13 @@ export default function App() {
     const theme = localStorage.getItem('theme') || 'dark';
     document.documentElement.setAttribute('data-theme', theme);
 
-    // Setup window close handling for Tauri (handles Alt+F4, system close, etc.)
+    // Setup window close handling (handles Alt+F4, system close, etc.)
     const setupWindowCloseHandler = async () => {
       try {
-        // Check if we're in Tauri environment
-        if (window.__TAURI__) {
-          const { listen } = await import('@tauri-apps/api/event');
-
-          // Listen for window close request from Tauri (triggered by system/OS close)
-          await listen('window-close-requested', async () => {
+        // Check if we're in WebArcade environment
+        if (window.__WEBARCADE__) {
+          // WebArcade handles close via IPC
+          window.__WEBARCADE__.event.listen('window-close-requested', async () => {
             await handleWindowCloseRequest();
           });
         }
@@ -48,18 +46,6 @@ export default function App() {
     };
 
     setupWindowCloseHandler();
-
-    // Show window immediately
-    setTimeout(async () => {
-      if (typeof window !== 'undefined' && window.__TAURI_INTERNALS__) {
-        try {
-          const { getCurrentWindow } = await import('@tauri-apps/api/window');
-          const currentWindow = getCurrentWindow();
-          await currentWindow.show();
-        } catch (error) {
-        }
-      }
-    }, 50);
   })
 
   // Simplified window close handler

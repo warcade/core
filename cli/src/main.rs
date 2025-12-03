@@ -94,12 +94,12 @@ fn main() {
     }
 }
 
-/// Get the repo root directory (where cli, plugins folders are)
+/// Get the repo root directory (where cli, plugins, app folders are)
 fn get_repo_root() -> Result<PathBuf> {
     let mut current = std::env::current_dir()?;
 
     // Check if we're already at repo root
-    if current.join("plugins").exists() && current.join("src-tauri").exists() {
+    if current.join("plugins").exists() && current.join("app").exists() {
         return Ok(current);
     }
 
@@ -114,7 +114,7 @@ fn get_repo_root() -> Result<PathBuf> {
 
     // Walk up the directory tree
     loop {
-        if current.join("plugins").exists() && current.join("src-tauri").exists() {
+        if current.join("plugins").exists() && current.join("app").exists() {
             return Ok(current);
         }
         if !current.pop() {
@@ -122,7 +122,7 @@ fn get_repo_root() -> Result<PathBuf> {
         }
     }
 
-    anyhow::bail!("Could not find repo root (looking for plugins/ directory)")
+    anyhow::bail!("Could not find repo root (looking for plugins/ and app/ directories)")
 }
 
 fn get_plugins_dir() -> Result<PathBuf> {
@@ -134,7 +134,7 @@ fn get_build_dir() -> Result<PathBuf> {
 }
 
 fn get_dist_plugins_dir() -> Result<PathBuf> {
-    Ok(get_repo_root()?.join("build").join("plugins"))
+    Ok(get_repo_root()?.join("app").join("plugins"))
 }
 
 fn create_plugin(plugin_id: &str, name: Option<String>, author: Option<String>, frontend_only: bool) -> Result<()> {
@@ -539,10 +539,10 @@ impl PluginBuilder {
             self.bundle_frontend()?;
         }
 
-        // Frontend-only plugins: output JS file to build/plugins
+        // Frontend-only plugins: output JS file to app/plugins
         if !has_backend {
             let js_name = format!("{}.js", self.plugin_id);
-            println!("  Installing {} to build/plugins/...", js_name);
+            println!("  Installing {} to app/plugins/...", js_name);
             let src_plugin_js = self.build_dir.join("plugin.js");
             let dest_plugin_js = self.dist_plugins_dir.join(&js_name);
             if src_plugin_js.exists() {
@@ -578,8 +578,8 @@ impl PluginBuilder {
         println!("  Compiling DLL...");
         self.compile_backend()?;
 
-        // Copy final DLL to build/plugins
-        println!("  Installing {}.dll to build/plugins/...", self.plugin_id);
+        // Copy final DLL to app/plugins
+        println!("  Installing {}.dll to app/plugins/...", self.plugin_id);
         self.install_dll()?;
 
         // Clean up build directory
@@ -1020,7 +1020,7 @@ pub extern "C" fn has_frontend() -> bool {{
         self.install_npm_dependencies()?;
 
         // Find bundler script
-        let bundler_script = self.repo_root.join("src-tauri").join("scripts").join("build_plugin.js");
+        let bundler_script = self.repo_root.join("app").join("scripts").join("build_plugin.js");
 
         if !bundler_script.exists() {
             println!("    Warning: Frontend bundler not found at {}", bundler_script.display());

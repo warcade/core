@@ -2,7 +2,7 @@ use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use anyhow::Result;
 use std::sync::Arc;
-use crate::core::plugin_context::PluginContext;
+use crate::bridge::core::plugin_context::PluginContext;
 
 /// Plugin metadata
 #[derive(Debug, Clone, Serialize, Deserialize)]

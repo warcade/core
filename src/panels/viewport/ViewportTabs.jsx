@@ -2,18 +2,25 @@ import { createSignal, createMemo, For, Show, onMount, onCleanup, createEffect }
 import { IconFileText, IconX, IconStar, IconCopy, IconPlayerPlay, IconPlayerPause, IconChairDirector, IconChevronDown, IconMinus, IconSquare } from '@tabler/icons-solidjs';
 import { viewportStore, viewportActions } from "./store";
 import { viewportTypes } from "@/api/plugin";
-import { getCurrentWindow } from '@tauri-apps/api/window';
+
+// Helper to get window API
+const getWindowApi = () => {
+  if (typeof window !== 'undefined' && window.__WEBARCADE__) {
+    return window.__WEBARCADE__.window;
+  }
+  return null;
+};
 
 const ViewportTabs = (props) => {
   const [isMaximized, setIsMaximized] = createSignal(false);
 
   // Check maximize state for window controls
   createEffect(() => {
-    if (props.showWindowControls && typeof window !== 'undefined' && window.__TAURI_INTERNALS__) {
+    const api = getWindowApi();
+    if (props.showWindowControls && api) {
       const checkMaximizeState = async () => {
         try {
-          const currentWindow = getCurrentWindow();
-          const maximized = await currentWindow.isMaximized();
+          const maximized = await api.isMaximized();
           setIsMaximized(maximized);
         } catch (error) {}
       };
@@ -28,35 +35,27 @@ const ViewportTabs = (props) => {
   // Window control handlers
   const handleMinimize = async () => {
     try {
-      const win = getCurrentWindow();
-      await win.minimize();
+      const api = getWindowApi();
+      if (api) await api.minimize();
     } catch (error) {}
   };
 
   const handleMaximize = async () => {
     try {
-      const win = getCurrentWindow();
-      const currentMaximized = await win.isMaximized();
-      if (currentMaximized) {
-        await win.unmaximize();
-        setIsMaximized(false);
-      } else {
-        await win.maximize();
-        setIsMaximized(true);
+      const api = getWindowApi();
+      if (api) {
+        await api.toggleMaximize();
+        const maximized = await api.isMaximized();
+        setIsMaximized(maximized);
       }
     } catch (error) {}
   };
 
   const handleClose = async () => {
     try {
-      const { emit } = await import('@tauri-apps/api/event');
-      await emit('proceed-with-close');
-    } catch (error) {
-      try {
-        const win = getCurrentWindow();
-        await win.close();
-      } catch (e) {}
-    }
+      const api = getWindowApi();
+      if (api) await api.close();
+    } catch (error) {}
   };
   const [contextMenu, setContextMenu] = createSignal(null);
   const [editingTab, setEditingTab] = createSignal(null);
@@ -381,7 +380,7 @@ const ViewportTabs = (props) => {
         </Show>
 
         {/* Window Controls - shown when top menu is hidden */}
-        <Show when={props.showWindowControls && typeof window !== 'undefined' && window.__TAURI_INTERNALS__}>
+        <Show when={props.showWindowControls && typeof window !== 'undefined' && (window.__WEBARCADE__ || window.__TAURI_INTERNALS__)}>
           <div
             className="flex items-center"
             style={{ '-webkit-app-region': 'no-drag' }}

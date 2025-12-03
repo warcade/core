@@ -1,7 +1,7 @@
 // Export functions that dynamic plugins will call
 // These are the implementations that webarcade_api::Context calls
 
-use crate::core::plugin_context::PluginContext;
+use crate::bridge::core::plugin_context::PluginContext;
 use std::collections::HashMap;
 use std::sync::{Mutex, Arc};
 use once_cell::sync::Lazy;

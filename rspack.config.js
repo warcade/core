@@ -147,7 +147,7 @@ const config = {
   },
   
   output: {
-    path: resolve(import.meta.dirname, 'dist'),
+    path: resolve(import.meta.dirname, 'app/dist'),
     filename: isProduction ? 'assets/[name]-[contenthash].js' : 'assets/[name].js',
     chunkFilename: isProduction ? 'assets/[name]-[contenthash].js' : 'assets/[name].js',
     assetModuleFilename: isProduction ? 'assets/[name]-[contenthash][ext]' : 'assets/[name][ext]',

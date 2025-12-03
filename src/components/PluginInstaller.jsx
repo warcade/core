@@ -1,5 +1,4 @@
 import { createSignal, Show, onMount, onCleanup } from 'solid-js';
-import { invoke } from '@tauri-apps/api/core';
 
 const PluginInstaller = () => {
   const [isDragging, setIsDragging] = createSignal(false);
@@ -82,15 +81,27 @@ const PluginInstaller = () => {
     setMessageType('info');
 
     try {
-      // Read file as array buffer
+      // Read file as array buffer and convert to base64
       const arrayBuffer = await file.arrayBuffer();
-      const bytes = Array.from(new Uint8Array(arrayBuffer));
+      const bytes = new Uint8Array(arrayBuffer);
+      const base64 = btoa(String.fromCharCode(...bytes));
 
-      // Call Tauri command to install plugin
-      const result = await invoke('install_plugin_from_zip', {
-        zipData: bytes,
-        fileName: file.name
+      // Call bridge API to install plugin
+      const response = await fetch('http://127.0.0.1:3001/api/plugins/install', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          zip_data_base64: base64,
+          file_name: file.name
+        })
       });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || 'Installation failed');
+      }
+
+      const result = await response.json();
 
       showMessage(`Plugin "${result.plugin_name}" installed successfully!`, 'success');
 

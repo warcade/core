@@ -4,9 +4,9 @@ use anyhow::Result;
 use serde::Serialize;
 use serde_json::Value;
 use tokio::sync::broadcast;
-use crate::core::events::{Event, EventBus};
-use crate::core::services::ServiceRegistry;
-use crate::core::plugin_router::{PluginRouter, RouterRegistry};
+use crate::bridge::core::events::{Event, EventBus};
+use crate::bridge::core::services::ServiceRegistry;
+use crate::bridge::core::plugin_router::{PluginRouter, RouterRegistry};
 
 /// Plugin context - API provided to plugins
 #[derive(Clone)]

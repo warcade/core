@@ -1,11 +1,11 @@
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use anyhow::{Result, anyhow};
-use crate::core::plugin::{Plugin, PluginMetadata};
-use crate::core::plugin_context::PluginContext;
-use crate::core::events::EventBus;
-use crate::core::services::ServiceRegistry;
-use crate::core::plugin_router::RouterRegistry;
+use crate::bridge::core::plugin::{Plugin, PluginMetadata};
+use crate::bridge::core::plugin_context::PluginContext;
+use crate::bridge::core::events::EventBus;
+use crate::bridge::core::services::ServiceRegistry;
+use crate::bridge::core::plugin_router::RouterRegistry;
 
 pub struct PluginManager {
     plugins: HashMap<String, Box<dyn Plugin>>,

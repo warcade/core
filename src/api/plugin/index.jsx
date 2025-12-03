@@ -1167,35 +1167,23 @@ export class PluginAPI {
 
   async exit() {
     try {
-      // Check if we're running in Tauri
-      if (typeof window !== 'undefined' && window.__TAURI_INTERNALS__) {
-        const { emit } = await import('@tauri-apps/api/event');
-        await emit('proceed-with-close');
+      // Check if we're running in WebArcade
+      if (typeof window !== 'undefined' && window.__WEBARCADE__) {
+        await window.__WEBARCADE__.window.close();
       } else {
-        // Fallback for non-Tauri environments (e.g., browser development)
-        console.warn('[PluginAPI] exit() called but not running in Tauri environment');
+        console.warn('[PluginAPI] exit() called but not running in desktop environment');
       }
     } catch (error) {
       console.error('[PluginAPI] Failed to exit application:', error);
-      // Try alternative close method
-      try {
-        const { getCurrentWindow } = await import('@tauri-apps/api/window');
-        const window = getCurrentWindow();
-        await window.close();
-      } catch (closeError) {
-        console.error('[PluginAPI] Failed to close window:', closeError);
-      }
     }
   }
 
   async fullscreen(enabled = true) {
     try {
-      if (typeof window !== 'undefined' && window.__TAURI_INTERNALS__) {
-        const { getCurrentWindow } = await import('@tauri-apps/api/window');
-        const appWindow = getCurrentWindow();
-        await appWindow.setFullscreen(enabled);
+      if (typeof window !== 'undefined' && window.__WEBARCADE__) {
+        await window.__WEBARCADE__.window.setFullscreen(enabled);
       } else {
-        console.warn('[PluginAPI] fullscreen() called but not running in Tauri environment');
+        console.warn('[PluginAPI] fullscreen() not available in browser');
       }
     } catch (error) {
       console.error('[PluginAPI] Failed to set fullscreen:', error);
@@ -1204,13 +1192,10 @@ export class PluginAPI {
 
   async setWindowSize(width, height) {
     try {
-      if (typeof window !== 'undefined' && window.__TAURI_INTERNALS__) {
-        const { getCurrentWindow } = await import('@tauri-apps/api/window');
-        const { LogicalSize } = await import('@tauri-apps/api/dpi');
-        const appWindow = getCurrentWindow();
-        await appWindow.setSize(new LogicalSize(width, height));
+      if (typeof window !== 'undefined' && window.__WEBARCADE__) {
+        await window.__WEBARCADE__.window.setSize(width, height);
       } else {
-        console.warn('[PluginAPI] setWindowSize() called but not running in Tauri environment');
+        console.warn('[PluginAPI] setWindowSize() not available in browser');
       }
     } catch (error) {
       console.error('[PluginAPI] Failed to set window size:', error);
@@ -1219,13 +1204,9 @@ export class PluginAPI {
 
   async getWindowSize() {
     try {
-      if (typeof window !== 'undefined' && window.__TAURI_INTERNALS__) {
-        const { getCurrentWindow } = await import('@tauri-apps/api/window');
-        const appWindow = getCurrentWindow();
-        const size = await appWindow.innerSize();
-        return { width: size.width, height: size.height };
+      if (typeof window !== 'undefined' && window.__WEBARCADE__) {
+        return await window.__WEBARCADE__.window.getSize();
       } else {
-        console.warn('[PluginAPI] getWindowSize() called but not running in Tauri environment');
         return { width: window.innerWidth, height: window.innerHeight };
       }
     } catch (error) {
@@ -1236,13 +1217,10 @@ export class PluginAPI {
 
   async setWindowPosition(x, y) {
     try {
-      if (typeof window !== 'undefined' && window.__TAURI_INTERNALS__) {
-        const { getCurrentWindow } = await import('@tauri-apps/api/window');
-        const { LogicalPosition } = await import('@tauri-apps/api/dpi');
-        const appWindow = getCurrentWindow();
-        await appWindow.setPosition(new LogicalPosition(x, y));
+      if (typeof window !== 'undefined' && window.__WEBARCADE__) {
+        await window.__WEBARCADE__.window.setPosition(x, y);
       } else {
-        console.warn('[PluginAPI] setWindowPosition() called but not running in Tauri environment');
+        console.warn('[PluginAPI] setWindowPosition() not available in browser');
       }
     } catch (error) {
       console.error('[PluginAPI] Failed to set window position:', error);
@@ -1251,13 +1229,9 @@ export class PluginAPI {
 
   async getWindowPosition() {
     try {
-      if (typeof window !== 'undefined' && window.__TAURI_INTERNALS__) {
-        const { getCurrentWindow } = await import('@tauri-apps/api/window');
-        const appWindow = getCurrentWindow();
-        const position = await appWindow.outerPosition();
-        return { x: position.x, y: position.y };
+      if (typeof window !== 'undefined' && window.__WEBARCADE__) {
+        return await window.__WEBARCADE__.window.getPosition();
       } else {
-        console.warn('[PluginAPI] getWindowPosition() called but not running in Tauri environment');
         return { x: 0, y: 0 };
       }
     } catch (error) {
@@ -1268,13 +1242,10 @@ export class PluginAPI {
 
   async setWindowMinSize(width, height) {
     try {
-      if (typeof window !== 'undefined' && window.__TAURI_INTERNALS__) {
-        const { getCurrentWindow } = await import('@tauri-apps/api/window');
-        const { LogicalSize } = await import('@tauri-apps/api/dpi');
-        const appWindow = getCurrentWindow();
-        await appWindow.setMinSize(new LogicalSize(width, height));
+      if (typeof window !== 'undefined' && window.__WEBARCADE__) {
+        await window.__WEBARCADE__.window.setMinSize(width, height);
       } else {
-        console.warn('[PluginAPI] setWindowMinSize() called but not running in Tauri environment');
+        console.warn('[PluginAPI] setWindowMinSize() not available in browser');
       }
     } catch (error) {
       console.error('[PluginAPI] Failed to set window min size:', error);
@@ -1283,13 +1254,10 @@ export class PluginAPI {
 
   async setWindowMaxSize(width, height) {
     try {
-      if (typeof window !== 'undefined' && window.__TAURI_INTERNALS__) {
-        const { getCurrentWindow } = await import('@tauri-apps/api/window');
-        const { LogicalSize } = await import('@tauri-apps/api/dpi');
-        const appWindow = getCurrentWindow();
-        await appWindow.setMaxSize(new LogicalSize(width, height));
+      if (typeof window !== 'undefined' && window.__WEBARCADE__) {
+        await window.__WEBARCADE__.window.setMaxSize(width, height);
       } else {
-        console.warn('[PluginAPI] setWindowMaxSize() called but not running in Tauri environment');
+        console.warn('[PluginAPI] setWindowMaxSize() not available in browser');
       }
     } catch (error) {
       console.error('[PluginAPI] Failed to set window max size:', error);
@@ -1298,12 +1266,10 @@ export class PluginAPI {
 
   async centerWindow() {
     try {
-      if (typeof window !== 'undefined' && window.__TAURI_INTERNALS__) {
-        const { getCurrentWindow } = await import('@tauri-apps/api/window');
-        const appWindow = getCurrentWindow();
-        await appWindow.center();
+      if (typeof window !== 'undefined' && window.__WEBARCADE__) {
+        await window.__WEBARCADE__.window.center();
       } else {
-        console.warn('[PluginAPI] centerWindow() called but not running in Tauri environment');
+        console.warn('[PluginAPI] centerWindow() not available in browser');
       }
     } catch (error) {
       console.error('[PluginAPI] Failed to center window:', error);
@@ -1312,12 +1278,10 @@ export class PluginAPI {
 
   async maximizeWindow() {
     try {
-      if (typeof window !== 'undefined' && window.__TAURI_INTERNALS__) {
-        const { getCurrentWindow } = await import('@tauri-apps/api/window');
-        const appWindow = getCurrentWindow();
-        await appWindow.maximize();
+      if (typeof window !== 'undefined' && window.__WEBARCADE__) {
+        await window.__WEBARCADE__.window.maximize();
       } else {
-        console.warn('[PluginAPI] maximizeWindow() called but not running in Tauri environment');
+        console.warn('[PluginAPI] maximizeWindow() not available in browser');
       }
     } catch (error) {
       console.error('[PluginAPI] Failed to maximize window:', error);
@@ -1326,12 +1290,10 @@ export class PluginAPI {
 
   async minimizeWindow() {
     try {
-      if (typeof window !== 'undefined' && window.__TAURI_INTERNALS__) {
-        const { getCurrentWindow } = await import('@tauri-apps/api/window');
-        const appWindow = getCurrentWindow();
-        await appWindow.minimize();
+      if (typeof window !== 'undefined' && window.__WEBARCADE__) {
+        await window.__WEBARCADE__.window.minimize();
       } else {
-        console.warn('[PluginAPI] minimizeWindow() called but not running in Tauri environment');
+        console.warn('[PluginAPI] minimizeWindow() not available in browser');
       }
     } catch (error) {
       console.error('[PluginAPI] Failed to minimize window:', error);
@@ -1340,12 +1302,10 @@ export class PluginAPI {
 
   async unmaximizeWindow() {
     try {
-      if (typeof window !== 'undefined' && window.__TAURI_INTERNALS__) {
-        const { getCurrentWindow } = await import('@tauri-apps/api/window');
-        const appWindow = getCurrentWindow();
-        await appWindow.unmaximize();
+      if (typeof window !== 'undefined' && window.__WEBARCADE__) {
+        await window.__WEBARCADE__.window.unmaximize();
       } else {
-        console.warn('[PluginAPI] unmaximizeWindow() called but not running in Tauri environment');
+        console.warn('[PluginAPI] unmaximizeWindow() not available in browser');
       }
     } catch (error) {
       console.error('[PluginAPI] Failed to unmaximize window:', error);
@@ -1354,12 +1314,9 @@ export class PluginAPI {
 
   async setWindowTitle(title) {
     try {
-      if (typeof window !== 'undefined' && window.__TAURI_INTERNALS__) {
-        const { getCurrentWindow } = await import('@tauri-apps/api/window');
-        const appWindow = getCurrentWindow();
-        await appWindow.setTitle(title);
+      if (typeof window !== 'undefined' && window.__WEBARCADE__) {
+        await window.__WEBARCADE__.window.setTitle(title);
       } else {
-        console.warn('[PluginAPI] setWindowTitle() called but not running in Tauri environment');
         document.title = title;
       }
     } catch (error) {

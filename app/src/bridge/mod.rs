@@ -15,7 +15,7 @@ use log::{info, error};
 use anyhow::Result;
 use hyper::{Request, Response, StatusCode, body::Incoming};
 use hyper::body::Bytes;
-use http_body_util::{Full, combinators::BoxBody};
+use http_body_util::{Full, combinators::BoxBody, BodyExt};
 use std::convert::Infallible;
 
 use crate::bridge::core::{EventBus, WebSocketBridge, RouterRegistry, DynamicPluginLoader};
@@ -23,76 +23,50 @@ use crate::bridge::core::dynamic_plugin_loader::PluginInfo;
 use std::path::PathBuf;
 use std::sync::Mutex;
 use once_cell::sync::Lazy;
+use include_dir::{include_dir, Dir};
+
+/// Embed the dist folder at compile time
+static DIST_DIR: Dir<'_> = include_dir!("$CARGO_MANIFEST_DIR/dist");
 
 /// Global registry of loaded plugins
 pub static LOADED_PLUGINS: Lazy<Mutex<Vec<PluginInfo>>> = Lazy::new(|| Mutex::new(Vec::new()));
 
 /// Get the plugins directory based on environment
-/// - Development: {repo_root}/dist/plugins (built plugins)
+/// - Development: {app}/plugins (built plugins in app folder)
 /// - Production: {exe_dir}/plugins (next to the executable)
 fn get_plugins_dir() -> PathBuf {
     let exe_path = std::env::current_exe().ok();
     let exe_dir = exe_path.as_ref()
         .and_then(|p| p.parent().map(|p| p.to_path_buf()));
 
-    // Check if we're in development mode by looking for "target\debug" in path
-    let is_dev = exe_path.as_ref()
+    // Check if we're running from target/release or target/debug
+    let in_target = exe_path.as_ref()
         .and_then(|p| p.to_str())
-        .map(|s| s.contains("target\\debug") || s.contains("target/debug"))
+        .map(|s| s.contains("target\\debug") || s.contains("target/debug") || s.contains("target\\release") || s.contains("target/release"))
         .unwrap_or(false);
 
-    if is_dev {
-        // Development: use repo root's build/plugins/ directory for built plugins
-        // Navigate up from src-tauri/target/debug to repo root
+    if in_target {
+        // Running from app/target/release - use app/plugins
+        // Path: webarcade/app/target/release/webarcade.exe -> webarcade/app/plugins
         if let Some(exe) = &exe_path {
-            if let Some(target_dir) = exe.parent() { // debug or release
-                if let Some(target) = target_dir.parent() { // target
-                    if let Some(src_tauri) = target.parent() { // src-tauri
-                        if let Some(repo_root) = src_tauri.parent() { // repo root
-                            let build_plugins_dir = repo_root.join("build").join("plugins");
-                            if build_plugins_dir.exists() || std::fs::create_dir_all(&build_plugins_dir).is_ok() {
-                                log::info!("📁 Development mode: loading plugins from {:?}", build_plugins_dir);
-                                return build_plugins_dir;
-                            }
+            if let Some(release_dir) = exe.parent() {        // release/
+                if let Some(target_dir) = release_dir.parent() { // target/
+                    if let Some(app_dir) = target_dir.parent() { // app/
+                        let plugins_dir = app_dir.join("plugins");
+                        if plugins_dir.exists() || std::fs::create_dir_all(&plugins_dir).is_ok() {
+                            log::info!("📁 Loading plugins from {:?}", plugins_dir);
+                            return plugins_dir;
                         }
                     }
                 }
             }
         }
-        // Fallback: try current directory
-        let cwd_plugins = std::env::current_dir()
-            .unwrap_or_default()
-            .join("build")
-            .join("plugins");
-        log::info!("📁 Development mode (fallback): loading plugins from {:?}", cwd_plugins);
-        cwd_plugins
-    } else {
-        // Production: try multiple locations
-        // 1. First check next to executable (Windows MSI installs here)
-        if let Some(ref dir) = exe_dir {
-            let plugins_dir = dir.join("plugins");
-            if plugins_dir.exists() {
-                log::info!("📁 Production mode: loading plugins from {:?}", plugins_dir);
-                return plugins_dir;
-            }
-        }
-
-        // 2. Check in Resources folder (macOS .app bundle)
-        if let Some(ref dir) = exe_dir {
-            let resources_plugins = dir.join("../Resources/plugins");
-            if resources_plugins.exists() {
-                log::info!("📁 Production mode (Resources): loading plugins from {:?}", resources_plugins);
-                return resources_plugins;
-            }
-        }
-
-        // 3. Fallback to exe directory even if plugins folder doesn't exist yet
-        let plugins_dir = exe_dir
-            .unwrap_or_default()
-            .join("plugins");
-        log::info!("📁 Production mode (fallback): loading plugins from {:?}", plugins_dir);
-        plugins_dir
     }
+
+    // Production: plugins folder next to executable
+    let plugins_dir = exe_dir.unwrap_or_default().join("plugins");
+    log::info!("📁 Loading plugins from {:?}", plugins_dir);
+    plugins_dir
 }
 
 /// Start the WebArcade bridge server
@@ -498,6 +472,59 @@ pub async fn run_server() -> Result<()> {
     }
 }
 
+/// Serve a static file from the embedded dist directory
+fn serve_static_file(path: &str) -> Option<Response<BoxBody<Bytes, Infallible>>> {
+    // Normalize path - default to index.html for root
+    let file_path = if path == "/" || path.is_empty() {
+        "index.html"
+    } else {
+        path.trim_start_matches('/')
+    };
+
+    // Try to get the file from embedded dist (handles nested paths like assets/main.js)
+    let file = DIST_DIR.get_file(file_path)
+        .or_else(|| {
+            // If path doesn't have extension, try index.html (SPA routing)
+            if !file_path.contains('.') {
+                DIST_DIR.get_file("index.html")
+            } else {
+                None
+            }
+        });
+
+    if let Some(file) = file {
+        let contents = file.contents();
+        // Get extension from the actual file path for proper content type
+        let extension = file.path().extension().and_then(|e| e.to_str());
+        let content_type = match extension {
+            Some("html") => "text/html; charset=utf-8",
+            Some("js") => "application/javascript; charset=utf-8",
+            Some("css") => "text/css; charset=utf-8",
+            Some("json") => "application/json",
+            Some("png") => "image/png",
+            Some("jpg") | Some("jpeg") => "image/jpeg",
+            Some("gif") => "image/gif",
+            Some("svg") => "image/svg+xml",
+            Some("ico") => "image/x-icon",
+            Some("woff") => "font/woff",
+            Some("woff2") => "font/woff2",
+            Some("ttf") => "font/ttf",
+            Some("wasm") => "application/wasm",
+            _ => "application/octet-stream",
+        };
+
+        return Some(Response::builder()
+            .status(StatusCode::OK)
+            .header("Content-Type", content_type)
+            .header("Access-Control-Allow-Origin", "*")
+            .header("Cache-Control", "public, max-age=31536000")
+            .body(BoxBody::new(Full::new(Bytes::from(contents.to_vec())).map_err(|_: std::convert::Infallible| unreachable!())))
+            .unwrap());
+    }
+
+    None
+}
+
 async fn handle_request(req: Request<Incoming>, router_registry: RouterRegistry) -> Response<BoxBody<Bytes, Infallible>> {
     let method = req.method().clone();
     let path = req.uri().path().to_string();
@@ -534,6 +561,11 @@ async fn handle_request(req: Request<Incoming>, router_registry: RouterRegistry)
         }
     }
 
+    // Try serving static files from embedded dist/ first
+    if let Some(response) = serve_static_file(&path) {
+        return response;
+    }
+
     // Parse plugin name from path
     // Expected format: /{plugin_name}/{route}
     if path.len() > 1 {
@@ -555,13 +587,11 @@ async fn handle_request(req: Request<Incoming>, router_registry: RouterRegistry)
                 req,
             ).await {
                 return response;
-            } else {
-                return error_response(StatusCode::NOT_FOUND, &format!("Route not found: {}", path));
             }
         }
     }
 
-    error_response(StatusCode::NOT_FOUND, "Invalid path")
+    error_response(StatusCode::NOT_FOUND, &format!("Not found: {}", path))
 }
 
 fn health_response() -> Response<BoxBody<Bytes, Infallible>> {
