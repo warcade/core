@@ -9,15 +9,13 @@
     "build:prod": "cross-env NODE_ENV=production node app/scripts/build.js",
     "app": "bun run build:prod && cd app && cargo build --release && cargo packager --release",
     "app:locked": "bun run build:prod && cd app && cargo build --release --features locked-plugins && cargo packager --release",
-    "app:run": "cd app/target/release && Emils.exe",
-    "cli": "cd cli && cargo run --release",
-    "package": "cd cli && cargo run --release -- package",
-    "clean": "rm -rf app/dist app/target cli/target",
+    "app:run": "cd app/target/release && test.exe",
+    "clean": "rm -rf app/dist app/target",
     "lint": "oxlint",
-    "plugin:new": "cd cli && cargo run --release -- new",
-    "plugin:build": "cd cli && cargo run --release -- build",
-    "plugin:list": "cd cli && cargo run --release -- list",
-    "cli:build": "cd cli && cargo build --release"
+    "package": "webarcade package",
+    "plugin:new": "webarcade new",
+    "plugin:build": "webarcade build",
+    "plugin:list": "webarcade list"
   },
   "dependencies": {
     "@tabler/icons-solidjs": "^3.34.1",

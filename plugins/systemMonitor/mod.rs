@@ -1,6 +1,6 @@
 pub mod router;
 
-use api::{Plugin, PluginMetadata};
+use webarcade_api::{Plugin, PluginMetadata};
 
 pub struct SystemMonitorPlugin;
 

@@ -1,4 +1,4 @@
-use api::{HttpResponse, json, json_response};
+use webarcade_api::{HttpResponse, json, json_response};
 use sysinfo::System;
 use nvml_wrapper::Nvml;
 

@@ -33,9 +33,12 @@ A lightweight plugin platform for building native desktop applications with **So
 ### Installation
 
 ```bash
-git clone https://github.com/renzora/webarcade.git
-cd webarcade
-bun install
+# Install the CLI
+cargo install webarcade-cli
+
+# Create a new project
+webarcade init my-app
+cd my-app
 ```
 
 ### Running the App
@@ -63,9 +66,11 @@ bun run app:run
 | `bun run app` | Build app + installer |
 | `bun run app:locked` | Build app with embedded plugins |
 | `bun run app:run` | Run the built executable |
-| `bun run plugin:new <id>` | Create a new plugin |
-| `bun run plugin:build` | Build all plugins |
-| `bun run plugin:list` | List available plugins |
+| `webarcade new <id>` | Create a new plugin |
+| `webarcade build <id>` | Build a plugin |
+| `webarcade build --all` | Build all plugins |
+| `webarcade list` | List available plugins |
+| `webarcade package` | Package app for distribution |
 
 ---
 
@@ -127,9 +132,7 @@ webarcade/
 │   ├── src/               # Runtime source
 │   ├── dist/              # Built frontend
 │   └── plugins/           # Production plugins
-├── plugins/               # Plugin source code
-├── build/plugins/         # Built plugins (development)
-└── cli/                   # Plugin build CLI
+└── plugins/               # Plugin source code
 ```
 
 ---
@@ -140,13 +143,13 @@ webarcade/
 
 ```bash
 # Create a frontend-only plugin
-bun run plugin:new my-plugin --frontend-only
+webarcade new my-plugin --frontend-only
 
 # Create a full-stack plugin (with Rust backend)
-bun run plugin:new my-plugin
+webarcade new my-plugin
 
 # Build the plugin
-bun run plugin:build my-plugin
+webarcade build my-plugin
 ```
 
 ### Plugin Structure
@@ -474,18 +477,27 @@ pub async fn handle_get_item(req: HttpRequest) -> HttpResponse {
 
 ## CLI Reference
 
+Install the CLI with `cargo install webarcade-cli`.
+
 ```bash
+# Initialize a new project
+webarcade init my-app
+
 # Create plugins
-bun run plugin:new my-plugin
-bun run plugin:new my-plugin --frontend-only
-bun run plugin:new my-plugin --name "My Plugin" --author "You"
+webarcade new my-plugin
+webarcade new my-plugin --frontend-only
+webarcade new my-plugin --name "My Plugin" --author "You"
 
 # Build plugins
-bun run plugin:build my-plugin    # Build specific plugin
-bun run plugin:build --all        # Build all plugins
+webarcade build my-plugin    # Build specific plugin
+webarcade build --all        # Build all plugins
 
 # List plugins
-bun run plugin:list
+webarcade list
+
+# Package app for distribution
+webarcade package
+webarcade package --locked   # Embed plugins in binary
 ```
 
 ### Build Output
@@ -520,7 +532,7 @@ bun run plugin:list
 
 1. Set `RUST_LOG=debug` for detailed logs
 2. Check browser DevTools for frontend errors
-3. Plugin changes require rebuild: `bun run plugin:build <name>`
+3. Plugin changes require rebuild: `webarcade build <name>`
 4. Frontend-only plugins build in ~1s, full-stack ~10-30s
 
 ---
