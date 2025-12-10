@@ -44,33 +44,29 @@ cd my-app
 ### Running the App
 
 ```bash
-# Build frontend only
-bun run build
+# Development - build frontend and run app
+webarcade dev
 
 # Build production app with installer
-bun run app
+webarcade app
 
 # Build locked app (plugins embedded in binary)
-bun run app:locked
-
-# Run the built app
-bun run app:run
+webarcade app --locked
 ```
 
-### Available Scripts
+### Available Commands
 
-| Script | Description |
-|--------|-------------|
-| `bun run build` | Build frontend to `app/dist/` |
-| `bun run build:prod` | Build frontend for production |
-| `bun run app` | Build app + installer |
-| `bun run app:locked` | Build app with embedded plugins |
-| `bun run app:run` | Run the built executable |
+| Command | Description |
+|---------|-------------|
+| `webarcade init <name>` | Initialize a new project |
+| `webarcade dev` | Build frontend and run app |
+| `webarcade app` | Build production app with installer |
+| `webarcade app --locked` | Build app with embedded plugins |
 | `webarcade new <id>` | Create a new plugin |
 | `webarcade build <id>` | Build a plugin |
 | `webarcade build --all` | Build all plugins |
 | `webarcade list` | List available plugins |
-| `webarcade package` | Package app for distribution |
+| `webarcade package` | Package app (interactive) |
 
 ---
 
@@ -79,7 +75,7 @@ bun run app:run
 ### Unlocked Mode (Default)
 
 ```bash
-bun run app
+webarcade app
 ```
 
 - Plugins loaded from `plugins/` folder
@@ -88,7 +84,7 @@ bun run app
 ### Locked Mode
 
 ```bash
-bun run app:locked
+webarcade app --locked
 ```
 
 - All plugins embedded in binary
@@ -483,6 +479,13 @@ Install the CLI with `cargo install webarcade-cli`.
 # Initialize a new project
 webarcade init my-app
 
+# Development
+webarcade dev                # Build frontend and run app
+
+# Production builds
+webarcade app                # Build app with installer
+webarcade app --locked       # Build with embedded plugins
+
 # Create plugins
 webarcade new my-plugin
 webarcade new my-plugin --frontend-only
@@ -495,7 +498,7 @@ webarcade build --all        # Build all plugins
 # List plugins
 webarcade list
 
-# Package app for distribution
+# Package app (interactive)
 webarcade package
 webarcade package --locked   # Embed plugins in binary
 ```
