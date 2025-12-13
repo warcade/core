@@ -525,8 +525,58 @@ export class PluginAPI {
   createShortcutAPI() {
     const handlers = [];
     let disabled = false;
+    let listenerAttached = false;
 
-    return {
+    const isInputFocused = () => {
+      const activeElement = document.activeElement;
+      if (!activeElement) return false;
+
+      const tagName = activeElement.tagName.toLowerCase();
+      const inputTypes = ['input', 'textarea', 'select'];
+      const contentEditable = activeElement.contentEditable === 'true';
+
+      if (inputTypes.includes(tagName) || contentEditable) {
+        return true;
+      }
+
+      // Check if it's inside a code editor
+      if (activeElement.closest('.monaco-editor') ||
+          activeElement.closest('[data-mode-id]') ||
+          activeElement.closest('.CodeMirror') ||
+          activeElement.closest('[contenteditable]')) {
+        return true;
+      }
+
+      return false;
+    };
+
+    const handleKeyDown = (event) => {
+      if (disabled) return;
+      if (isInputFocused()) return;
+
+      handlers.forEach(handler => {
+        try {
+          handler(event);
+        } catch (error) {
+          console.error('[ShortcutAPI] Handler error:', error);
+        }
+      });
+    };
+
+    const attachListener = () => {
+      if (listenerAttached) return;
+      document.addEventListener('keydown', handleKeyDown);
+      listenerAttached = true;
+    };
+
+    // Attach listener when DOM is ready
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', attachListener);
+    } else {
+      attachListener();
+    }
+
+    const api = {
       register: (handler) => {
         if (typeof handler !== 'function') return;
         handlers.push(handler);
@@ -539,7 +589,7 @@ export class PluginAPI {
       create: (shortcuts) => {
         return (event) => {
           for (const [key, callback] of Object.entries(shortcuts)) {
-            if (this.shortcut.matches(event, key)) {
+            if (api.matches(event, key)) {
               event.preventDefault();
               event.stopPropagation();
               callback(event);
@@ -569,6 +619,8 @@ export class PluginAPI {
       isDisabled: () => disabled,
       getHandlers: () => handlers
     };
+
+    return api;
   }
 
   createContextAPI() {

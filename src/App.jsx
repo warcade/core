@@ -3,7 +3,6 @@ import './base.css'
 import { Engine, layoutComponents } from '@/api/plugin'
 import Layout from './layout'
 import DevNotice from './components/DevNotice'
-import KeyboardShortcuts, { keyboardShortcuts } from './components/KeyboardShortcuts'
 import PluginInstaller from './components/PluginInstaller'
 import { usePluginAPI } from '@/api/plugin'
 
@@ -55,7 +54,6 @@ export default function App() {
   return (
     <Engine>
       <CoreModuleInitializer />
-      <KeyboardShortcuts />
       <PluginInstaller />
       <div class="w-full h-full relative">
         <Layout />
