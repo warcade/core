@@ -1,5 +1,6 @@
 import { createSignal, createContext, useContext, onCleanup } from 'solid-js';
 import ContextMenu from './ContextMenu.jsx';
+import { pluginAPI } from '@/api/plugin';
 
 // Context for sharing context menu state across components
 const ViewportContextMenuContext = createContext();
@@ -7,20 +8,32 @@ const ViewportContextMenuContext = createContext();
 export function ViewportContextMenuProvider(props) {
   const [contextMenuState, setContextMenuState] = createSignal(null);
 
-  const showContextMenu = (event, item = null, context = 'viewport', currentPath = '') => {
+  const showContextMenu = (event, context = 'viewport', data = null) => {
     if (!event) return;
-    
+
     event.preventDefault();
     event.stopPropagation();
 
     const { clientX: x, clientY: y } = event;
-    // Context menu actions removed - simplified menu
-    const items = [];
+
+    // Get items from PluginAPI's context registry
+    const registeredItems = pluginAPI.context.getItems(context);
+
+    // Transform items to include the data in action calls
+    const items = registeredItems.map(item => ({
+      ...item,
+      action: () => item.action?.(data, context)
+    }));
+
+    // Don't show empty menu
+    if (items.length === 0) return;
 
     setContextMenuState({
       position: { x, y },
       items,
-      visible: true
+      visible: true,
+      context,
+      data
     });
   };
 
@@ -35,7 +48,6 @@ export function ViewportContextMenuProvider(props) {
     }
   };
 
-  // Add global event listener for escape key
   document.addEventListener('keydown', handleKeyDown);
   onCleanup(() => {
     document.removeEventListener('keydown', handleKeyDown);
@@ -47,16 +59,11 @@ export function ViewportContextMenuProvider(props) {
     contextMenuState
   };
 
-  // Call onAPIReady if provided
-  if (props.onAPIReady) {
-    props.onAPIReady(contextValue);
-  }
-
   return (
     <ViewportContextMenuContext.Provider value={contextValue}>
       {props.children}
       {contextMenuState() && (
-        <ContextMenu 
+        <ContextMenu
           items={contextMenuState().items}
           position={contextMenuState().position}
           onClose={hideContextMenu}
@@ -78,14 +85,14 @@ export function useViewportContextMenu() {
 export function withContextMenu(Component, contextType) {
   return function WrappedComponent(props) {
     const { showContextMenu } = useViewportContextMenu();
-    
-    const handleContextMenu = (event, item = null, currentPath = '') => {
-      showContextMenu(event, item, contextType, currentPath);
+
+    const handleContextMenu = (event, data = null) => {
+      showContextMenu(event, contextType, data);
     };
 
     return (
-      <Component 
-        {...props} 
+      <Component
+        {...props}
         onContextMenu={handleContextMenu}
       />
     );

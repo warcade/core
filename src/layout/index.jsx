@@ -5,13 +5,11 @@ import Footer from '@/panels/footer';
 import Panel, { LeftPanel, RightPanel, BottomPanel, ViewportPanel } from '@/panels/Panel';
 import PluginTabs from '@/panels/PluginTabs';
 import { ViewportContextMenuProvider } from '@/ui/ViewportContextMenu.jsx';
-import { keyboardShortcuts } from '@/components/KeyboardShortcuts';
 import { panelVisibility } from '@/api/plugin/panels';
 import { footerVisible, horizontalMenuButtonsEnabled, bottomPanelVisible, pluginTabsVisible } from '@/api/plugin';
 
 const Layout = () => {
   const [globalTooltip, setGlobalTooltip] = createSignal(null);
-  const [contextMenuAPI, setContextMenuAPI] = createSignal(null);
 
   onMount(() => {
     // Listen for global tooltip events
@@ -21,23 +19,14 @@ const Layout = () => {
     document.addEventListener('global:tooltip-show', handleTooltipShow);
     document.addEventListener('global:tooltip-hide', handleTooltipHide);
 
-    // Setup context menu shortcuts once the context menu API is available
-    setTimeout(() => {
-      const api = contextMenuAPI();
-      if (api && api.showContextMenu) {
-        keyboardShortcuts.enableContextMenu(api.showContextMenu);
-      }
-    }, 100);
-
     onCleanup(() => {
       document.removeEventListener('global:tooltip-show', handleTooltipShow);
       document.removeEventListener('global:tooltip-hide', handleTooltipHide);
-      keyboardShortcuts.disableContextMenu();
     });
   });
 
   return (
-    <ViewportContextMenuProvider onAPIReady={setContextMenuAPI}>
+    <ViewportContextMenuProvider>
       <div
         class="fixed bg-base-100 inset-0 flex flex-col pointer-events-none z-10 transition-opacity duration-300"
         onContextMenu={(e) => e.preventDefault()}

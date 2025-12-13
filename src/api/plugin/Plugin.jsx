@@ -313,7 +313,53 @@ export function plugin(config) {
       /**
        * Batch multiple store updates for performance
        */
-      batch: (fn) => bridge.batch(fn)
+      batch: (fn) => bridge.batch(fn),
+
+      /**
+       * Register keyboard shortcuts
+       * @param {Object} shortcuts - Map of key patterns to callbacks
+       * @returns {Function} Unregister function
+       *
+       * @example
+       * api.shortcut({
+       *   'ctrl+s': () => this.save(),
+       *   'ctrl+z': () => this.undo(),
+       *   'ctrl+shift+z': () => this.redo()
+       * });
+       */
+      shortcut: (shortcuts) => {
+        const handler = (event) => {
+          for (const [key, callback] of Object.entries(shortcuts)) {
+            if (engineAPI.shortcut.matches(event, key)) {
+              event.preventDefault();
+              event.stopPropagation();
+              callback(event);
+              break;
+            }
+          }
+        };
+        return engineAPI.shortcut.register(handler);
+      },
+
+      /**
+       * Register a context menu item
+       * @param {Object} config - Menu item configuration
+       * @returns {Function} Unregister function
+       *
+       * @example
+       * api.context({
+       *   label: 'Copy',
+       *   action: (data) => this.copy(data),
+       *   context: 'viewport',
+       *   order: 10
+       * });
+       */
+      context: (config) => {
+        return engineAPI.context.register({
+          ...config,
+          plugin: id
+        });
+      }
     };
 
     const pluginInstance = {

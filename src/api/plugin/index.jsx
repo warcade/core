@@ -509,11 +509,121 @@ export class PluginAPI {
     this.initialized = false;
     this.currentRegistringPlugin = null; // Track which plugin is currently registering
 
+    // Initialize keyboard shortcuts API
+    this.shortcut = this.createShortcutAPI();
+
+    // Initialize context menu API
+    this.context = this.createContextAPI();
+
     // Set up plugin store event listeners for reactive UI updates
     this.setupPluginStoreListeners();
 
     // Set up global viewport type tracking
     this.setupViewportTypeTracking();
+  }
+
+  createShortcutAPI() {
+    const handlers = [];
+    let disabled = false;
+
+    return {
+      register: (handler) => {
+        if (typeof handler !== 'function') return;
+        handlers.push(handler);
+        return () => {
+          const idx = handlers.indexOf(handler);
+          if (idx > -1) handlers.splice(idx, 1);
+        };
+      },
+
+      create: (shortcuts) => {
+        return (event) => {
+          for (const [key, callback] of Object.entries(shortcuts)) {
+            if (this.shortcut.matches(event, key)) {
+              event.preventDefault();
+              event.stopPropagation();
+              callback(event);
+              break;
+            }
+          }
+        };
+      },
+
+      matches: (event, pattern) => {
+        const parts = pattern.toLowerCase().split('+');
+        const key = parts.pop();
+        const needsCtrl = parts.includes('ctrl') || parts.includes('cmd');
+        const needsAlt = parts.includes('alt');
+        const needsShift = parts.includes('shift');
+        const hasCtrl = event.ctrlKey || event.metaKey;
+        const hasAlt = event.altKey;
+        const hasShift = event.shiftKey;
+        if (needsCtrl !== hasCtrl || needsAlt !== hasAlt || needsShift !== hasShift) return false;
+        const eventKey = event.key.toLowerCase();
+        const eventCode = event.code?.toLowerCase();
+        return eventKey === key || eventCode === key || eventCode === `key${key}`;
+      },
+
+      disable: () => { disabled = true; },
+      enable: () => { disabled = false; },
+      isDisabled: () => disabled,
+      getHandlers: () => handlers
+    };
+  }
+
+  createContextAPI() {
+    const registry = new Map();
+    let idCounter = 0;
+
+    return {
+      register: (config) => {
+        const id = `ctx-${++idCounter}`;
+        const pluginId = this.getCurrentPluginId() || config.plugin;
+        registry.set(id, {
+          id,
+          label: config.label,
+          action: config.action,
+          context: config.context || 'global',
+          icon: config.icon,
+          order: config.order || 100,
+          submenu: config.submenu,
+          separator: config.separator,
+          plugin: pluginId
+        });
+        return () => registry.delete(id);
+      },
+
+      registerMany: (items) => {
+        const fns = items.map(item => this.context.register(item));
+        return () => fns.forEach(fn => fn());
+      },
+
+      separator: (config = {}) => {
+        return this.context.register({ separator: true, ...config });
+      },
+
+      clear: (pluginId) => {
+        if (pluginId) {
+          for (const [id, item] of registry) {
+            if (item.plugin === pluginId) registry.delete(id);
+          }
+        } else {
+          registry.clear();
+        }
+      },
+
+      getItems: (context) => {
+        const items = [];
+        for (const [id, item] of registry) {
+          if (!context || item.context === context || item.context === 'global') {
+            items.push(item);
+          }
+        }
+        return items.sort((a, b) => (a.order || 100) - (b.order || 100));
+      },
+
+      getRegistry: () => registry
+    };
   }
 
   setupViewportTypeTracking() {
@@ -691,6 +801,9 @@ export class PluginAPI {
         newMap.delete(pluginId);
         return newMap;
       });
+
+      // Remove context menu items registered by this plugin
+      this.context.clear(pluginId);
 
     } catch (error) {
     }
