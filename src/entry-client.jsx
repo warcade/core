@@ -6,9 +6,9 @@ import {
   plugin, createPlugin, usePluginAPI, viewportTypes, pluginAPI,
   panelStore, panels, activePlugin, panelVisibility, PANELS,
   horizontalMenuButtonsEnabled, footerVisible, viewportTabsVisible, pluginTabsVisible,
-  leftPanelVisible, propertiesPanelVisible, bottomPanelVisible, toolbarVisible, fullscreenMode
+  leftPanelVisible, propertiesPanelVisible, bottomPanelVisible, toolbarVisible, fullscreenMode,
+  api, BRIDGE_API, WEBARCADE_WS
 } from './api/plugin'
-import { api, BRIDGE_API, WEBARCADE_WS } from './api/bridge'
 import App from './App'
 
 // Expose SolidJS globally for runtime plugins
