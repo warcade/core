@@ -34,7 +34,7 @@ A lightweight plugin platform for building native desktop applications with **So
 
 ```bash
 # Install the CLI
-cargo install webarcade-cli
+cargo install webarcade
 
 # Create a new project
 webarcade init my-app
@@ -607,7 +607,7 @@ pub async fn handle_get_item(req: HttpRequest) -> HttpResponse {
 
 ## CLI Reference
 
-Install the CLI with `cargo install webarcade-cli`.
+Install the CLI with `cargo install webarcade`.
 
 ```bash
 # Initialize a new project
