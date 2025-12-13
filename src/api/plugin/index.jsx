@@ -1523,6 +1523,7 @@ export function Engine(props) {
 
 export { createPlugin, plugin } from './Plugin.jsx';
 export { default as panelStore, panels, activePlugin, panelVisibility, PANELS } from './panels.jsx';
+export { bridge, api, ws, BRIDGE_API, WEBARCADE_WS } from './bridge.js';
 
 // Computed signals that return the correct panel for the active viewport
 const leftPanelComponent = () => {

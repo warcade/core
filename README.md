@@ -65,6 +65,7 @@ webarcade app --locked
 | `webarcade new <id>` | Create a new plugin |
 | `webarcade build <id>` | Build a plugin |
 | `webarcade build --all` | Build all plugins |
+| `webarcade install <user/repo>` | Install a plugin from GitHub |
 | `webarcade list` | List available plugins |
 | `webarcade package` | Package app (interactive) |
 
@@ -412,10 +413,143 @@ api.toggleFullscreen();     // Toggle fullscreen
 
 ## Bridge API Reference
 
-### Calling Backend from Frontend
+The Bridge provides three inter-plugin communication patterns plus HTTP/WebSocket for backend communication.
+
+### 1. Services - Share Objects Between Plugins
+
+Services let plugins expose functionality that other plugins can use.
 
 ```jsx
-import { api } from '@/api/bridge';
+// audio-plugin: Provide a service
+start(api) {
+    const audioService = {
+        play: (sound) => { /* ... */ },
+        stop: () => { /* ... */ },
+        setVolume: (v) => { /* ... */ }
+    };
+    api.provide('audio', audioService);
+}
+
+// game-plugin: Use the service
+start(api) {
+    // Wait for service (async, with timeout)
+    const audio = await api.use('audio');
+    audio.play('bgm');
+
+    // Or check synchronously
+    const audio = api.tryUse('audio');
+    if (audio) audio.play('bgm');
+
+    // Check if service exists
+    if (api.hasService('audio')) { /* ... */ }
+}
+```
+
+| Method | Description |
+|--------|-------------|
+| `api.provide(name, service)` | Register a service |
+| `api.use(name, timeout?)` | Get service (waits if not ready) |
+| `api.tryUse(name)` | Get service or null (non-blocking) |
+| `api.hasService(name)` | Check if service exists |
+| `api.unprovide(name)` | Remove a service |
+
+### 2. Message Bus - Pub/Sub Communication
+
+Publish and subscribe to channels for event-driven communication.
+
+```jsx
+// Subscribe to messages
+const unsubscribe = api.subscribe('player:death', (data, meta) => {
+    console.log('Player died:', data.playerId);
+    console.log('Timestamp:', meta.timestamp);
+});
+
+// Publish a message
+api.publish('player:death', { playerId: 1, cause: 'fall' });
+
+// One-time subscription
+api.once('game:ready', (data) => {
+    console.log('Game is ready!');
+});
+
+// Wait for message (Promise-based)
+const { data } = await api.waitFor('game:ready', 5000);
+
+// Create channel with replay (new subscribers get last N messages)
+api.createChannel('chat:messages', { replay: 50 });
+
+// Clean up
+unsubscribe();
+```
+
+| Method | Description |
+|--------|-------------|
+| `api.subscribe(channel, callback)` | Subscribe to channel, returns unsubscribe fn |
+| `api.publish(channel, data)` | Publish message to channel |
+| `api.once(channel, callback)` | One-time subscription |
+| `api.waitFor(channel, timeout?)` | Wait for message (Promise) |
+| `api.createChannel(channel, options)` | Configure channel (e.g., replay) |
+
+### 3. Shared Store - Reactive State
+
+A SolidJS-powered reactive store for sharing state across plugins.
+
+```jsx
+// Set values (dot-notation paths)
+api.set('player.health', 100);
+api.set('player.position', { x: 0, y: 0, z: 0 });
+api.set('settings.audio.volume', 0.8);
+
+// Get values
+const health = api.get('player.health');
+const volume = api.get('settings.audio.volume', 1.0); // with default
+
+// Update with function
+api.update('player.health', (h) => Math.max(0, h - 10));
+
+// Merge objects
+api.merge('player', { score: 100, level: 2 });
+
+// Watch for changes
+const unwatch = api.watch('player.health', (newVal, oldVal, path) => {
+    console.log(`Health: ${oldVal} -> ${newVal}`);
+});
+
+// Use in SolidJS components (reactive)
+function HealthBar() {
+    const health = api.selector('player.health', 100);
+    return <div style={{ width: `${health()}%` }} />;
+}
+
+// Batch updates for performance
+api.batch(() => {
+    api.set('player.health', 100);
+    api.set('player.mana', 50);
+    api.set('player.stamina', 75);
+});
+
+// Delete and check
+api.delete('player.tempBuff');
+if (api.has('player.health')) { /* ... */ }
+```
+
+| Method | Description |
+|--------|-------------|
+| `api.set(path, value)` | Set value at path |
+| `api.get(path, default?)` | Get value at path |
+| `api.update(path, fn)` | Update with function |
+| `api.merge(path, obj)` | Shallow merge object |
+| `api.watch(path, callback)` | Watch for changes |
+| `api.selector(path, default?)` | Get reactive selector for components |
+| `api.delete(path)` | Delete path |
+| `api.has(path)` | Check if path exists |
+| `api.batch(fn)` | Batch multiple updates |
+| `api.getStore()` | Get raw SolidJS store |
+
+### 4. HTTP API - Backend Communication
+
+```jsx
+import { api } from '@/api/plugin';
 
 // GET request
 const response = await api('my-plugin/hello');
@@ -495,12 +629,57 @@ webarcade new my-plugin --name "My Plugin" --author "You"
 webarcade build my-plugin    # Build specific plugin
 webarcade build --all        # Build all plugins
 
+# Install plugins from GitHub
+webarcade install user/repo  # Install from GitHub
+webarcade install user/repo -f  # Force reinstall
+
 # List plugins
 webarcade list
 
 # Package app (interactive)
 webarcade package
 webarcade package --locked   # Embed plugins in binary
+```
+
+### Installing Plugins from GitHub
+
+The `install` command lets you install plugins directly from GitHub repositories:
+
+```bash
+webarcade install username/repo
+```
+
+**How it works:**
+1. Clones the repository from `https://github.com/username/repo`
+2. Validates it contains a valid WebArcade plugin
+3. Checks if already installed and compares versions
+4. Prompts to update/reinstall if needed
+5. Copies plugin source to your `plugins/` directory
+
+**Version detection:** The CLI extracts version info from `package.json`, `Cargo.toml`, or `index.jsx`.
+
+**Plugin repository structure:** The plugin can be at the repo root or in a subdirectory:
+
+```
+# Root-level plugin
+my-plugin/
+├── index.jsx
+├── mod.rs
+└── Cargo.toml
+
+# Or in a subdirectory
+my-plugin-repo/
+├── README.md
+└── plugin/
+    ├── index.jsx
+    ├── mod.rs
+    └── Cargo.toml
+```
+
+**After installing:**
+```bash
+webarcade build my-plugin    # Build the installed plugin
+webarcade dev                # Run the app
 ```
 
 ### Build Output
@@ -555,6 +734,7 @@ webarcade package --locked   # Embed plugins in binary
 ├─────────────────────────────────────────────────────────────┤
 │  SolidJS Frontend (served from localhost:3000)              │
 │  ├── Plugin API + Panel Store                               │
+│  ├── Plugin Bridge (services, pub/sub, shared store)        │
 │  └── Unified layout system                                  │
 ├─────────────────────────────────────────────────────────────┤
 │  Plugins (loaded at runtime from app/plugins/)              │
@@ -573,7 +753,11 @@ my-plugin/
 └── my-plugin.dll      # Backend (optional, Windows)
 ```
 
-Users install plugins by copying files to the `plugins/` directory. No npm, no compilation required.
+**Installing plugins:**
+- From GitHub: `webarcade install username/repo`
+- Manual: Copy plugin files to the `plugins/` directory
+
+No npm, no compilation required for end users.
 
 ---
 

@@ -1,4 +1,5 @@
 import panelStore, { PANELS } from './panels';
+import { bridge } from './bridge';
 
 /**
  * Create a plugin with the new unified API
@@ -185,7 +186,134 @@ export function plugin(config) {
        */
       getPluginId: () => id,
       getPluginName: () => name,
-      getPluginVersion: () => version
+      getPluginVersion: () => version,
+
+      // ==================== BRIDGE: SERVICES ====================
+
+      /**
+       * Register a service that other plugins can use
+       * @param {string} name - Service name
+       * @param {any} service - The service object/function
+       */
+      provide: (name, service) => bridge.provide(name, service),
+
+      /**
+       * Get a service (waits if not yet available)
+       * @param {string} name - Service name
+       * @param {number} timeout - Max wait time in ms (default 10000)
+       * @returns {Promise<any>} The service
+       */
+      use: (name, timeout) => bridge.use(name, timeout),
+
+      /**
+       * Get a service if it exists, otherwise return null (non-blocking)
+       */
+      tryUse: (name) => bridge.tryUse(name),
+
+      /**
+       * Check if a service exists
+       */
+      hasService: (name) => bridge.hasService(name),
+
+      /**
+       * Remove a service
+       */
+      unprovide: (name) => bridge.unprovide(name),
+
+      // ==================== BRIDGE: MESSAGE BUS ====================
+
+      /**
+       * Subscribe to a channel
+       * @param {string} channel - Channel name
+       * @param {function} callback - Called with (data, meta) when message received
+       * @returns {function} Unsubscribe function
+       */
+      subscribe: (channel, callback) => bridge.subscribe(channel, callback),
+
+      /**
+       * Publish a message to a channel
+       * @param {string} channel - Channel name
+       * @param {any} data - Message data
+       */
+      publish: (channel, data) => bridge.publish(channel, data),
+
+      /**
+       * One-time subscription - callback fires once then auto-unsubscribes
+       */
+      once: (channel, callback) => bridge.once(channel, callback),
+
+      /**
+       * Wait for a message (Promise-based)
+       * @param {string} channel - Channel name
+       * @param {number} timeout - Max wait time in ms
+       */
+      waitFor: (channel, timeout) => bridge.waitFor(channel, timeout),
+
+      /**
+       * Create/configure a channel with options (e.g., replay)
+       */
+      createChannel: (channel, options) => bridge.createChannel(channel, options),
+
+      // ==================== BRIDGE: SHARED STORE ====================
+
+      /**
+       * Get the raw SolidJS store for direct reactive access
+       */
+      getStore: () => bridge.getStore(),
+
+      /**
+       * Set a value in the shared store using dot-notation path
+       * @param {string} path - e.g., 'player.health', 'settings.volume'
+       * @param {any} value
+       */
+      set: (path, value) => bridge.set(path, value),
+
+      /**
+       * Get a value from the shared store
+       * @param {string} path - Dot-notation path
+       * @param {any} defaultValue - Default if path doesn't exist
+       */
+      get: (path, defaultValue) => bridge.get(path, defaultValue),
+
+      /**
+       * Update a value using a function
+       * @param {string} path - Dot-notation path
+       * @param {function} updater - Receives old value, returns new value
+       */
+      update: (path, updater) => bridge.update(path, updater),
+
+      /**
+       * Merge an object into a path (shallow merge)
+       */
+      merge: (path, obj) => bridge.merge(path, obj),
+
+      /**
+       * Watch for changes at a path
+       * @param {string} path - Dot-notation path
+       * @param {function} callback - Called with (newValue, oldValue, path)
+       * @returns {function} Unsubscribe function
+       */
+      watch: (path, callback) => bridge.watch(path, callback),
+
+      /**
+       * Get a selector function for reactive components
+       */
+      selector: (path, defaultValue) => bridge.selector(path, defaultValue),
+
+      /**
+       * Delete a path from the store
+       */
+      delete: (path) => bridge.delete(path),
+
+      /**
+       * Check if a path exists in the store
+       */
+      has: (path) => bridge.has(path),
+
+      /**
+       * Batch multiple store updates for performance
+       */
+      batch: (fn) => bridge.batch(fn)
     };
 
     const pluginInstance = {
