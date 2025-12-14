@@ -1,6 +1,3 @@
-@import "tailwindcss";
-@plugin "daisyui";
-
 /* Transparent background for overlays (OBS browser sources) */
 *, *::before, *::after {
   box-sizing: border-box;

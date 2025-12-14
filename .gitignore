@@ -3,32 +3,22 @@ dist
 .env*.local
 /node_modules
 
-# Plugin build artifacts (compiled DLLs are tracked via Git LFS for demo)
-# plugins/**/*.dll  # Now tracked via Git LFS
+# Plugin build artifacts
 plugins/**/*.so
 plugins/**/*.dylib
 build/
 
-# Database and data files
-data/
-bridge/data/
+# Database files
 *.db
 *.db-shm
 *.db-wal
 
-# Tauri build artifacts
-src-tauri/target
-src-tauri/gen
-*.app
-*.dmg
-*.deb
-*.rpm
-*.msi
+# App build artifacts
+app/target/
+app/dist/
 *.exe
 
 # Rust build artifacts
-server/target
-bridge/target
 target/
 *.node
 
