@@ -1,6 +1,8 @@
 import { createSignal, createEffect, onCleanup } from 'solid-js';
 import { IconAlertTriangle } from '@tabler/icons-solidjs';
-import { api } from '@/api/bridge';
+
+// Use global API to access bridge
+const { api } = window.WebArcadeAPI;
 
 export default function SystemMonitorFooterButton() {
   const [systemStats, setSystemStats] = createSignal(null);

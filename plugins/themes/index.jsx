@@ -5,7 +5,7 @@ import ThemeFooterButton from './ThemeFooterButton.jsx';
 export { DAISYUI_THEMES } from './themes.jsx';
 
 export default plugin({
-    id: 'theme-plugin',
+    id: 'themes',
     name: 'Theme System',
     version: '3.0.0',
     description: 'Theme system using DaisyUI built-in themes',
@@ -13,21 +13,15 @@ export default plugin({
     icon: IconPalette,
 
     start(api) {
-        api.footer('theme-selector', {
+        // Register theme selector as a status bar component
+        api.register('theme-selector', {
+            type: 'status',
             component: ThemeFooterButton,
-            order: 50,
-            section: 'status'
+            align: 'right',
+            priority: 50
         });
 
         console.log('[Theme Plugin] Registered theme selector');
-    },
-
-    active(api) {
-        console.log('[Theme Plugin] Activated');
-    },
-
-    inactive(api) {
-        console.log('[Theme Plugin] Deactivated');
     },
 
     stop(api) {

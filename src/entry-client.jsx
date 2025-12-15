@@ -3,11 +3,10 @@ import * as SolidJS from 'solid-js'
 import * as SolidJSWeb from 'solid-js/web'
 import * as SolidJSStore from 'solid-js/store'
 import {
-  plugin, createPlugin, usePluginAPI, viewportTypes, pluginAPI,
-  panelStore, panels, activePlugin, panelVisibility, PANELS,
-  horizontalMenuButtonsEnabled, footerVisible, viewportTabsVisible, pluginTabsVisible,
-  leftPanelVisible, propertiesPanelVisible, bottomPanelVisible, toolbarVisible, fullscreenMode,
-  api, BRIDGE_API, WEBARCADE_WS
+  plugin, createPlugin, usePluginAPI, pluginAPI,
+  componentRegistry, registry, contractIndex, ComponentType,
+  layoutManager, layouts, activeLayoutId,
+  api, BRIDGE_API, WEBARCADE_WS, PLUGIN_STATES
 } from './api/plugin'
 import App from './App'
 
@@ -22,25 +21,18 @@ window.WebArcadeAPI = {
   plugin,
   createPlugin,
   usePluginAPI,
-  viewportTypes,
   pluginAPI,
-  panelStore,
-  panels,
-  activePlugin,
-  panelVisibility,
-  PANELS,
-  horizontalMenuButtonsEnabled,
-  footerVisible,
-  viewportTabsVisible,
-  pluginTabsVisible,
-  leftPanelVisible,
-  propertiesPanelVisible,
-  bottomPanelVisible,
-  toolbarVisible,
-  fullscreenMode,
+  componentRegistry,
+  registry,
+  contractIndex,
+  ComponentType,
+  layoutManager,
+  layouts,
+  activeLayoutId,
   api,
   BRIDGE_API,
-  WEBARCADE_WS
+  WEBARCADE_WS,
+  PLUGIN_STATES
 }
 
 const root = document.getElementById('root')

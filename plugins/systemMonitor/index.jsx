@@ -13,10 +13,12 @@ export default plugin({
   start(api) {
     console.log('[System Monitor Plugin] Starting...');
 
-    // Register system monitor button in footer
-    api.footer('systemMonitor', {
+    // Register system monitor button in status bar
+    api.register('monitor', {
+      type: 'status',
       component: SystemMonitorFooterButton,
-      order: 1
+      align: 'left',
+      priority: 1
     });
 
     console.log('[System Monitor Plugin] Started successfully');
