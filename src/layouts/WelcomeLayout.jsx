@@ -27,8 +27,7 @@ export function WelcomeLayout() {
                 <Slot
                     name="main"
                     flex={1}
-                    use={['demo:content']}
-                    showTabs={false}
+                    use={['demo:content', 'cheeky:panel']}
                 />
             </Row>
 

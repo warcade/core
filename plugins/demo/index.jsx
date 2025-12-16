@@ -51,7 +51,7 @@ function WelcomeSection() {
     return (
         <div class="h-full flex items-center justify-center p-8">
             <div class="max-w-lg text-center">
-                <h1 class="text-4xl font-bold mb-4">Welcome to WebArcade</h1>
+                <h1 class="text-4xl font-bold mb-4">Welcome to WebArcade 🎮</h1>
                 <p class="text-base-content/70 mb-8">
                     A plugin-first framework for building desktop applications with web technologies.
                 </p>
