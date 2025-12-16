@@ -161,11 +161,12 @@ async function buildFrontend() {
             writeFileSync(resolve(DIST, 'assets/styles.css'), combinedCss);
         }
 
-        // Generate HTML with live reload script
+        // Generate HTML with live reload script and cache busting
         const outputs = Object.keys(result.metafile.outputs)
             .filter(f => f.endsWith('.js'))
             .map(f => relative(DIST, f).replace(/\\/g, '/'));
         const entryFile = outputs.find(f => f.includes('app')) || outputs[0];
+        const cacheBuster = Date.now();
 
         const liveReloadScript = `
     <script>
@@ -178,9 +179,9 @@ async function buildFrontend() {
 
         const template = readFileSync(resolve(SRC, 'index.html'), 'utf8');
         const html = template
-            .replace('<!--app-head-->', '<link rel="stylesheet" href="/assets/styles.css">')
+            .replace('<!--app-head-->', `<link rel="stylesheet" href="/assets/styles.css?v=${cacheBuster}">`)
             .replace('<!--app-html-->', '')
-            .replace('</body>', `${liveReloadScript}\n    <script type="module" src="/${entryFile}"></script>\n  </body>`);
+            .replace('</body>', `${liveReloadScript}\n    <script type="module" src="/${entryFile}?v=${cacheBuster}"></script>\n  </body>`);
         writeFileSync(resolve(DIST, 'index.html'), html);
 
         const elapsed = Date.now() - startTime;
@@ -223,17 +224,106 @@ async function buildPlugin(pluginId) {
 }
 
 // ============================================================================
-// File watchers
+// File watchers with batched builds
 // ============================================================================
 
 function startWatchers() {
-    // Debounce helper
-    const debounce = (fn, delay) => {
-        let timer;
-        return (...args) => {
-            clearTimeout(timer);
-            timer = setTimeout(() => fn(...args), delay);
+    // Batch all changes together, then build everything at once
+    let pendingChanges = {
+        frontendFiles: new Set(),
+        pluginIds: new Set(),
+        builtPluginFiles: new Set()
+    };
+    let batchTimer = null;
+    const BATCH_DELAY = 400; // Wait 400ms for all related changes to come in
+
+    const knownPlugins = new Set(
+        existsSync(PLUGINS_SRC)
+            ? readdirSync(PLUGINS_SRC).filter(f => {
+                const stat = require('fs').statSync(resolve(PLUGINS_SRC, f));
+                return stat.isDirectory();
+            })
+            : []
+    );
+
+    const knownBuiltPlugins = new Set(
+        existsSync(PLUGINS_BUILT)
+            ? readdirSync(PLUGINS_BUILT).filter(f => f.endsWith('.js'))
+            : []
+    );
+
+    const rescanPlugins = async () => {
+        try {
+            console.log(`${cyan('→')} Rescanning plugins...`);
+            const controller = new AbortController();
+            const timeout = setTimeout(() => controller.abort(), 5000);
+            await fetch('http://localhost:3001/api/plugins/rescan', { signal: controller.signal });
+            clearTimeout(timeout);
+            console.log(`${green('✓')} Plugins rescanned`);
+        } catch (e) {
+            console.log(`${dim('  (rescan skipped)')}`);
+        }
+    };
+
+    const processBatch = async () => {
+        const { frontendFiles, pluginIds, builtPluginFiles } = pendingChanges;
+
+        // Reset pending changes
+        pendingChanges = {
+            frontendFiles: new Set(),
+            pluginIds: new Set(),
+            builtPluginFiles: new Set()
         };
+
+        let needsReload = false;
+        let needsRescan = false;
+
+        // Build all changed plugins first
+        for (const pluginId of pluginIds) {
+            const isNewPlugin = !knownPlugins.has(pluginId);
+            console.log(`${cyan('→')} Plugin source changed: ${pluginId}${isNewPlugin ? ' (new)' : ''}`);
+            await buildPlugin(pluginId);
+
+            if (isNewPlugin) {
+                knownPlugins.add(pluginId);
+                needsRescan = true;
+            }
+            needsReload = true;
+        }
+
+        // Check for new built plugins
+        for (const filename of builtPluginFiles) {
+            if (!knownBuiltPlugins.has(filename)) {
+                console.log(`${cyan('→')} New built plugin detected: ${filename}`);
+                knownBuiltPlugins.add(filename);
+                needsRescan = true;
+            }
+            needsReload = true;
+        }
+
+        // Rescan if needed (before frontend build so layout can reference new plugins)
+        if (needsRescan) {
+            await rescanPlugins();
+        }
+
+        // Rebuild frontend if any src files changed
+        if (frontendFiles.size > 0) {
+            for (const path of frontendFiles) {
+                console.log(`${cyan('→')} Changed: ${relative(ROOT, path)}`);
+            }
+            await buildFrontend();
+            needsReload = true;
+        }
+
+        // Single reload after all builds complete
+        if (needsReload) {
+            triggerReload();
+        }
+    };
+
+    const scheduleBatch = () => {
+        clearTimeout(batchTimer);
+        batchTimer = setTimeout(processBatch, BATCH_DELAY);
     };
 
     // Watch src/ - rebuild frontend
@@ -243,14 +333,14 @@ function startWatchers() {
         ignoreInitial: true,
     });
 
-    const handleSrcChange = debounce(async (path) => {
-        console.log(`${cyan('→')} Changed: ${relative(ROOT, path)}`);
-        await buildFrontend();
-        triggerReload();
-    }, 100);
-
-    srcWatcher.on('change', handleSrcChange);
-    srcWatcher.on('add', handleSrcChange);
+    srcWatcher.on('change', (path) => {
+        pendingChanges.frontendFiles.add(path);
+        scheduleBatch();
+    });
+    srcWatcher.on('add', (path) => {
+        pendingChanges.frontendFiles.add(path);
+        scheduleBatch();
+    });
     console.log(`${green('✓')} Watching src/`);
 
     // Watch plugins/ source - rebuild plugin
@@ -261,39 +351,42 @@ function startWatchers() {
         depth: 2,
     });
 
-    const pluginBuildQueue = new Map();
-
-    const handlePluginSrcChange = debounce(async (path) => {
+    pluginsSrcWatcher.on('change', (path) => {
         const relPath = relative(PLUGINS_SRC, path);
         const pluginId = relPath.split(/[/\\]/)[0];
-
-        if (!pluginBuildQueue.has(pluginId)) {
-            pluginBuildQueue.set(pluginId, true);
-            console.log(`${cyan('→')} Plugin source changed: ${pluginId}`);
-            await buildPlugin(pluginId);
-            pluginBuildQueue.delete(pluginId);
-            triggerReload();
-        }
-    }, 300);
-
-    pluginsSrcWatcher.on('change', handlePluginSrcChange);
-    pluginsSrcWatcher.on('add', handlePluginSrcChange);
+        pendingChanges.pluginIds.add(pluginId);
+        scheduleBatch();
+    });
+    pluginsSrcWatcher.on('add', (path) => {
+        const relPath = relative(PLUGINS_SRC, path);
+        const pluginId = relPath.split(/[/\\]/)[0];
+        pendingChanges.pluginIds.add(pluginId);
+        scheduleBatch();
+    });
     console.log(`${green('✓')} Watching plugins/`);
 
-    // Watch app/plugins/ - just refresh (already built)
+    // Watch app/plugins/ - rescan on new files, refresh on changes
     const pluginsBuiltWatcher = chokidar.watch(PLUGINS_BUILT, {
-        ignored: /\.dll$/,  // Ignore DLLs, they don't need refresh
+        ignored: /\.dll$/,
         persistent: true,
         ignoreInitial: true,
     });
 
-    const handleBuiltPluginChange = debounce((path) => {
-        console.log(`${cyan('→')} Built plugin changed: ${basename(path)}`);
-        triggerReload();
-    }, 100);
-
-    pluginsBuiltWatcher.on('change', handleBuiltPluginChange);
-    pluginsBuiltWatcher.on('add', handleBuiltPluginChange);
+    pluginsBuiltWatcher.on('change', (path) => {
+        const filename = basename(path);
+        if (filename.endsWith('.js')) {
+            console.log(`${cyan('→')} Built plugin changed: ${filename}`);
+            pendingChanges.builtPluginFiles.add(filename);
+            scheduleBatch();
+        }
+    });
+    pluginsBuiltWatcher.on('add', (path) => {
+        const filename = basename(path);
+        if (filename.endsWith('.js')) {
+            pendingChanges.builtPluginFiles.add(filename);
+            scheduleBatch();
+        }
+    });
     console.log(`${green('✓')} Watching app/plugins/`);
 }
 

@@ -1,4 +1,4 @@
-import { createSignal, createContext, useContext, onMount, onCleanup, createRoot } from 'solid-js';
+import { createSignal, createContext, useContext, onMount, onCleanup, createRoot, Show } from 'solid-js';
 import pluginStore, { PLUGIN_STATES, setPluginConfigs } from './store.jsx';
 
 const PluginAPIContext = createContext();
@@ -26,8 +26,7 @@ class PluginLoader {
         const plugins = [];
 
         try {
-            console.log('[PluginLoader] Fetching plugins from backend...');
-            const response = await fetch('http://localhost:3001/api/plugins/list');
+            const response = await fetch(`http://localhost:3001/api/plugins/list?_=${Date.now()}`);
 
             if (response.ok) {
                 const data = await response.json();
@@ -82,9 +81,7 @@ class PluginLoader {
 
     async loadPluginDynamic(id, path, mainFile) {
         const pluginId = path.replace('/runtime/', '');
-        const pluginUrl = `http://localhost:3001/api/plugins/${pluginId}/${mainFile}`;
-
-        console.log(`[PluginLoader] Loading plugin "${id}" from ${pluginUrl}`);
+        const pluginUrl = `http://localhost:3001/api/plugins/${pluginId}/${mainFile}?_=${Date.now()}`;
         const pluginModule = await import(/* webpackIgnore: true */ pluginUrl);
         return pluginModule;
     }
@@ -392,11 +389,15 @@ export function usePluginAPI() {
 }
 
 export function Engine(props) {
+    const [ready, setReady] = createSignal(false);
+
     onMount(async () => {
         try {
             await pluginAPI.initialize();
+            setReady(true);
         } catch (error) {
             console.error('Failed to start engine:', error);
+            setReady(true); // Still render even on error
         }
     });
 
@@ -406,7 +407,9 @@ export function Engine(props) {
 
     return (
         <PluginAPIProvider>
-            {props.children}
+            <Show when={ready()} fallback={<div class="h-screen w-screen flex items-center justify-center bg-base-100"><span class="loading loading-spinner loading-lg"></span></div>}>
+                {props.children}
+            </Show>
         </PluginAPIProvider>
     );
 }

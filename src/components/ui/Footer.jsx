@@ -36,7 +36,7 @@ export function Footer(props) {
 
     return (
         <div
-            class={`flex items-center justify-between bg-base-200 border-t border-base-300 h-6 px-2 text-xs ${local.class || ''}`}
+            class={`flex items-center justify-between bg-base-200 border-t border-base-300 h-7 px-2 text-xs ${local.class || ''}`}
             {...others}
         >
             <div class="flex items-center gap-3">

@@ -14,6 +14,7 @@ const sections = [
     { id: 'plugin-tutorial', label: 'Create a Plugin', icon: IconCode },
     { id: 'layout-tutorial', label: 'Create a Layout', icon: IconLayout },
     { id: 'backend-tutorial', label: 'Backend Plugins', icon: IconServer },
+    { id: 'hot-reload', label: 'Hot Reload', icon: IconCode },
 ];
 
 function Sidebar() {
@@ -51,9 +52,9 @@ function WelcomeSection() {
     return (
         <div class="h-full flex items-center justify-center p-8">
             <div class="max-w-lg text-center">
-                <h1 class="text-4xl font-bold mb-4">Welcome to WebArcade 🎮</h1>
+                <h1 class="text-4xl font-bold mb-4">Welcome to WebArcade 🚀</h1>
                 <p class="text-base-content/70 mb-8">
-                    A plugin-first framework for building desktop applications with web technologies.
+                    Build blazing fast desktop apps with plugins. Hot reload is live!
                 </p>
 
                 <div class="flex flex-col gap-3">
@@ -563,6 +564,48 @@ const res = await api('my-plugin/users', {
 }
 
 // ============================================================================
+// HOT RELOAD SECTION
+// ============================================================================
+
+function HotReloadSection() {
+    return (
+        <div class="h-full overflow-auto p-6">
+            <h1 class="text-2xl font-bold mb-6">Hot Reload</h1>
+
+            <div class="space-y-6 max-w-2xl">
+                <p class="text-base-content/70">
+                    WebArcade includes a built-in hot reload dev server that watches for changes and automatically rebuilds and refreshes.
+                </p>
+
+                <section class="bg-base-200 rounded-lg p-4">
+                    <h2 class="font-bold mb-3">How it works</h2>
+                    <ul class="list-disc list-inside space-y-2 text-sm text-base-content/70">
+                        <li><code class="text-primary">src/</code> changes → Frontend rebuilds → Browser refreshes</li>
+                        <li><code class="text-primary">plugins/</code> changes → Plugin rebuilds → Browser refreshes</li>
+                        <li><code class="text-primary">app/plugins/</code> changes → Browser refreshes</li>
+                    </ul>
+                </section>
+
+                <section class="bg-base-200 rounded-lg p-4">
+                    <h2 class="font-bold mb-3">Start dev mode</h2>
+                    <pre class="bg-base-300 p-4 rounded-lg text-sm overflow-x-auto"><code>webarcade run</code></pre>
+                    <p class="text-sm text-base-content/70 mt-3">
+                        This starts the dev server with file watching and hot reload enabled.
+                    </p>
+                </section>
+
+                <section class="bg-base-200 rounded-lg p-4">
+                    <h2 class="font-bold mb-3">WebSocket</h2>
+                    <p class="text-sm text-base-content/70">
+                        The dev server uses a WebSocket on port <code class="text-primary">3002</code> to signal the browser to reload when files change.
+                    </p>
+                </section>
+            </div>
+        </div>
+    );
+}
+
+// ============================================================================
 // MAIN CONTENT PANEL
 // ============================================================================
 
@@ -583,6 +626,9 @@ function MainContent() {
             </Show>
             <Show when={activeSection() === 'backend-tutorial'}>
                 <BackendTutorial />
+            </Show>
+            <Show when={activeSection() === 'hot-reload'}>
+                <HotReloadSection />
             </Show>
         </div>
     );

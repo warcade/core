@@ -510,7 +510,31 @@ pub async fn run_server() -> Result<()> {
     }
 }
 
-/// Serve a static file from the embedded dist directory
+/// Check if we're running in development mode (from target/ directory)
+fn is_dev_mode() -> bool {
+    std::env::current_exe()
+        .ok()
+        .and_then(|p| p.to_str().map(|s| s.to_string()))
+        .map(|s| s.contains("target\\debug") || s.contains("target/debug") || s.contains("target\\release") || s.contains("target/release"))
+        .unwrap_or(false)
+}
+
+/// Get the dist directory path for dev mode
+fn get_dist_dir() -> Option<PathBuf> {
+    let exe_path = std::env::current_exe().ok()?;
+    // Path: webarcade/app/target/release/webarcade.exe -> webarcade/app/dist
+    let release_dir = exe_path.parent()?;  // release/
+    let target_dir = release_dir.parent()?; // target/
+    let app_dir = target_dir.parent()?;     // app/
+    let dist_dir = app_dir.join("dist");
+    if dist_dir.exists() {
+        Some(dist_dir)
+    } else {
+        None
+    }
+}
+
+/// Serve a static file - from disk in dev mode, from embedded in production
 fn serve_static_file(path: &str) -> Option<Response<BoxBody<Bytes, Infallible>>> {
     // Normalize path - default to index.html for root
     let file_path = if path == "/" || path.is_empty() {
@@ -519,7 +543,54 @@ fn serve_static_file(path: &str) -> Option<Response<BoxBody<Bytes, Infallible>>>
         path.trim_start_matches('/')
     };
 
-    // Try to get the file from embedded dist (handles nested paths like assets/main.js)
+    // In dev mode, read from disk for hot reload support
+    if is_dev_mode() {
+        if let Some(dist_dir) = get_dist_dir() {
+            let full_path = dist_dir.join(file_path);
+
+            // Try the exact path, or fall back to index.html for SPA routing
+            let file_to_read = if full_path.exists() {
+                full_path
+            } else if !file_path.contains('.') {
+                dist_dir.join("index.html")
+            } else {
+                return None;
+            };
+
+            if let Ok(contents) = std::fs::read(&file_to_read) {
+                let extension = file_to_read.extension().and_then(|e| e.to_str());
+                let content_type = match extension {
+                    Some("html") => "text/html; charset=utf-8",
+                    Some("js") => "application/javascript; charset=utf-8",
+                    Some("css") => "text/css; charset=utf-8",
+                    Some("json") => "application/json",
+                    Some("png") => "image/png",
+                    Some("jpg") | Some("jpeg") => "image/jpeg",
+                    Some("gif") => "image/gif",
+                    Some("svg") => "image/svg+xml",
+                    Some("ico") => "image/x-icon",
+                    Some("woff") => "font/woff",
+                    Some("woff2") => "font/woff2",
+                    Some("ttf") => "font/ttf",
+                    Some("wasm") => "application/wasm",
+                    _ => "application/octet-stream",
+                };
+
+                // In dev mode, never cache anything
+                return Some(Response::builder()
+                    .status(StatusCode::OK)
+                    .header("Content-Type", content_type)
+                    .header("Access-Control-Allow-Origin", "*")
+                    .header("Cache-Control", "no-cache, no-store, must-revalidate")
+                    .header("Pragma", "no-cache")
+                    .header("Expires", "0")
+                    .body(BoxBody::new(Full::new(Bytes::from(contents)).map_err(|_: std::convert::Infallible| unreachable!())))
+                    .unwrap());
+            }
+        }
+    }
+
+    // Production mode: use embedded files
     let file = DIST_DIR.get_file(file_path)
         .or_else(|| {
             // If path doesn't have extension, try index.html (SPA routing)
@@ -532,7 +603,6 @@ fn serve_static_file(path: &str) -> Option<Response<BoxBody<Bytes, Infallible>>>
 
     if let Some(file) = file {
         let contents = file.contents();
-        // Get extension from the actual file path for proper content type
         let extension = file.path().extension().and_then(|e| e.to_str());
         let content_type = match extension {
             Some("html") => "text/html; charset=utf-8",
@@ -551,8 +621,7 @@ fn serve_static_file(path: &str) -> Option<Response<BoxBody<Bytes, Infallible>>>
             _ => "application/octet-stream",
         };
 
-        // Cache hashed assets (contain hash in filename) for 1 year
-        // Don't cache HTML files - they should always be fresh
+        // Cache hashed assets for 1 year, don't cache HTML
         let cache_control = if extension == Some("html") {
             "no-cache, no-store, must-revalidate"
         } else {
@@ -569,6 +638,42 @@ fn serve_static_file(path: &str) -> Option<Response<BoxBody<Bytes, Infallible>>>
     }
 
     None
+}
+
+/// Handle rescan plugins request - reloads plugins from disk
+fn handle_rescan_plugins() -> Response<BoxBody<Bytes, Infallible>> {
+    let plugins_dir = get_plugins_dir();
+    let mut dynamic_loader = DynamicPluginLoader::new(plugins_dir);
+
+    match dynamic_loader.load_all_plugins() {
+        Ok(dynamic_plugins) => {
+            let count = dynamic_plugins.len();
+
+            // Update global state
+            {
+                let mut loaded = LOADED_PLUGINS.lock().unwrap();
+                *loaded = dynamic_plugins;
+            }
+
+            log::info!("🔄 Rescanned plugins: {} found", count);
+
+            let json = serde_json::json!({
+                "success": true,
+                "count": count
+            }).to_string();
+
+            Response::builder()
+                .status(StatusCode::OK)
+                .header("Content-Type", "application/json")
+                .header("Access-Control-Allow-Origin", "*")
+                .body(full_body(&json))
+                .unwrap()
+        }
+        Err(e) => {
+            log::error!("Failed to rescan plugins: {}", e);
+            error_response(StatusCode::INTERNAL_SERVER_ERROR, &format!("Failed to rescan: {}", e))
+        }
+    }
 }
 
 /// Handle static file requests on port 3000
@@ -624,6 +729,11 @@ async fn handle_api_request(req: Request<Incoming>, router_registry: RouterRegis
     // Runtime plugin API endpoints
     if path == "/api/plugins/list" {
         return modules::system_api::handle_list_plugins();
+    }
+
+    // Rescan plugins endpoint for hot reload
+    if path == "/api/plugins/rescan" {
+        return handle_rescan_plugins();
     }
 
     if path.starts_with("/api/plugins/") && path.len() > 13 {

@@ -27,11 +27,11 @@ export function WelcomeLayout() {
                 <Slot
                     name="main"
                     flex={1}
-                    use={['demo:content', 'cheeky:panel']}
+                    use={['demo:content']}
                 />
             </Row>
 
-            <Footer use={['themes:theme-selector']} />
+            <Footer use={['systemMonitor:monitor', 'themes:theme-selector']} />
         </Column>
     );
 }
