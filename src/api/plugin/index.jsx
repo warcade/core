@@ -417,3 +417,4 @@ export { bridge, api, ws, BRIDGE_API, WEBARCADE_WS } from './bridge.js';
 export { componentRegistry, registry, contractIndex, ComponentType } from './registry.jsx';
 export { layoutManager, layouts, activeLayoutId } from '@/api/layout';
 export { PLUGIN_STATES } from './store.jsx';
+export { VERSION, VERSION_NAME, VERSION_FULL } from '@/version';

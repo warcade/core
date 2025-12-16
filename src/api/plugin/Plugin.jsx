@@ -1,6 +1,7 @@
 import { componentRegistry, ComponentType } from './registry';
 import { bridge } from './bridge';
 import { layoutManager } from '@/api/layout';
+import { VERSION, VERSION_NAME, VERSION_FULL } from '@/version';
 
 /**
  * Create a plugin with the new unified API
@@ -134,6 +135,9 @@ export function plugin(config) {
                 // Register a new layout (for plugins that provide layouts)
                 register: (layoutId, config) => layoutManager.register(layoutId, config),
 
+                // Reactive signals for use in SolidJS components
+                signals: layoutManager.signals,
+
                 // Intents
                 focus: () => document.dispatchEvent(new CustomEvent('layout:focus', { detail: { pluginId: id } })),
                 reveal: (componentId) => document.dispatchEvent(new CustomEvent('layout:reveal', { detail: { componentId: `${id}:${componentId}` } })),
@@ -223,7 +227,13 @@ export function plugin(config) {
 
             getPluginId: () => id,
             getPluginName: () => name,
-            getPluginVersion: () => version
+            getPluginVersion: () => version,
+
+            // ==================== PLATFORM INFO ====================
+
+            getPlatformVersion: () => VERSION,
+            getPlatformName: () => VERSION_NAME,
+            getPlatformInfo: () => ({ version: VERSION, name: VERSION_NAME, full: VERSION_FULL })
         };
 
         const pluginInstance = {

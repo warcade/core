@@ -1,6 +1,7 @@
-import { splitProps, createMemo, For } from 'solid-js';
+import { splitProps, createMemo, For, Show } from 'solid-js';
 import { Dynamic } from 'solid-js/web';
 import { componentRegistry, ComponentType } from '@/api/plugin/registry';
+import { VERSION_FULL } from '@/version';
 
 /**
  * Footer/status bar renders status items from the registry
@@ -10,7 +11,7 @@ import { componentRegistry, ComponentType } from '@/api/plugin/registry';
  * <Footer /> // renders all type: 'status' components
  */
 export function Footer(props) {
-    const [local, others] = splitProps(props, ['use', 'exclude', 'class', 'children']);
+    const [local, others] = splitProps(props, ['use', 'exclude', 'class', 'children', 'showVersion']);
 
     // Get status items from registry
     const items = createMemo(() => {
@@ -55,6 +56,9 @@ export function Footer(props) {
                         <Dynamic component={item.component} />
                     )}
                 </For>
+                <Show when={local.showVersion !== false}>
+                    <span class="text-base-content/40 select-none">{VERSION_FULL}</span>
+                </Show>
             </div>
         </div>
     );
