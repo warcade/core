@@ -6,7 +6,7 @@ A lightweight plugin platform for building native desktop applications with **So
 - ~2.5 MB binary (uses system WebView)
 - Dynamic plugin loading at runtime
 - Optional Rust backend per plugin (DLL)
-- Panel-based UI composition
+- Component Registry + Layout Manager architecture
 - Cross-plugin component sharing
 
 ## Table of Contents
@@ -17,9 +17,10 @@ A lightweight plugin platform for building native desktop applications with **So
 4. [Project Structure](#project-structure)
 5. [Plugin Development](#plugin-development)
 6. [Plugin API Reference](#plugin-api-reference)
-7. [Bridge API Reference](#bridge-api-reference)
-8. [CLI Reference](#cli-reference)
-9. [Troubleshooting](#troubleshooting)
+7. [Layout System](#layout-system)
+8. [Bridge API Reference](#bridge-api-reference)
+9. [CLI Reference](#cli-reference)
+10. [Troubleshooting](#troubleshooting)
 
 ---
 
@@ -122,9 +123,13 @@ Place `icon.png` in `app/` directory - the build script converts it to `icon.ico
 ```
 webarcade/
 ├── src/                    # Frontend (SolidJS)
-│   ├── api/               # Plugin and Bridge APIs
-│   ├── panels/            # Unified panel system
-│   └── layout/            # Main layout
+│   ├── api/               # Plugin API, Layout Manager, Bridge
+│   │   ├── plugin/        # Plugin system & Component Registry
+│   │   └── layout/        # Layout Manager
+│   ├── components/        # UI and layout components
+│   │   ├── layout/        # Row, Column, Slot, Resizable
+│   │   └── ui/            # Toolbar, Footer, WindowControls, etc.
+│   └── layouts/           # Layout definitions
 ├── app/                    # Desktop runtime (Rust)
 │   ├── src/               # Runtime source
 │   ├── dist/              # Built frontend
@@ -155,7 +160,7 @@ webarcade build my-plugin
 ```
 plugins/my-plugin/
 ├── index.jsx           # Plugin entry (required)
-└── viewport.jsx        # Components (optional)
+└── components.jsx      # Components (optional)
 ```
 → Builds to: `build/plugins/my-plugin.js`
 
@@ -163,7 +168,7 @@ plugins/my-plugin/
 ```
 plugins/my-plugin/
 ├── index.jsx           # Frontend entry
-├── viewport.jsx        # Components
+├── components.jsx      # Components
 ├── Cargo.toml          # Routes & dependencies
 ├── mod.rs              # Plugin metadata
 └── router.rs           # HTTP handlers
@@ -175,57 +180,52 @@ plugins/my-plugin/
 ```jsx
 import { plugin } from '@/api/plugin';
 
+function MyPanel() {
+    return (
+        <div class="p-4">
+            <h1>Hello from my plugin!</h1>
+        </div>
+    );
+}
+
 export default plugin({
     id: 'my-plugin',
     name: 'My Plugin',
     version: '1.0.0',
 
     start(api) {
-        // Register plugin tab (shows in main tab bar)
-        api.add({
-            panel: 'tab',
-            label: 'My Plugin',
-            icon: MyIcon,
+        // Register a panel component
+        api.register('my-panel', {
+            type: 'panel',
+            component: MyPanel,
+            label: 'My Panel'
         });
 
-        // Register main viewport
-        api.add({
-            panel: 'viewport',
-            id: 'main',
-            component: MainView,
+        // Register a toolbar button
+        api.register('save-btn', {
+            type: 'toolbar',
+            icon: IconSave,
+            tooltip: 'Save file',
+            onClick: () => saveFile()
         });
 
-        // Register left panel tab
-        api.add({
-            panel: 'left',
-            id: 'explorer',
-            label: 'Explorer',
-            component: Explorer,
+        // Register a menu
+        api.register('file-menu', {
+            type: 'menu',
+            label: 'File',
+            order: 1,
+            submenu: [
+                { label: 'New', action: () => {} },
+                { label: 'Open', action: () => {} }
+            ]
         });
 
-        // Register right panel tab
-        api.add({
-            panel: 'right',
-            id: 'properties',
-            label: 'Properties',
-            component: Properties,
+        // Register a status bar item
+        api.register('line-count', {
+            type: 'status',
+            component: () => <span>Line 1</span>,
+            align: 'right'
         });
-
-        // Register bottom panel tab
-        api.add({
-            panel: 'bottom',
-            id: 'console',
-            label: 'Console',
-            component: Console,
-        });
-    },
-
-    active(api) {
-        // Called when plugin becomes active
-    },
-
-    inactive(api) {
-        // Called when plugin becomes inactive
     },
 
     stop(api) {
@@ -240,174 +240,318 @@ export default plugin({
 ┌─────────────────────────────────────────────────────────────┐
 │  Plugin Loaded                                              │
 │    ↓                                                        │
-│  start(api)  ─── Register panels, toolbar, menu, footer    │
+│  start(api)  ─── Register components to the registry        │
 │    ↓                                                        │
-│  ┌─────────────────────────────────────────────────────┐    │
-│  │  User switches plugins (tab bar)                    │    │
-│  │    ↓                    ↓                           │    │
-│  │  active(api)        inactive(api)                   │    │
-│  │  Show panels        (other plugin now active)       │    │
-│  └─────────────────────────────────────────────────────┘    │
+│  Components rendered in layouts via <Slot use={[...]} />    │
 │    ↓                                                        │
 │  stop(api)  ─── Plugin disabled/unloaded                   │
 └─────────────────────────────────────────────────────────────┘
 ```
 
-- **start**: Called once when plugin loads. Register all UI components here.
-- **active**: Called each time user switches TO this plugin. Show/configure panels.
-- **inactive**: Called each time user switches AWAY from this plugin.
+- **start**: Called once when plugin loads. Register all components here.
 - **stop**: Called when plugin is disabled or app closes.
 
 ---
 
 ## Plugin API Reference
 
-### The `api.add()` Method
+### The `api.register()` Method
 
-Register components to different panel locations:
+Register components to the Component Registry:
 
 ```jsx
-api.add({
-    panel: 'tab' | 'viewport' | 'left' | 'right' | 'bottom',
-    id: 'unique-id',           // Required for viewport/panels
-    label: 'Display Label',    // Tab label
-    icon: IconComponent,       // Optional icon
-    component: MyComponent,    // SolidJS component
-    visible: true,             // Initial visibility (default: true)
-    shared: false,             // Allow other plugins to use (default: false)
-    order: 0,                  // Sort order
-    closable: true,            // Can user close tab (default: true)
-    start: (api) => {},        // First time mounted
-    active: (api) => {},       // Plugin became active
-    inactive: (api) => {},     // Plugin became inactive
+api.register('component-id', {
+    type: 'panel' | 'toolbar' | 'menu' | 'status',
+    component: MyComponent,      // SolidJS component (for panel/status)
+    label: 'Display Label',      // Label for tabs/tooltips
+    icon: IconComponent,         // Optional icon
+    order: 0,                    // Sort order
+    // Type-specific options below...
 });
 ```
 
-### Panel Types
+### Component Types
 
-| Panel | Description |
-|-------|-------------|
-| `tab` | Main plugin tab bar (one per plugin) |
-| `viewport` | Main content area (supports multiple tabs) |
-| `left` | Left sidebar (supports multiple tabs) |
-| `right` | Right sidebar (supports multiple tabs) |
-| `bottom` | Bottom panel (supports multiple tabs) |
+| Type | Description |
+|------|-------------|
+| `panel` | UI panels rendered in Slots |
+| `toolbar` | Toolbar buttons |
+| `menu` | Top menu items with submenus |
+| `status` | Status bar items |
 
-### Panel Visibility
-
-```jsx
-api.showLeft(true);     // Show left panel
-api.showRight(true);    // Show right panel
-api.showBottom(true);   // Show bottom panel
-
-api.hideLeft();         // Hide left panel
-api.hideRight();        // Hide right panel
-api.hideBottom();       // Hide bottom panel
-
-api.toggleLeft();       // Toggle left panel
-api.toggleRight();      // Toggle right panel
-api.toggleBottom();     // Toggle bottom panel
-```
-
-### Shared Panels
-
-Plugins can share components with other plugins:
+### Panel Configuration
 
 ```jsx
-// Plugin A - registers a shared panel
-api.add({
-    panel: 'left',
-    id: 'file-explorer',
-    label: 'Files',
-    component: FileExplorer,
-    shared: true,  // Other plugins can use this
+api.register('explorer', {
+    type: 'panel',
+    component: Explorer,
+    label: 'Explorer',
+    icon: IconFolder,
+    closable: true,              // Can user close tab (default: true)
+    onMount: () => {},           // Called when mounted
+    onUnmount: () => {},         // Called when unmounted
+    onFocus: () => {},           // Called when focused
+    onBlur: () => {}             // Called when blurred
 });
-
-// Plugin B - add Plugin A's component to own panels
-api.addShared('plugin-a:file-explorer', {
-    panel: 'left',           // Can put in different panel
-    label: 'My Files',       // Override label
-    order: 1                 // Override order
-});
-
-// Or just get the config without adding
-const sharedPanel = api.useShared('plugin-a:file-explorer');
 ```
 
-### Remove Components
+### Toolbar Configuration
 
 ```jsx
-api.remove('component-id');  // Remove by ID
-```
-
-### Toolbar & Menu
-
-```jsx
-// Register toolbar groups
-api.toolbarGroup('file-group', { label: 'File', order: 1 });
-api.toolbarGroup('edit-group', { label: 'Edit', order: 2 });
-
-// Add toolbar buttons
-api.toolbar('save', {
+api.register('save-btn', {
+    type: 'toolbar',
     icon: IconSave,
     tooltip: 'Save file',
-    group: 'file-group',
+    group: 'file-group',         // Group for organization
     order: 1,
     onClick: () => saveFile(),
-    active: () => hasChanges(),      // Highlight when active
-    disabled: () => isReadOnly(),    // Disable conditionally
-    separator: true,                  // Add separator after
+    active: () => hasChanges(),  // Highlight when true
+    disabled: () => isReadOnly(),// Disable when true
+    separator: true              // Add separator after
 });
 
-// Add toolbar with custom component
-api.toolbar('zoom-slider', {
+// Or with a custom component
+api.register('zoom-slider', {
+    type: 'toolbar',
     component: ZoomSlider,
-    group: 'view-group',
+    group: 'view-group'
 });
+```
 
-// Register top menu with submenus
-api.menu('file', {
+### Menu Configuration
+
+```jsx
+api.register('file-menu', {
+    type: 'menu',
     label: 'File',
     order: 1,
     submenu: [
-        { id: 'new', label: 'New', icon: IconFile, shortcut: 'Ctrl+N', action: () => {} },
-        { id: 'open', label: 'Open', icon: IconFolder, shortcut: 'Ctrl+O', action: () => {} },
+        { label: 'New', icon: IconFile, shortcut: 'Ctrl+N', action: () => {} },
+        { label: 'Open', icon: IconFolder, shortcut: 'Ctrl+O', action: () => {} },
         { divider: true },
-        { id: 'save', label: 'Save', shortcut: 'Ctrl+S', action: () => {} },
+        { label: 'Save', shortcut: 'Ctrl+S', action: () => {} },
         {
-            id: 'export',
             label: 'Export',
             submenu: [  // Nested submenu
-                { id: 'pdf', label: 'As PDF', action: () => {} },
-                { id: 'png', label: 'As PNG', action: () => {} },
+                { label: 'As PDF', action: () => {} },
+                { label: 'As PNG', action: () => {} }
             ]
-        },
+        }
     ]
 });
 ```
 
-### Footer
+### Status Bar Configuration
 
 ```jsx
-// Add footer component
-api.footer('status', {
-    component: StatusIndicator,
-    order: 1,
+api.register('line-count', {
+    type: 'status',
+    component: LineCounter,
+    align: 'left' | 'right',     // Position in status bar
+    priority: 0                   // Higher = closer to edge
 });
 ```
 
-### UI Visibility
+### Slot Control
+
+Control components within slots programmatically:
 
 ```jsx
-api.showToolbar(true);      // Show/hide toolbar
-api.showMenu(true);         // Show/hide top menu
-api.showFooter(true);       // Show/hide footer
-api.showTabs(true);         // Show/hide viewport tabs
-api.showPluginTabs(true);   // Show/hide plugin tab bar
-
-api.fullscreen(true);       // Enter fullscreen
-api.toggleFullscreen();     // Toggle fullscreen
+api.slot('my-panel').show();     // Show the component
+api.slot('my-panel').hide();     // Hide the component
+api.slot('my-panel').toggle();   // Toggle visibility
+api.slot('my-panel').focus();    // Focus/activate the component
 ```
+
+### Layout Management
+
+```jsx
+api.layout.setActive('my-layout');   // Switch to a different layout
+api.layout.getActiveId();            // Get current layout ID
+api.layout.getAll();                 // Get all registered layouts
+api.layout.back();                   // Go back to previous layout
+api.layout.canGoBack();              // Check if can go back
+
+api.layout.focus();                  // Focus current plugin
+api.layout.reveal('panel-id');       // Reveal a component in layout
+api.layout.fullscreen(true);         // Enter fullscreen
+api.layout.hideAll();                // Hide all UI
+api.layout.showAll();                // Show all UI
+
+// Register a new layout (for plugins that provide layouts)
+api.layout.register('custom-layout', {
+    name: 'Custom Layout',
+    component: CustomLayout,
+    icon: 'dashboard'
+});
+```
+
+### Keyboard Shortcuts
+
+```jsx
+// Register multiple shortcuts at once
+const unregister = api.shortcut({
+    'ctrl+s': (e) => save(),
+    'ctrl+n': (e) => newFile(),
+    'ctrl+shift+p': (e) => openCommandPalette()
+});
+
+// Or register a raw handler
+const unregister = api.shortcut.register((event) => {
+    if (api.shortcut.matches(event, 'ctrl+s')) {
+        event.preventDefault();
+        save();
+    }
+});
+
+// Temporarily disable/enable shortcuts
+api.shortcut.disable();
+api.shortcut.enable();
+
+// Clean up
+unregister();
+```
+
+### Context Menus
+
+```jsx
+const unregister = api.context({
+    target: '.file-item',  // CSS selector or element
+    items: [
+        { label: 'Open', action: (el) => open(el) },
+        { label: 'Delete', action: (el) => delete(el) },
+        { divider: true },
+        { label: 'Properties', action: (el) => showProps(el) }
+    ]
+});
+```
+
+### Component Discovery
+
+```jsx
+// Unregister a component
+api.unregister('my-panel');
+
+// Get a component from any plugin
+const component = api.getComponent('other-plugin:panel-id');
+
+// Find components by contract
+const editors = api.findByContract({ provides: 'editor' });
+```
+
+---
+
+## Layout System
+
+Layouts define the structure of your application. They use the `use` prop to inject plugin components.
+
+### Creating a Layout
+
+```jsx
+// src/layouts/MyLayout.jsx
+import { Row, Column, Slot, Resizable } from '@/components/layout';
+import { Toolbar, Footer, DragRegion, WindowControls } from '@/components/ui';
+
+export function MyLayout() {
+    return (
+        <Column class="h-screen bg-base-100">
+            {/* Toolbar with plugin buttons */}
+            <Toolbar use={['my-plugin:save-btn', 'my-plugin:undo-btn']}>
+                <DragRegion class="flex-1 h-full" />
+                <WindowControls />
+            </Toolbar>
+
+            {/* Main content area */}
+            <Row flex={1}>
+                {/* Resizable sidebar */}
+                <Resizable direction="horizontal" side="end" defaultSize={250}>
+                    <Slot
+                        name="sidebar"
+                        use={['my-plugin:explorer']}
+                    />
+                </Resizable>
+
+                {/* Main viewport with tabs */}
+                <Slot
+                    name="main"
+                    flex={1}
+                    use={['editor:code', 'editor:preview']}
+                />
+
+                {/* Right sidebar */}
+                <Resizable direction="horizontal" side="start" defaultSize={300}>
+                    <Slot
+                        name="properties"
+                        use={['my-plugin:properties']}
+                    />
+                </Resizable>
+            </Row>
+
+            {/* Footer with status items */}
+            <Footer use={['my-plugin:line-count', 'git:branch-status']} />
+        </Column>
+    );
+}
+```
+
+### Registering Layouts
+
+```jsx
+// src/layouts/index.jsx
+import { layoutManager } from '@/api/layout';
+import { MyLayout } from './MyLayout';
+
+export function registerLayouts() {
+    layoutManager.register('my-layout', {
+        name: 'My Layout',
+        description: 'Custom layout for my app',
+        component: MyLayout,
+        icon: 'dashboard',
+        order: 1
+    });
+}
+
+export { MyLayout };
+```
+
+### The `use` Prop
+
+The `use` prop connects layouts to plugin components. Format: `plugin-id:component-id`
+
+```jsx
+{/* Single component */}
+<Slot use={['demo:welcome']} />
+
+{/* Multiple components (creates tabs) */}
+<Slot use={[
+    'editor:code',
+    'editor:preview',
+    'terminal:console'
+]} />
+
+{/* Hide tabs for single-component slots */}
+<Slot use={['demo:sidebar']} showTabs={false} />
+
+{/* Toolbar buttons from multiple plugins */}
+<Toolbar use={[
+    'file:save-button',
+    'edit:undo-button',
+    'view:zoom-controls'
+]} />
+```
+
+### Layout Components
+
+| Component | Description |
+|-----------|-------------|
+| `Row` | Horizontal flex container |
+| `Column` | Vertical flex container |
+| `Slot` | Renders plugin components (with optional tabs) |
+| `Resizable` | Resizable container with drag handle |
+| `Toolbar` | Top toolbar area |
+| `Footer` | Bottom status bar |
+| `DragRegion` | Window drag area (for borderless windows) |
+| `WindowControls` | Minimize/maximize/close buttons |
 
 ---
 
@@ -733,9 +877,10 @@ webarcade dev                # Run the app
 │  └── Dynamic DLL loader                                     │
 ├─────────────────────────────────────────────────────────────┤
 │  SolidJS Frontend (served from localhost:3000)              │
-│  ├── Plugin API + Panel Store                               │
+│  ├── Plugin API + Component Registry                        │
+│  ├── Layout Manager + Slot-based rendering                  │
 │  ├── Plugin Bridge (services, pub/sub, shared store)        │
-│  └── Unified layout system                                  │
+│  └── 50+ UI components (DaisyUI-based)                      │
 ├─────────────────────────────────────────────────────────────┤
 │  Plugins (loaded at runtime from app/plugins/)              │
 │  ├── plugin.js   → UI components                            │
