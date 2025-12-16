@@ -8,7 +8,7 @@ import PluginInstaller from './components/PluginInstaller';
 
 // Register layouts immediately (before plugins load)
 registerLayouts();
-layoutManager.setActive('engine');
+layoutManager.setActive('welcome');
 
 export default function App() {
     onMount(async () => {

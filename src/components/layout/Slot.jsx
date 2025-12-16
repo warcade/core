@@ -1,4 +1,4 @@
-import { splitProps, createSignal, createMemo, Show, For } from 'solid-js';
+import { splitProps, createSignal, createMemo, Show, For, onMount, onCleanup } from 'solid-js';
 import { Dynamic } from 'solid-js/web';
 import { componentRegistry, ComponentType } from '@/api/plugin/registry';
 
@@ -28,6 +28,64 @@ export function Slot(props) {
 
     // Active tab state
     const [activeTabId, setActiveTabId] = createSignal(local.defaultTab || local.use?.[0] || null);
+    const [isVisible, setIsVisible] = createSignal(true);
+
+    // Listen for slot control events
+    onMount(() => {
+        const ids = local.use || [];
+
+        const handleFocus = (e) => {
+            const { componentId } = e.detail;
+            if (ids.includes(componentId)) {
+                setActiveTabId(componentId);
+                setIsVisible(true);
+                // Call onFocus callback if defined
+                const component = componentRegistry.get(componentId);
+                component?.onFocus?.();
+            }
+        };
+
+        const handleShow = (e) => {
+            const { componentId } = e.detail;
+            if (ids.includes(componentId)) {
+                setIsVisible(true);
+            }
+        };
+
+        const handleHide = (e) => {
+            const { componentId } = e.detail;
+            if (ids.includes(componentId)) {
+                // Only hide if this is the active component
+                if (activeTabId() === componentId) {
+                    setIsVisible(false);
+                }
+            }
+        };
+
+        const handleToggle = (e) => {
+            const { componentId } = e.detail;
+            if (ids.includes(componentId)) {
+                if (activeTabId() === componentId) {
+                    setIsVisible(!isVisible());
+                } else {
+                    setActiveTabId(componentId);
+                    setIsVisible(true);
+                }
+            }
+        };
+
+        document.addEventListener('slot:focus', handleFocus);
+        document.addEventListener('slot:show', handleShow);
+        document.addEventListener('slot:hide', handleHide);
+        document.addEventListener('slot:toggle', handleToggle);
+
+        onCleanup(() => {
+            document.removeEventListener('slot:focus', handleFocus);
+            document.removeEventListener('slot:show', handleShow);
+            document.removeEventListener('slot:hide', handleHide);
+            document.removeEventListener('slot:toggle', handleToggle);
+        });
+    });
 
     // Get active component
     const activeComponent = createMemo(() => {
@@ -85,7 +143,7 @@ export function Slot(props) {
             </Show>
 
             {/* Content */}
-            <div class="flex-1 overflow-auto">
+            <div class="flex-1 overflow-auto min-h-0 h-full">
                 <Show when={activeComponent()}>
                     <Dynamic component={activeComponent().component} />
                 </Show>

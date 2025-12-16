@@ -194,7 +194,8 @@ export const layoutManager = {
     signals: {
         activeId: activeLayoutId,
         layouts: () => layouts,
-        history: layoutHistory
+        history: layoutHistory,
+        canGoBack: () => layoutHistory().length > 0
     }
 };
 

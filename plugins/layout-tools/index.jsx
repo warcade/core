@@ -165,6 +165,71 @@ function LayoutIndicator() {
     );
 }
 
+// Status bar layout dropdown - allows switching layouts from footer
+function LayoutStatusDropdown() {
+    const [open, setOpen] = createSignal(false);
+
+    const allLayouts = () => {
+        const all = layoutManager.getAll();
+        return all.length > 0 ? all : [];
+    };
+
+    const currentLayout = () => {
+        const id = activeLayoutId();
+        if (!id) return { name: 'No Layout' };
+        const layout = layoutManager.get(id);
+        return layout || { name: 'Unknown' };
+    };
+
+    const handleSwitch = (layoutId) => {
+        layoutManager.setActive(layoutId);
+        setOpen(false);
+    };
+
+    return (
+        <div class="relative">
+            <button
+                class="flex items-center gap-1.5 px-2 py-0.5 text-xs rounded hover:bg-base-content/10 transition-colors"
+                onClick={() => setOpen(!open())}
+            >
+                <IconLayout size={12} />
+                <span>{currentLayout().name}</span>
+                <IconChevronDown size={10} class={`transition-transform ${open() ? 'rotate-180' : ''}`} />
+            </button>
+
+            <Show when={open()}>
+                {/* Dropdown menu - opens upward from status bar */}
+                <div class="absolute bottom-full left-0 mb-1 bg-base-100 border border-base-300 rounded-lg shadow-xl z-50 min-w-48 max-h-96 overflow-auto p-1">
+                    <For each={allLayouts()}>
+                        {(layout) => (
+                            <button
+                                class={`w-full flex items-center gap-2 px-3 py-1.5 text-sm rounded transition-colors ${
+                                    activeLayoutId() === layout.id
+                                        ? 'bg-primary/20 text-primary'
+                                        : 'hover:bg-base-200'
+                                }`}
+                                onClick={() => handleSwitch(layout.id)}
+                            >
+                                <LayoutIcon type={layout.icon} />
+                                <span class="flex-1 text-left">{layout.name}</span>
+                                <Show when={activeLayoutId() === layout.id}>
+                                    <span class="text-xs text-primary">●</span>
+                                </Show>
+                            </button>
+                        )}
+                    </For>
+                </div>
+
+                {/* Backdrop */}
+                <div
+                    class="fixed inset-0 z-40"
+                    onClick={() => setOpen(false)}
+                />
+            </Show>
+        </div>
+    );
+}
+
 export default plugin({
     id: 'layout-tools',
     name: 'Layout Tools',
@@ -198,12 +263,20 @@ export default plugin({
             icon: IconLayout
         });
 
-        // Register status bar indicator
+        // Register status bar indicator (simple text)
         api.register('layout-indicator', {
             type: 'status',
             component: LayoutIndicator,
             align: 'right',
             priority: 50
+        });
+
+        // Register status bar dropdown (with layout switching)
+        api.register('layout-dropdown', {
+            type: 'status',
+            component: LayoutStatusDropdown,
+            align: 'left',
+            priority: 10
         });
 
         console.log('[Layout Tools] Started');

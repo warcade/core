@@ -100,6 +100,14 @@ fn main() {
         .unwrap_or_else(std::env::temp_dir)
         .join(env!("CARGO_PKG_NAME"));
 
+    // Clear WebView2 cache to ensure fresh content loads
+    // This fixes the issue where old cached content is shown after rebuilds
+    let cache_dir = data_dir.join("EBWebView").join("Default").join("Cache");
+    if cache_dir.exists() {
+        let _ = std::fs::remove_dir_all(&cache_dir);
+        log::info!("Cleared WebView2 cache");
+    }
+
     // Create web context with custom data directory
     let mut web_context = WebContext::new(Some(data_dir));
 

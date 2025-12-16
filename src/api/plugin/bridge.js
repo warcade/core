@@ -356,14 +356,22 @@ class PluginBridge {
     }
 
     /**
-     * Get a selector function for use in SolidJS components
-     * Returns a function that when called returns the current value
+     * Get a reactive selector for use in SolidJS components
+     * Returns a signal accessor that automatically tracks the store value
      * @param {string} path - Dot-notation path
      * @param {any} defaultValue - Default value
-     * @returns {function} Selector function
+     * @returns {function} Signal accessor function
      */
     selector(path, defaultValue = undefined) {
-        return () => this.get(path, defaultValue);
+        // Create a signal that tracks the store value
+        const [value, setValue] = createSignal(this.get(path, defaultValue));
+
+        // Watch for changes and update the signal
+        this.watch(path, (newValue) => {
+            setValue(newValue !== undefined ? newValue : defaultValue);
+        });
+
+        return value;
     }
 
     /**
