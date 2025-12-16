@@ -18,11 +18,6 @@ const cheekySayings = [
     "Roses are red, violets are blue, unexpected '{' on line 32",
     "Keep calm and clear your cache",
     "I put the 'pro' in procrastination",
-    "Hot reload is working! 🔥",
-    "Did you know mass selection is Ctrl+A? Revolutionary.",
-    "99 little bugs in the code, take one down, patch it around... 127 little bugs in the code",
-    "A SQL query walks into a bar, walks up to two tables and asks... 'Can I join you?'",
-    "!false - it's funny because it's true",
 ];
 
 function CheekyPanel() {
