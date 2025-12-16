@@ -31,7 +31,7 @@ export function WelcomeLayout() {
                 />
             </Row>
 
-            <Footer use={['themes:theme-selector']} />
+            <Footer use={['clock:footer', 'themes:theme-selector']} />
         </Column>
     );
 }
