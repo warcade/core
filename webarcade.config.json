@@ -1,0 +1,77 @@
+{
+  "$schema": "./webarcade.config.schema.json",
+  "name": "WebArcade",
+  "version": "0.1.0",
+  "defaultLayout": "welcome",
+  "plugins": {
+    "layout-tools": {
+      "name": "layout-tools",
+      "version": "1.0.0",
+      "description": "",
+      "author": "",
+      "path": "layout-tools.js",
+      "hasBackend": false,
+      "hasFrontend": true,
+      "priority": 100,
+      "enabled": true,
+      "routes": []
+    },
+    "demo": {
+      "name": "demo",
+      "version": "1.0.0",
+      "description": "",
+      "author": "",
+      "path": "demo.js",
+      "hasBackend": false,
+      "hasFrontend": true,
+      "priority": 100,
+      "enabled": true,
+      "routes": []
+    },
+    "themes": {
+      "name": "themes",
+      "version": "1.0.0",
+      "description": "",
+      "author": "",
+      "path": "themes.js",
+      "hasBackend": false,
+      "hasFrontend": true,
+      "priority": 100,
+      "enabled": true,
+      "routes": []
+    },
+    "systemMonitor": {
+      "name": "systemMonitor",
+      "version": "1.0.0",
+      "description": "System resource monitoring (CPU, RAM, GPU)",
+      "author": "WebArcade Team",
+      "path": "systemMonitor.dll",
+      "hasBackend": true,
+      "hasFrontend": true,
+      "priority": 100,
+      "enabled": true,
+      "routes": [
+        {
+          "handler": "handle_cpu",
+          "method": "GET",
+          "path": "/cpu"
+        },
+        {
+          "handler": "handle_gpu",
+          "method": "GET",
+          "path": "/gpu"
+        },
+        {
+          "handler": "handle_memory",
+          "method": "GET",
+          "path": "/memory"
+        },
+        {
+          "handler": "handle_stats",
+          "method": "GET",
+          "path": "/stats"
+        }
+      ]
+    }
+  }
+}

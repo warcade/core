@@ -108,7 +108,8 @@ function createCssPlugin(distDir) {
 // APP BUILD - builds the main WebArcade application
 // ============================================================================
 async function buildApp() {
-  const SRC = resolve(ROOT, 'src');
+  const WEBARCADE_PKG = resolve(ROOT, 'node_modules/webarcade/src');
+  const SRC = resolve(WEBARCADE_PKG, 'app');
   const DIST = resolve(ROOT, 'app/dist');
   const PUBLIC = resolve(ROOT, 'public');
 
@@ -138,7 +139,7 @@ async function buildApp() {
       'import.meta.hot': 'undefined',
     },
     drop: isProduction ? ['console', 'debugger'] : [],
-    alias: { '@': SRC },
+    alias: { '@': WEBARCADE_PKG },
     plugins: [createSolidPlugin(), createCssPlugin(DIST)],
     loader: {
       '.js': 'js', '.json': 'json',
@@ -248,6 +249,11 @@ function createExternalsPlugin() {
         'solid-js/store': 'SolidJSStore',
         '@/api/plugin': 'WebArcadeAPI',
         '@/api/bridge': 'WebArcadeAPI',
+        'webarcade': 'WebArcadeAPI',
+        'webarcade/plugin': 'WebArcadeAPI',
+        'webarcade/layout': 'WebArcadeAPI',
+        'webarcade/hooks': 'WebArcadeAPI',
+        'webarcade/components/ui': 'WebArcadeAPI',
       };
 
       // Handle each external module
@@ -283,6 +289,7 @@ function createExternalsPlugin() {
             'getNextMarker', 'runHydrationEvents', 'getHydrationKey', 'Assets', 'HydrationScript',
             'NoHydration', 'Hydration', 'ssr', 'ssrClassList', 'ssrStyle', 'ssrSpread', 'ssrElement',
             'escape', 'resolveSSRNode', 'use', 'dynamicProperty', 'SVGElements', 'setStyleProperty',
+            'mergeProps',
           ],
           'solid-js/store': [
             'createStore', 'produce', 'reconcile', 'unwrap', 'createMutable', 'modifyMutable', 'DEV',
@@ -293,6 +300,7 @@ function createExternalsPlugin() {
             'horizontalMenuButtonsEnabled', 'footerVisible', 'viewportTabsVisible', 'pluginTabsVisible',
             'leftPanelVisible', 'propertiesPanelVisible', 'bottomPanelVisible', 'toolbarVisible', 'fullscreenMode',
             'api', 'BRIDGE_API', 'WEBARCADE_WS',
+            'layouts', 'layoutManager', 'activeLayoutId',
           ],
           '@/api/bridge': [
             'plugin', 'createPlugin', 'usePluginAPI', 'viewportTypes', 'pluginAPI',
@@ -300,6 +308,40 @@ function createExternalsPlugin() {
             'horizontalMenuButtonsEnabled', 'footerVisible', 'viewportTabsVisible', 'pluginTabsVisible',
             'leftPanelVisible', 'propertiesPanelVisible', 'bottomPanelVisible', 'toolbarVisible', 'fullscreenMode',
             'api', 'BRIDGE_API', 'WEBARCADE_WS',
+          ],
+          'webarcade': [
+            'plugin', 'createPlugin', 'usePluginAPI', 'viewportTypes', 'pluginAPI',
+            'panelStore', 'panels', 'activePlugin', 'panelVisibility', 'PANELS',
+            'horizontalMenuButtonsEnabled', 'footerVisible', 'viewportTabsVisible', 'pluginTabsVisible',
+            'leftPanelVisible', 'propertiesPanelVisible', 'bottomPanelVisible', 'toolbarVisible', 'fullscreenMode',
+            'api', 'BRIDGE_API', 'WEBARCADE_WS',
+            'layouts', 'layoutManager', 'activeLayoutId',
+            'Row', 'Column', 'Slot', 'Spacer', 'Resizable',
+            'Toolbar', 'MenuBar', 'Footer', 'TabBar',
+            'DragRegion', 'WindowControls', 'LayoutTabs',
+          ],
+          'webarcade/plugin': [
+            'plugin', 'createPlugin', 'usePluginAPI', 'viewportTypes', 'pluginAPI',
+            'panelStore', 'panels', 'activePlugin', 'panelVisibility', 'PANELS',
+            'api', 'BRIDGE_API', 'WEBARCADE_WS',
+            'layouts', 'layoutManager', 'activeLayoutId',
+          ],
+          'webarcade/layout': [
+            'layoutManager', 'layouts', 'activeLayoutId',
+          ],
+          'webarcade/hooks': [
+            'useService', 'useOptionalService', 'useServiceReady', 'useReactiveService',
+            'useEvent', 'usePublish', 'useStore', 'useStoreSelector', 'useDebounce', 'useThrottle',
+          ],
+          'webarcade/components/ui': [
+            'Toolbar', 'MenuBar', 'Footer', 'TabBar', 'DragRegion', 'WindowControls', 'LayoutTabs',
+            'ActivityBar', 'Card', 'Badge', 'Avatar', 'Stat', 'Tooltip', 'Table', 'TreeView',
+            'Timeline', 'Code', 'Kbd', 'Chat', 'Modal', 'Alert', 'Progress', 'RadialProgress',
+            'Skeleton', 'Loading', 'LoadingOverlay', 'Input', 'Select', 'Checkbox', 'Toggle',
+            'Radio', 'Range', 'Rating', 'FileInput', 'Breadcrumb', 'Tabs', 'Pagination', 'Steps',
+            'Divider', 'Collapse', 'Accordion', 'Dropdown', 'Popover', 'Drawer', 'Carousel',
+            'Countdown', 'Swap', 'Indicator', 'Stack', 'ButtonGroup', 'InputGroup', 'SearchBox',
+            'ColorPicker', 'ColorSwatch', 'Meter', 'EmptyState', 'toast', 'ToastContainer',
           ],
         };
 
@@ -331,13 +373,13 @@ async function buildPlugin(pluginDir, outputDir) {
 
   // Generate Tailwind CSS for plugin (utilities only, minified)
   // Skip base/preflight since host app already has it
-  const cssContent = `@import "tailwindcss/utilities";
+  const cssContent = `@import "tailwindcss";
 @source "${pluginDir.replace(/\\/g, '/')}/**/*.{js,jsx,ts,tsx}";
 `;
   const cssResult = await postcss([
     tailwindcss(),
     cssnano({ preset: ['default', { discardComments: { removeAll: true } }] })
-  ]).process(cssContent, { from: undefined });
+  ]).process(cssContent, { from: resolve(ROOT, 'package.json') });
   const processedCss = cssResult.css;
 
   // Build plugin with esbuild

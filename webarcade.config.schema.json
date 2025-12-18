@@ -1,0 +1,88 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "WebArcade Configuration",
+  "description": "Configuration file for WebArcade applications",
+  "type": "object",
+  "required": ["name", "version", "plugins"],
+  "properties": {
+    "name": {
+      "type": "string",
+      "description": "Application name"
+    },
+    "version": {
+      "type": "string",
+      "description": "Application version"
+    },
+    "defaultLayout": {
+      "type": "string",
+      "description": "Default layout ID to activate on startup"
+    },
+    "plugins": {
+      "type": "object",
+      "description": "Map of plugin ID to plugin configuration",
+      "additionalProperties": {
+        "$ref": "#/definitions/PluginConfig"
+      }
+    }
+  },
+  "definitions": {
+    "PluginConfig": {
+      "type": "object",
+      "required": ["name", "version", "path"],
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Plugin display name"
+        },
+        "version": {
+          "type": "string",
+          "description": "Plugin version"
+        },
+        "description": {
+          "type": "string",
+          "description": "Plugin description"
+        },
+        "author": {
+          "type": "string",
+          "description": "Plugin author"
+        },
+        "path": {
+          "type": "string",
+          "description": "Path to plugin JS file (relative to plugins directory)"
+        },
+        "hasBackend": {
+          "type": "boolean",
+          "description": "Whether plugin has a DLL backend",
+          "default": false
+        },
+        "hasFrontend": {
+          "type": "boolean",
+          "description": "Whether plugin has a frontend",
+          "default": true
+        },
+        "priority": {
+          "type": "integer",
+          "description": "Load priority (lower = earlier)",
+          "default": 100
+        },
+        "enabled": {
+          "type": "boolean",
+          "description": "Whether plugin is enabled",
+          "default": true
+        },
+        "routes": {
+          "type": "array",
+          "description": "HTTP routes exposed by backend",
+          "items": {
+            "type": "object",
+            "properties": {
+              "method": { "type": "string" },
+              "path": { "type": "string" },
+              "handler": { "type": "string" }
+            }
+          }
+        }
+      }
+    }
+  }
+}

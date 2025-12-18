@@ -3,6 +3,8 @@ use std::path::{Path, PathBuf};
 use std::fs;
 use std::sync::Arc;
 use anyhow::{Result, anyhow};
+use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 
 // Include embedded plugins when feature is enabled
 #[cfg(feature = "locked-plugins")]
@@ -10,19 +12,92 @@ mod embedded {
     include!(concat!(env!("OUT_DIR"), "/embedded_plugins.rs"));
 }
 
+/// Plugin configuration from webarcade.config.json
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PluginConfig {
+    pub name: String,
+    pub version: String,
+    #[serde(default)]
+    pub description: String,
+    #[serde(default)]
+    pub author: String,
+    pub path: String,
+    #[serde(default)]
+    pub has_backend: bool,
+    #[serde(default = "default_has_frontend")]
+    pub has_frontend: bool,
+    #[serde(default = "default_priority")]
+    pub priority: i32,
+    #[serde(default = "default_enabled")]
+    pub enabled: bool,
+    #[serde(default)]
+    pub routes: Vec<serde_json::Value>,
+}
+
+fn default_has_frontend() -> bool { true }
+fn default_priority() -> i32 { 100 }
+fn default_enabled() -> bool { true }
+
+/// WebArcade configuration file structure
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WebArcadeConfig {
+    pub name: String,
+    pub version: String,
+    #[serde(default)]
+    pub default_layout: Option<String>,
+    #[serde(default)]
+    pub plugins: HashMap<String, PluginConfig>,
+}
+
+impl WebArcadeConfig {
+    /// Load config from file
+    pub fn load(config_path: &Path) -> Result<Self> {
+        let content = fs::read_to_string(config_path)
+            .map_err(|e| anyhow!("Failed to read config file: {}", e))?;
+
+        let config: WebArcadeConfig = serde_json::from_str(&content)
+            .map_err(|e| anyhow!("Failed to parse config file: {}", e))?;
+
+        Ok(config)
+    }
+
+    /// Save config to file
+    pub fn save(&self, config_path: &Path) -> Result<()> {
+        let content = serde_json::to_string_pretty(self)?;
+        fs::write(config_path, content)?;
+        Ok(())
+    }
+}
+
 pub struct DynamicPluginLoader {
     plugins_dir: PathBuf,
+    config_path: PathBuf,
 }
 
 impl DynamicPluginLoader {
     pub fn new(plugins_dir: PathBuf) -> Self {
-        Self { plugins_dir }
+        // Config is in the repo root (parent of app/)
+        let config_path = plugins_dir
+            .parent() // app/
+            .and_then(|p| p.parent()) // repo root
+            .map(|p| p.join("webarcade.config.json"))
+            .unwrap_or_else(|| plugins_dir.join("../webarcade.config.json"));
+
+        Self { plugins_dir, config_path }
     }
 
-    /// Discover and load all plugins
+    /// Set a custom config path
+    pub fn with_config_path(mut self, config_path: PathBuf) -> Self {
+        self.config_path = config_path;
+        self
+    }
+
+    /// Load all plugins from config
     ///
     /// When `locked-plugins` feature is enabled: loads from embedded binary data
-    /// Otherwise: loads from plugins directory on disk
+    /// Otherwise: loads from config file
     pub fn load_all_plugins(&mut self) -> Result<Vec<PluginInfo>> {
         #[cfg(feature = "locked-plugins")]
         {
@@ -31,7 +106,7 @@ impl DynamicPluginLoader {
 
         #[cfg(not(feature = "locked-plugins"))]
         {
-            self.load_external_plugins()
+            self.load_plugins_from_config()
         }
     }
 
@@ -59,9 +134,14 @@ impl DynamicPluginLoader {
 
                 plugins.push(PluginInfo {
                     id: plugin.id.to_string(),
+                    name: plugin.id.to_string(),
+                    version: "1.0.0".to_string(),
+                    description: String::new(),
+                    author: String::new(),
                     dll_path: PathBuf::new(),
                     has_backend: false,
                     has_frontend: true,
+                    priority: 100,
                     routes: vec![],
                     frontend_path: None,
                     embedded_js: Some(plugin.id.to_string()),
@@ -91,119 +171,100 @@ impl DynamicPluginLoader {
         let dll_path = temp_dir.join(&dll_name);
         fs::write(&dll_path, data)?;
 
-        self.load_plugin_from_dll(&dll_path)
+        self.load_plugin_from_dll(&dll_path, plugin_id)
     }
 
-    /// Load plugins from external directory (unlocked mode)
+    /// Load plugins from config file (unlocked mode)
     #[cfg(not(feature = "locked-plugins"))]
-    fn load_external_plugins(&mut self) -> Result<Vec<PluginInfo>> {
-        log::info!("🔓 Scanning for external plugins in: {:?}", self.plugins_dir);
+    fn load_plugins_from_config(&mut self) -> Result<Vec<PluginInfo>> {
+        log::info!("📋 Loading plugins from config: {:?}", self.config_path);
 
-        if !self.plugins_dir.exists() {
-            fs::create_dir_all(&self.plugins_dir)?;
+        // If config doesn't exist, return empty list
+        if !self.config_path.exists() {
+            log::info!("⚠️  Config file not found, no plugins to load");
             return Ok(Vec::new());
         }
 
-        let entries = fs::read_dir(&self.plugins_dir)?;
+        let config = WebArcadeConfig::load(&self.config_path)?;
         let mut plugins = Vec::new();
-        let mut loaded_ids = std::collections::HashSet::new();
 
-        for entry in entries {
-            let entry = entry?;
-            let path = entry.path();
+        // Sort plugins by priority
+        let mut plugin_entries: Vec<_> = config.plugins.into_iter().collect();
+        plugin_entries.sort_by(|a, b| a.1.priority.cmp(&b.1.priority));
 
-            if path.is_file() {
-                if let Some(ext) = path.extension() {
-                    let ext_str = ext.to_string_lossy().to_lowercase();
+        for (plugin_id, plugin_config) in plugin_entries {
+            // Skip disabled plugins
+            if !plugin_config.enabled {
+                log::info!("⏭️  Skipping disabled plugin: {}", plugin_id);
+                continue;
+            }
 
-                    // Get plugin ID from filename
-                    let stem = path.file_stem()
-                        .map(|s| s.to_string_lossy().to_string())
-                        .unwrap_or_default();
+            log::info!("📦 Loading plugin from config: {}", plugin_id);
 
-                    // Remove "lib" prefix on Linux/macOS
-                    let plugin_id = stem.strip_prefix("lib").unwrap_or(&stem).to_string();
+            if plugin_config.has_backend {
+                // Load DLL plugin
+                let dll_path = self.resolve_dll_path(&plugin_id);
 
-                    // Skip if we already loaded this plugin (DLL takes precedence over JS)
-                    if loaded_ids.contains(&plugin_id) {
-                        continue;
-                    }
-
-                    if ext_str == "dll" || ext_str == "so" || ext_str == "dylib" {
-                        // DLL plugin (has backend)
-                        match self.load_plugin_from_dll(&path) {
-                            Ok(plugin_info) => {
-                                loaded_ids.insert(plugin_info.id.clone());
-                                plugins.push(plugin_info);
-                            }
-                            Err(e) => {
-                                log::warn!("⚠️  Failed to load plugin from {:?}: {}", path, e);
-                            }
+                if dll_path.exists() {
+                    match self.load_plugin_from_dll(&dll_path, &plugin_id) {
+                        Ok(mut plugin_info) => {
+                            // Override with config values
+                            plugin_info.name = plugin_config.name;
+                            plugin_info.version = plugin_config.version;
+                            plugin_info.description = plugin_config.description;
+                            plugin_info.author = plugin_config.author;
+                            plugin_info.priority = plugin_config.priority;
+                            plugins.push(plugin_info);
                         }
-                    } else if ext_str == "js" {
-                        // Frontend-only JS plugin
-                        log::info!("📦 Loading frontend-only plugin: {} from {:?}", plugin_id, path);
-                        loaded_ids.insert(plugin_id.clone());
-                        plugins.push(PluginInfo {
-                            id: plugin_id.clone(),
-                            dll_path: PathBuf::new(), // No DLL
-                            has_backend: false,
-                            has_frontend: true,
-                            routes: vec![],
-                            frontend_path: Some(path.clone()),
-                            #[cfg(feature = "locked-plugins")]
-                            embedded_js: None,
-                        });
-                        log::info!("✅ Loaded frontend-only plugin: {}", plugin_id);
+                        Err(e) => log::warn!("⚠️  Failed to load DLL plugin {}: {}", plugin_id, e),
                     }
+                } else {
+                    log::warn!("⚠️  DLL not found for plugin {}: {:?}", plugin_id, dll_path);
+                }
+            } else {
+                // Frontend-only JS plugin
+                let js_path = self.plugins_dir.join(&plugin_config.path);
+
+                if js_path.exists() {
+                    plugins.push(PluginInfo {
+                        id: plugin_id.clone(),
+                        name: plugin_config.name,
+                        version: plugin_config.version,
+                        description: plugin_config.description,
+                        author: plugin_config.author,
+                        dll_path: PathBuf::new(),
+                        has_backend: false,
+                        has_frontend: true,
+                        priority: plugin_config.priority,
+                        routes: vec![],
+                        frontend_path: Some(js_path),
+                        #[cfg(feature = "locked-plugins")]
+                        embedded_js: None,
+                    });
+                    log::info!("✅ Loaded frontend plugin: {}", plugin_id);
+                } else {
+                    log::warn!("⚠️  JS file not found for plugin {}: {:?}", plugin_id, js_path);
                 }
             }
         }
 
-        log::info!("📦 Successfully loaded {} plugins", plugins.len());
+        log::info!("📦 Successfully loaded {} plugins from config", plugins.len());
         Ok(plugins)
     }
 
-    fn find_dll_in_dir(&self, dir: &Path, plugin_id: &str) -> Option<PathBuf> {
-        // Look for platform-specific library
+    /// Resolve DLL path for a plugin
+    fn resolve_dll_path(&self, plugin_id: &str) -> PathBuf {
         #[cfg(target_os = "windows")]
-        let lib_name = format!("{}.dll", plugin_id);
-
+        let dll_name = format!("{}.dll", plugin_id);
         #[cfg(target_os = "linux")]
-        let lib_name = format!("lib{}.so", plugin_id);
-
+        let dll_name = format!("lib{}.so", plugin_id);
         #[cfg(target_os = "macos")]
-        let lib_name = format!("lib{}.dylib", plugin_id);
+        let dll_name = format!("lib{}.dylib", plugin_id);
 
-        let dll_path = dir.join(&lib_name);
-        if dll_path.exists() {
-            return Some(dll_path);
-        }
-
-        // Fallback: search for any DLL in the directory
-        if let Ok(entries) = fs::read_dir(dir) {
-            for entry in entries.flatten() {
-                let path = entry.path();
-                if let Some(ext) = path.extension() {
-                    if ext == "dll" || ext == "so" || ext == "dylib" {
-                        return Some(path);
-                    }
-                }
-            }
-        }
-
-        None
+        self.plugins_dir.join(&dll_name)
     }
 
-    fn load_plugin_from_dll(&mut self, dll_path: &Path) -> Result<PluginInfo> {
-        // Extract plugin ID from filename
-        let stem = dll_path.file_stem()
-            .ok_or_else(|| anyhow!("Invalid DLL filename"))?
-            .to_string_lossy();
-
-        // Remove "lib" prefix on Linux/macOS
-        let plugin_id = stem.strip_prefix("lib").unwrap_or(&stem).to_string();
-
+    fn load_plugin_from_dll(&mut self, dll_path: &Path, plugin_id: &str) -> Result<PluginInfo> {
         log::info!("📦 Loading plugin DLL: {} from {:?}", plugin_id, dll_path);
 
         // Load the library
@@ -226,19 +287,24 @@ impl DynamicPluginLoader {
         // Plugin has backend if it has any routes
         let has_backend = !routes.is_empty();
 
-        // Register the plugin library for FFI calls (needed for both backend handlers and frontend extraction)
-        crate::bridge::core::plugin_exports::register_plugin_library(plugin_id.clone(), lib_arc);
+        // Register the plugin library for FFI calls
+        crate::bridge::core::plugin_exports::register_plugin_library(plugin_id.to_string(), lib_arc);
 
         let plugin_type = if has_backend { "full-stack" } else { "frontend-only" };
         log::info!("✅ Loaded {} plugin: {} ({} routes, frontend: {})", plugin_type, plugin_id, routes.len(), has_frontend);
 
         Ok(PluginInfo {
-            id: plugin_id,
+            id: plugin_id.to_string(),
+            name: plugin_id.to_string(),
+            version: "1.0.0".to_string(),
+            description: String::new(),
+            author: String::new(),
             dll_path: dll_path.to_path_buf(),
             has_backend,
             has_frontend,
+            priority: 100,
             routes,
-            frontend_path: None, // Frontend is embedded in DLL
+            frontend_path: None,
             #[cfg(feature = "locked-plugins")]
             embedded_js: None,
         })
@@ -304,15 +370,25 @@ impl DynamicPluginLoader {
             Ok(frontend_str.to_string())
         }
     }
+
+    /// Get the config path being used
+    pub fn config_path(&self) -> &Path {
+        &self.config_path
+    }
 }
 
 /// Information about a loaded plugin
 #[derive(Debug, Clone)]
 pub struct PluginInfo {
     pub id: String,
+    pub name: String,
+    pub version: String,
+    pub description: String,
+    pub author: String,
     pub dll_path: PathBuf,
     pub has_backend: bool,
     pub has_frontend: bool,
+    pub priority: i32,
     pub routes: Vec<serde_json::Value>,
     /// Path to plugin.js for frontend-only plugins (no DLL)
     pub frontend_path: Option<PathBuf>,

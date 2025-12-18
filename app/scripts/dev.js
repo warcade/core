@@ -23,10 +23,12 @@ import { fileURLToPath } from 'url';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = resolve(__dirname, '../..');
-const SRC = resolve(ROOT, 'src');
+const WEBARCADE_PKG = resolve(ROOT, 'node_modules/webarcade/src');
+const SRC = resolve(WEBARCADE_PKG, 'app');
 const DIST = resolve(ROOT, 'app/dist');
 const PLUGINS_SRC = resolve(ROOT, 'plugins');
 const PLUGINS_BUILT = resolve(ROOT, 'app/plugins');
+const CONFIG_FILE = resolve(ROOT, 'webarcade.config.json');
 
 // Colors for console output
 const cyan = (s) => `\x1b[36m${s}\x1b[0m`;
@@ -140,7 +142,7 @@ async function buildFrontend() {
                 'import.meta.env.PROD': 'false',
                 '__DEV__': 'true',
             },
-            alias: { '@': SRC },
+            alias: { '@': WEBARCADE_PKG },
             plugins: [createSolidPlugin(), createCssPlugin()],
             loader: {
                 '.js': 'js', '.json': 'json',
@@ -326,22 +328,8 @@ function startWatchers() {
         batchTimer = setTimeout(processBatch, BATCH_DELAY);
     };
 
-    // Watch src/ - rebuild frontend
-    const srcWatcher = chokidar.watch(SRC, {
-        ignored: /node_modules/,
-        persistent: true,
-        ignoreInitial: true,
-    });
-
-    srcWatcher.on('change', (path) => {
-        pendingChanges.frontendFiles.add(path);
-        scheduleBatch();
-    });
-    srcWatcher.on('add', (path) => {
-        pendingChanges.frontendFiles.add(path);
-        scheduleBatch();
-    });
-    console.log(`${green('✓')} Watching src/`);
+    // Note: No src/ watcher needed - framework code is in node_modules/webarcade
+    // To modify the framework, update the package and reinstall
 
     // Watch plugins/ source - rebuild plugin
     const pluginsSrcWatcher = chokidar.watch(PLUGINS_SRC, {
@@ -388,6 +376,21 @@ function startWatchers() {
         }
     });
     console.log(`${green('✓')} Watching app/plugins/`);
+
+    // Watch webarcade.config.json - rescan plugins on change
+    if (existsSync(CONFIG_FILE)) {
+        const configWatcher = chokidar.watch(CONFIG_FILE, {
+            persistent: true,
+            ignoreInitial: true,
+        });
+
+        configWatcher.on('change', async () => {
+            console.log(`${cyan('→')} Config changed: webarcade.config.json`);
+            await rescanPlugins();
+            triggerReload();
+        });
+        console.log(`${green('✓')} Watching webarcade.config.json`);
+    }
 }
 
 // ============================================================================

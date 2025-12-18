@@ -640,10 +640,12 @@ fn serve_static_file(path: &str) -> Option<Response<BoxBody<Bytes, Infallible>>>
     None
 }
 
-/// Handle rescan plugins request - reloads plugins from disk
+/// Handle rescan plugins request - reloads plugins from config
 fn handle_rescan_plugins() -> Response<BoxBody<Bytes, Infallible>> {
     let plugins_dir = get_plugins_dir();
     let mut dynamic_loader = DynamicPluginLoader::new(plugins_dir);
+
+    log::info!("🔄 Reloading plugins from config: {:?}", dynamic_loader.config_path());
 
     match dynamic_loader.load_all_plugins() {
         Ok(dynamic_plugins) => {
@@ -655,7 +657,7 @@ fn handle_rescan_plugins() -> Response<BoxBody<Bytes, Infallible>> {
                 *loaded = dynamic_plugins;
             }
 
-            log::info!("🔄 Rescanned plugins: {} found", count);
+            log::info!("🔄 Reloaded {} plugins from config", count);
 
             let json = serde_json::json!({
                 "success": true,
@@ -670,8 +672,33 @@ fn handle_rescan_plugins() -> Response<BoxBody<Bytes, Infallible>> {
                 .unwrap()
         }
         Err(e) => {
-            log::error!("Failed to rescan plugins: {}", e);
-            error_response(StatusCode::INTERNAL_SERVER_ERROR, &format!("Failed to rescan: {}", e))
+            log::error!("Failed to reload plugins from config: {}", e);
+            error_response(StatusCode::INTERNAL_SERVER_ERROR, &format!("Failed to reload: {}", e))
+        }
+    }
+}
+
+/// Handle /api/config - serve the webarcade config
+fn handle_get_config() -> Response<BoxBody<Bytes, Infallible>> {
+    let plugins_dir = get_plugins_dir();
+    let config_path = plugins_dir
+        .parent()
+        .and_then(|p| p.parent())
+        .map(|p| p.join("webarcade.config.json"))
+        .unwrap_or_else(|| plugins_dir.join("../webarcade.config.json"));
+
+    match std::fs::read_to_string(&config_path) {
+        Ok(content) => {
+            Response::builder()
+                .status(StatusCode::OK)
+                .header("Content-Type", "application/json")
+                .header("Access-Control-Allow-Origin", "*")
+                .body(full_body(&content))
+                .unwrap()
+        }
+        Err(e) => {
+            log::error!("Failed to read config: {}", e);
+            error_response(StatusCode::NOT_FOUND, "Config file not found")
         }
     }
 }
@@ -724,6 +751,11 @@ async fn handle_api_request(req: Request<Incoming>, router_registry: RouterRegis
     // Health check endpoint
     if path == "/health" || path == "/api/health" {
         return health_response();
+    }
+
+    // Config endpoint
+    if path == "/api/config" {
+        return handle_get_config();
     }
 
     // Runtime plugin API endpoints

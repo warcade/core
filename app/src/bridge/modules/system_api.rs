@@ -92,10 +92,11 @@ pub fn handle_list_plugins() -> Response<BoxBody<Bytes, Infallible>> {
     for plugin_info in loaded_plugins.iter() {
         let plugin_metadata = serde_json::json!({
             "id": plugin_info.id,
-            "name": plugin_info.id, // Could be enhanced to read from manifest
-            "version": "1.0.0",
-            "description": "",
-            "author": "Unknown",
+            "name": plugin_info.name,
+            "version": plugin_info.version,
+            "description": plugin_info.description,
+            "author": plugin_info.author,
+            "priority": plugin_info.priority,
             "routes": plugin_info.routes,
             "has_plugin_js": plugin_info.has_frontend,
             "has_dll": plugin_info.has_backend

@@ -1,6 +1,43 @@
-import { plugin } from '@/api/plugin';
+import { plugin, Row, Column, Slot, Resizable, Toolbar, Footer } from 'webarcade';
+import { DragRegion, WindowControls, LayoutTabs } from 'webarcade/components/ui';
 import { createSignal, For, Show } from 'solid-js';
 import { IconBook, IconBrandGithub, IconComponents, IconCode, IconLayout, IconServer } from '@tabler/icons-solidjs';
+
+// ============================================================================
+// WELCOME LAYOUT
+// ============================================================================
+
+function WelcomeLayout() {
+    return (
+        <Column class="h-screen bg-base-100">
+            <Toolbar>
+                <DragRegion class="flex-1 h-full" />
+                <WindowControls />
+            </Toolbar>
+
+            <LayoutTabs />
+
+            <Row flex={1} class="overflow-hidden">
+                <Resizable direction="horizontal" side="end" defaultSize={220} minSize={180} maxSize={320}>
+                    <Slot
+                        name="sidebar"
+                        use={['demo:sidebar']}
+                        showTabs={false}
+                        class="h-full"
+                    />
+                </Resizable>
+
+                <Slot
+                    name="main"
+                    flex={1}
+                    use={['demo:content']}
+                />
+            </Row>
+
+            <Footer use={['systemMonitor:monitor', 'themes:theme-selector']} />
+        </Column>
+    );
+}
 
 // ============================================================================
 // SIDEBAR NAVIGATION
@@ -69,7 +106,7 @@ function WelcomeSection() {
                 </div>
 
                 <p class="mt-8 text-xs text-base-content/40">
-                    Remove this demo by deleting <code class="text-base-content/60">plugins/demo</code> and <code class="text-base-content/60">src/layouts/WelcomeLayout.jsx</code>
+                    Remove this demo by deleting the <code class="text-base-content/60">plugins/demo</code> folder
                 </p>
             </div>
         </div>
@@ -646,6 +683,17 @@ export default plugin({
     author: 'WebArcade',
 
     start(api) {
+        // Register the welcome layout
+        api.layout.register('welcome', {
+            name: 'Welcome',
+            description: 'Getting started guide',
+            component: WelcomeLayout,
+            order: 1
+        });
+
+        // Set it as the default layout
+        api.layout.setActive('welcome');
+
         api.register('sidebar', {
             type: 'panel',
             component: Sidebar,
