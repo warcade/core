@@ -16,18 +16,6 @@
       "enabled": true,
       "routes": []
     },
-    "demo": {
-      "name": "demo",
-      "version": "1.0.0",
-      "description": "",
-      "author": "",
-      "path": "demo.js",
-      "hasBackend": false,
-      "hasFrontend": true,
-      "priority": 100,
-      "enabled": true,
-      "routes": []
-    },
     "themes": {
       "name": "themes",
       "version": "1.0.0",
@@ -72,6 +60,18 @@
           "path": "/stats"
         }
       ]
+    },
+    "demo": {
+      "name": "demo",
+      "version": "1.0.0",
+      "description": "",
+      "author": "",
+      "path": "demo.js",
+      "hasBackend": false,
+      "hasFrontend": true,
+      "priority": 100,
+      "enabled": true,
+      "routes": []
     }
   }
 }
