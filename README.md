@@ -27,7 +27,7 @@ cd my-app
 webarcade dev
 
 # Build production app
-webarcade app
+webarcade package
 ```
 
 ## Documentation
