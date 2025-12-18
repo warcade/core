@@ -237,8 +237,67 @@ async function buildApp() {
 // PLUGIN BUILD - builds a single plugin for the CLI
 // ============================================================================
 
+// Extract export names from a JS/JSX file by parsing export statements
+function extractExportsFromFile(filePath) {
+  if (!existsSync(filePath)) return [];
+  const content = readFileSync(filePath, 'utf8');
+  const exports = new Set();
+
+  // Match: export { foo, bar, baz }
+  const reExportBraces = /export\s*\{([^}]+)\}/g;
+  let match;
+  while ((match = reExportBraces.exec(content)) !== null) {
+    match[1].split(',').forEach(e => {
+      const name = e.trim().split(/\s+as\s+/).pop().trim();
+      if (name && /^[a-zA-Z_$][a-zA-Z0-9_$]*$/.test(name)) exports.add(name);
+    });
+  }
+
+  // Match: export function foo, export const foo, export class foo
+  const reExportDecl = /export\s+(?:const|let|var|function|class)\s+([a-zA-Z_$][a-zA-Z0-9_$]*)/g;
+  while ((match = reExportDecl.exec(content)) !== null) {
+    exports.add(match[1]);
+  }
+
+  // Match: export * from './file' - recursively get those exports
+  const reExportStar = /export\s*\*\s*from\s*['"]([^'"]+)['"]/g;
+  while ((match = reExportStar.exec(content)) !== null) {
+    const importPath = match[1];
+    if (importPath.startsWith('.')) {
+      const dir = dirname(filePath);
+      let resolved = resolve(dir, importPath);
+      // Try common extensions
+      for (const ext of ['', '.js', '.jsx', '.ts', '.tsx', '/index.js', '/index.jsx']) {
+        if (existsSync(resolved + ext)) {
+          resolved = resolved + ext;
+          break;
+        }
+      }
+      if (existsSync(resolved)) {
+        extractExportsFromFile(resolved).forEach(e => exports.add(e));
+      }
+    }
+  }
+
+  return [...exports];
+}
+
 // Plugin to rewrite external imports to window globals (ESM style)
 function createExternalsPlugin() {
+  // Auto-discover exports from packages
+  const discoverExports = (pkgName, entryFile) => {
+    const pkgPath = resolve(ROOT, 'node_modules', pkgName, entryFile);
+    return existsSync(pkgPath) ? extractExportsFromFile(pkgPath) : [];
+  };
+
+  // Cache discovered exports
+  const exportCache = {
+    'webarcade': discoverExports('webarcade', 'src/index.js'),
+    'solid-js': discoverExports('solid-js', 'dist/solid.js'),
+    'solid-js/web': discoverExports('solid-js', 'web/dist/web.js'),
+    'solid-js/store': discoverExports('solid-js', 'store/dist/store.js'),
+  };
+
   return {
     name: 'externals-to-globals',
     setup(build) {
@@ -247,8 +306,6 @@ function createExternalsPlugin() {
         'solid-js': 'SolidJS',
         'solid-js/web': 'SolidJSWeb',
         'solid-js/store': 'SolidJSStore',
-        '@/api/plugin': 'WebArcadeAPI',
-        '@/api/bridge': 'WebArcadeAPI',
         'webarcade': 'WebArcadeAPI',
         'webarcade/plugin': 'WebArcadeAPI',
         'webarcade/layout': 'WebArcadeAPI',
@@ -271,81 +328,14 @@ function createExternalsPlugin() {
         const g = args.pluginData.globalName;
         const m = args.pluginData.moduleName;
 
-        // Define all known exports for each module
-        const exports = {
-          'solid-js': [
-            'createSignal', 'createEffect', 'createMemo', 'createRoot', 'createContext', 'useContext',
-            'onMount', 'onCleanup', 'onError', 'untrack', 'batch', 'on', 'createDeferred', 'createRenderEffect',
-            'createComputed', 'createReaction', 'createSelector', 'observable', 'from', 'mapArray', 'indexArray',
-            'Show', 'For', 'Switch', 'Match', 'Index', 'ErrorBoundary', 'Suspense', 'SuspenseList',
-            'children', 'lazy', 'createResource', 'createUniqueId', 'splitProps', 'mergeProps',
-            'getOwner', 'runWithOwner', 'DEV', 'enableScheduling', 'enableExternalSource',
-          ],
-          'solid-js/web': [
-            'render', 'hydrate', 'renderToString', 'renderToStream', 'isServer', 'Portal', 'Dynamic',
-            'template', 'insert', 'createComponent', 'memo', 'effect', 'className', 'classList',
-            'style', 'spread', 'assign', 'setAttribute', 'setAttributeNS', 'addEventListener',
-            'delegateEvents', 'clearDelegatedEvents', 'setProperty', 'getNextElement', 'getNextMatch',
-            'getNextMarker', 'runHydrationEvents', 'getHydrationKey', 'Assets', 'HydrationScript',
-            'NoHydration', 'Hydration', 'ssr', 'ssrClassList', 'ssrStyle', 'ssrSpread', 'ssrElement',
-            'escape', 'resolveSSRNode', 'use', 'dynamicProperty', 'SVGElements', 'setStyleProperty',
-            'mergeProps',
-          ],
-          'solid-js/store': [
-            'createStore', 'produce', 'reconcile', 'unwrap', 'createMutable', 'modifyMutable', 'DEV',
-          ],
-          '@/api/plugin': [
-            'plugin', 'createPlugin', 'usePluginAPI', 'viewportTypes', 'pluginAPI',
-            'panelStore', 'panels', 'activePlugin', 'panelVisibility', 'PANELS',
-            'horizontalMenuButtonsEnabled', 'footerVisible', 'viewportTabsVisible', 'pluginTabsVisible',
-            'leftPanelVisible', 'propertiesPanelVisible', 'bottomPanelVisible', 'toolbarVisible', 'fullscreenMode',
-            'api', 'BRIDGE_API', 'WEBARCADE_WS',
-            'layouts', 'layout', 'activeLayoutId',
-          ],
-          '@/api/bridge': [
-            'plugin', 'createPlugin', 'usePluginAPI', 'viewportTypes', 'pluginAPI',
-            'panelStore', 'panels', 'activePlugin', 'panelVisibility', 'PANELS',
-            'horizontalMenuButtonsEnabled', 'footerVisible', 'viewportTabsVisible', 'pluginTabsVisible',
-            'leftPanelVisible', 'propertiesPanelVisible', 'bottomPanelVisible', 'toolbarVisible', 'fullscreenMode',
-            'api', 'BRIDGE_API', 'WEBARCADE_WS',
-          ],
-          'webarcade': [
-            'plugin', 'createPlugin', 'usePluginAPI', 'viewportTypes', 'pluginAPI',
-            'panelStore', 'panels', 'activePlugin', 'panelVisibility', 'PANELS',
-            'horizontalMenuButtonsEnabled', 'footerVisible', 'viewportTabsVisible', 'pluginTabsVisible',
-            'leftPanelVisible', 'propertiesPanelVisible', 'bottomPanelVisible', 'toolbarVisible', 'fullscreenMode',
-            'api', 'BRIDGE_API', 'WEBARCADE_WS',
-            'layouts', 'layout', 'activeLayoutId',
-            'Row', 'Column', 'Slot', 'Spacer', 'Resizable',
-            'Toolbar', 'MenuBar', 'Footer', 'TabBar',
-            'DragRegion', 'WindowControls', 'LayoutTabs',
-          ],
-          'webarcade/plugin': [
-            'plugin', 'createPlugin', 'usePluginAPI', 'viewportTypes', 'pluginAPI',
-            'panelStore', 'panels', 'activePlugin', 'panelVisibility', 'PANELS',
-            'api', 'BRIDGE_API', 'WEBARCADE_WS',
-            'layouts', 'layout', 'activeLayoutId',
-          ],
-          'webarcade/layout': [
-            'layout', 'layouts', 'activeLayoutId',
-          ],
-          'webarcade/hooks': [
-            'useService', 'useOptionalService', 'useServiceReady', 'useReactiveService',
-            'useEvent', 'usePublish', 'useStore', 'useStoreSelector', 'useDebounce', 'useThrottle',
-          ],
-          'webarcade/ui': [
-            'Toolbar', 'MenuBar', 'Footer', 'TabBar', 'DragRegion', 'WindowControls', 'LayoutTabs',
-            'ActivityBar', 'Card', 'Badge', 'Avatar', 'Stat', 'Tooltip', 'Table', 'TreeView',
-            'Timeline', 'Code', 'Kbd', 'Chat', 'Modal', 'Alert', 'Progress', 'RadialProgress',
-            'Skeleton', 'Loading', 'LoadingOverlay', 'Input', 'Select', 'Checkbox', 'Toggle',
-            'Radio', 'Range', 'Rating', 'FileInput', 'Breadcrumb', 'Tabs', 'Pagination', 'Steps',
-            'Divider', 'Collapse', 'Accordion', 'Dropdown', 'Popover', 'Drawer', 'Carousel',
-            'Countdown', 'Swap', 'Indicator', 'Stack', 'ButtonGroup', 'InputGroup', 'SearchBox',
-            'ColorPicker', 'ColorSwatch', 'Meter', 'EmptyState', 'toast', 'ToastContainer',
-          ],
-        };
+        // Get exports - use webarcade exports for all webarcade/* subpaths
+        let knownExports;
+        if (m.startsWith('webarcade')) {
+          knownExports = exportCache['webarcade'];
+        } else {
+          knownExports = exportCache[m] || [];
+        }
 
-        const knownExports = exports[m] || [];
         const exportStatements = knownExports.map(e => `export var ${e} = m.${e};`).join(' ');
 
         return {
