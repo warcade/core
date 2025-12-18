@@ -2,7 +2,7 @@ import { plugin } from '@/api/plugin';
 import { createSignal, For, Show } from 'solid-js';
 
 // Use global API to share layout state with main app
-const { layoutManager, activeLayoutId } = window.WebArcadeAPI;
+const { layout, activeLayoutId } = window.WebArcadeAPI;
 import {
     IconLayout,
     IconLayoutDashboard,
@@ -17,19 +17,19 @@ function LayoutSwitcher() {
     const [open, setOpen] = createSignal(false);
 
     const allLayouts = () => {
-        const all = layoutManager.getAll();
+        const all = layout.getAll();
         return all.length > 0 ? all : [];
     };
 
     const currentLayout = () => {
         const id = activeLayoutId();
         if (!id) return { name: 'No Layout' };
-        const layout = layoutManager.get(id);
+        const layout = layout.get(id);
         return layout || { name: 'Unknown' };
     };
 
     const handleSwitch = (layoutId) => {
-        layoutManager.setActive(layoutId);
+        layout.setActive(layoutId);
         setOpen(false);
     };
 
@@ -95,13 +95,13 @@ function LayoutIcon(props) {
 
 // Back button for layout history
 function LayoutBackButton() {
-    const canGoBack = () => layoutManager.canGoBack?.() ?? false;
+    const canGoBack = () => layout.canGoBack?.() ?? false;
 
     return (
         <Show when={canGoBack()}>
             <button
                 class="flex items-center gap-1 px-2 py-1 text-xs rounded hover:bg-base-300 transition-colors"
-                onClick={() => layoutManager.back()}
+                onClick={() => layout.back()}
                 title="Go back to previous layout"
             >
                 <IconArrowLeft size={14} />
@@ -113,7 +113,7 @@ function LayoutBackButton() {
 
 // Layout panel showing all available layouts with previews
 function LayoutPanel() {
-    const allLayouts = () => layoutManager.getAll();
+    const allLayouts = () => layout.getAll();
 
     return (
         <div class="h-full flex flex-col bg-base-200">
@@ -130,7 +130,7 @@ function LayoutPanel() {
                                         ? 'border-primary bg-primary/10'
                                         : 'border-base-300 hover:border-base-content/30 hover:bg-base-300'
                                 }`}
-                                onClick={() => layoutManager.setActive(layout.id)}
+                                onClick={() => layout.setActive(layout.id)}
                             >
                                 <div class="flex items-center gap-2 mb-1">
                                     <LayoutIcon type={layout.icon} />
@@ -153,7 +153,7 @@ function LayoutIndicator() {
     const currentName = () => {
         const id = activeLayoutId();
         if (!id) return 'No Layout';
-        const layout = layoutManager.get(id);
+        const layout = layout.get(id);
         return layout?.name || 'Unknown';
     };
 
@@ -170,19 +170,19 @@ function LayoutStatusDropdown() {
     const [open, setOpen] = createSignal(false);
 
     const allLayouts = () => {
-        const all = layoutManager.getAll();
+        const all = layout.getAll();
         return all.length > 0 ? all : [];
     };
 
     const currentLayout = () => {
         const id = activeLayoutId();
         if (!id) return { name: 'No Layout' };
-        const layout = layoutManager.get(id);
+        const layout = layout.get(id);
         return layout || { name: 'Unknown' };
     };
 
     const handleSwitch = (layoutId) => {
-        layoutManager.setActive(layoutId);
+        layout.setActive(layoutId);
         setOpen(false);
     };
 

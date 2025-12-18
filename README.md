@@ -498,11 +498,11 @@ export function MyLayout() {
 
 ```jsx
 // src/layouts/index.jsx
-import { layoutManager } from '@/api/layout';
+import { layout } from 'webarcade/layout';
 import { MyLayout } from './MyLayout';
 
 export function registerLayouts() {
-    layoutManager.register('my-layout', {
+    layout.register('my-layout', {
         name: 'My Layout',
         description: 'Custom layout for my app',
         component: MyLayout,

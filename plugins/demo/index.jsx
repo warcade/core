@@ -1,5 +1,5 @@
 import { plugin, Column, Toolbar } from 'webarcade';
-import { DragRegion, WindowControls } from 'webarcade/components/ui';
+import { DragRegion, WindowControls } from 'webarcade/ui';
 import { IconBrandGithub, IconBook } from '@tabler/icons-solidjs';
 
 function Welcome() {

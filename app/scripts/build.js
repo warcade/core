@@ -253,7 +253,7 @@ function createExternalsPlugin() {
         'webarcade/plugin': 'WebArcadeAPI',
         'webarcade/layout': 'WebArcadeAPI',
         'webarcade/hooks': 'WebArcadeAPI',
-        'webarcade/components/ui': 'WebArcadeAPI',
+        'webarcade/ui': 'WebArcadeAPI',
       };
 
       // Handle each external module
@@ -300,7 +300,7 @@ function createExternalsPlugin() {
             'horizontalMenuButtonsEnabled', 'footerVisible', 'viewportTabsVisible', 'pluginTabsVisible',
             'leftPanelVisible', 'propertiesPanelVisible', 'bottomPanelVisible', 'toolbarVisible', 'fullscreenMode',
             'api', 'BRIDGE_API', 'WEBARCADE_WS',
-            'layouts', 'layoutManager', 'activeLayoutId',
+            'layouts', 'layout', 'activeLayoutId',
           ],
           '@/api/bridge': [
             'plugin', 'createPlugin', 'usePluginAPI', 'viewportTypes', 'pluginAPI',
@@ -315,7 +315,7 @@ function createExternalsPlugin() {
             'horizontalMenuButtonsEnabled', 'footerVisible', 'viewportTabsVisible', 'pluginTabsVisible',
             'leftPanelVisible', 'propertiesPanelVisible', 'bottomPanelVisible', 'toolbarVisible', 'fullscreenMode',
             'api', 'BRIDGE_API', 'WEBARCADE_WS',
-            'layouts', 'layoutManager', 'activeLayoutId',
+            'layouts', 'layout', 'activeLayoutId',
             'Row', 'Column', 'Slot', 'Spacer', 'Resizable',
             'Toolbar', 'MenuBar', 'Footer', 'TabBar',
             'DragRegion', 'WindowControls', 'LayoutTabs',
@@ -324,16 +324,16 @@ function createExternalsPlugin() {
             'plugin', 'createPlugin', 'usePluginAPI', 'viewportTypes', 'pluginAPI',
             'panelStore', 'panels', 'activePlugin', 'panelVisibility', 'PANELS',
             'api', 'BRIDGE_API', 'WEBARCADE_WS',
-            'layouts', 'layoutManager', 'activeLayoutId',
+            'layouts', 'layout', 'activeLayoutId',
           ],
           'webarcade/layout': [
-            'layoutManager', 'layouts', 'activeLayoutId',
+            'layout', 'layouts', 'activeLayoutId',
           ],
           'webarcade/hooks': [
             'useService', 'useOptionalService', 'useServiceReady', 'useReactiveService',
             'useEvent', 'usePublish', 'useStore', 'useStoreSelector', 'useDebounce', 'useThrottle',
           ],
-          'webarcade/components/ui': [
+          'webarcade/ui': [
             'Toolbar', 'MenuBar', 'Footer', 'TabBar', 'DragRegion', 'WindowControls', 'LayoutTabs',
             'ActivityBar', 'Card', 'Badge', 'Avatar', 'Stat', 'Tooltip', 'Table', 'TreeView',
             'Timeline', 'Code', 'Kbd', 'Chat', 'Modal', 'Alert', 'Progress', 'RadialProgress',
