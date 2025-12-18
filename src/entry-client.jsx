@@ -6,7 +6,10 @@ import {
   plugin, createPlugin, usePluginAPI, pluginAPI,
   componentRegistry, registry, contractIndex, ComponentType,
   layoutManager, layouts, activeLayoutId,
-  api, BRIDGE_API, WEBARCADE_WS, PLUGIN_STATES
+  api, BRIDGE_API, WEBARCADE_WS, PLUGIN_STATES,
+  // Hooks
+  useService, useOptionalService, useServiceReady, useReactiveService,
+  useEvent, usePublish, useStore, useStoreSelector, useDebounce, useThrottle,
 } from './api/plugin'
 import App from './App'
 
@@ -32,7 +35,18 @@ window.WebArcadeAPI = {
   api,
   BRIDGE_API,
   WEBARCADE_WS,
-  PLUGIN_STATES
+  PLUGIN_STATES,
+  // Hooks
+  useService,
+  useOptionalService,
+  useServiceReady,
+  useReactiveService,
+  useEvent,
+  usePublish,
+  useStore,
+  useStoreSelector,
+  useDebounce,
+  useThrottle,
 }
 
 const root = document.getElementById('root')

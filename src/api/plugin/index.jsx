@@ -421,3 +421,17 @@ export { componentRegistry, registry, contractIndex, ComponentType } from './reg
 export { layoutManager, layouts, activeLayoutId } from '@/api/layout';
 export { PLUGIN_STATES } from './store.jsx';
 export { VERSION, VERSION_NAME, VERSION_FULL } from '@/version';
+
+// Generic hooks for plugin development
+export {
+    useService,
+    useOptionalService,
+    useServiceReady,
+    useReactiveService,
+    useEvent,
+    usePublish,
+    useStore,
+    useStoreSelector,
+    useDebounce,
+    useThrottle,
+} from './hooks.jsx';
