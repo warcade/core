@@ -3,6 +3,7 @@
 #![allow(unused_imports)]
 
 use std::sync::{Arc, Mutex};
+use std::path::PathBuf;
 use tao::{
     dpi::{LogicalPosition, LogicalSize},
     event::{Event, WindowEvent},
@@ -14,6 +15,8 @@ use serde::{Deserialize, Serialize};
 
 mod ipc;
 mod bridge;
+
+use bridge::core::dynamic_plugin_loader::WebArcadeConfig;
 mod plugin_installer;
 
 #[derive(Debug, Serialize)]
@@ -77,6 +80,11 @@ fn main() {
 
     log::info!("WebArcade starting...");
 
+    // Load config to get window size
+    let config = load_config();
+    let (width, height) = (config.width as f64, config.height as f64);
+    let title = config.name.clone();
+
     // Start the bridge server in background
     start_bridge_server();
 
@@ -85,8 +93,8 @@ fn main() {
 
     // Create borderless window
     let window = WindowBuilder::new()
-        .with_title("WebArcade")
-        .with_inner_size(LogicalSize::new(1280.0, 720.0))
+        .with_title(&title)
+        .with_inner_size(LogicalSize::new(width, height))
         .with_min_inner_size(LogicalSize::new(800.0, 600.0))
         .with_decorations(false)
         .build(&event_loop)
@@ -315,4 +323,45 @@ fn start_bridge_server() {
             }
         });
     });
+}
+
+/// Load the webarcade config file
+fn load_config() -> WebArcadeConfig {
+    // Try to find config in standard locations
+    let exe_dir = std::env::current_exe()
+        .ok()
+        .and_then(|p| p.parent().map(|p| p.to_path_buf()));
+
+    let config_paths = [
+        // Development: repo root (parent of app/)
+        exe_dir.as_ref()
+            .and_then(|p| p.parent())
+            .and_then(|p| p.parent())
+            .map(|p| p.join("webarcade.config.json")),
+        // Production: next to executable
+        exe_dir.as_ref().map(|p| p.join("webarcade.config.json")),
+        // Current working directory
+        Some(PathBuf::from("webarcade.config.json")),
+    ];
+
+    for path in config_paths.iter().flatten() {
+        if path.exists() {
+            log::info!("Loading config from: {:?}", path);
+            match WebArcadeConfig::load(path) {
+                Ok(config) => return config,
+                Err(e) => log::warn!("Failed to load config from {:?}: {}", path, e),
+            }
+        }
+    }
+
+    log::info!("No config found, using defaults");
+    // Return defaults if no config found
+    WebArcadeConfig {
+        name: "WebArcade".to_string(),
+        version: "1.0.0".to_string(),
+        default_layout: None,
+        width: 1280,
+        height: 720,
+        plugins: std::collections::HashMap::new(),
+    }
 }

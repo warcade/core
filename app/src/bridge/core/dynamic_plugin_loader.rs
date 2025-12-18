@@ -47,9 +47,16 @@ pub struct WebArcadeConfig {
     pub version: String,
     #[serde(default)]
     pub default_layout: Option<String>,
+    #[serde(default = "default_width")]
+    pub width: u32,
+    #[serde(default = "default_height")]
+    pub height: u32,
     #[serde(default)]
     pub plugins: HashMap<String, PluginConfig>,
 }
+
+fn default_width() -> u32 { 1280 }
+fn default_height() -> u32 { 720 }
 
 impl WebArcadeConfig {
     /// Load config from file

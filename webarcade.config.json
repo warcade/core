@@ -1,21 +1,10 @@
 {
-  "$schema": "./webarcade.config.schema.json",
   "name": "WebArcade",
   "version": "0.1.0",
+  "width": 1280,
+  "height": 720,
   "defaultLayout": "welcome",
   "plugins": {
-    "layout-tools": {
-      "name": "layout-tools",
-      "version": "1.0.0",
-      "description": "",
-      "author": "",
-      "path": "layout-tools.js",
-      "hasBackend": false,
-      "hasFrontend": true,
-      "priority": 100,
-      "enabled": true,
-      "routes": []
-    },
     "themes": {
       "name": "themes",
       "version": "1.0.0",
