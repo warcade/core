@@ -4,7 +4,7 @@ use std::fs;
 use std::sync::Arc;
 use anyhow::{Result, anyhow};
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 // Include embedded plugins when feature is enabled
 #[cfg(feature = "locked-plugins")]
@@ -33,6 +33,9 @@ pub struct PluginConfig {
     pub enabled: bool,
     #[serde(default)]
     pub routes: Vec<serde_json::Value>,
+    /// Other plugin IDs this plugin depends on (will be loaded first)
+    #[serde(default)]
+    pub dependencies: Vec<String>,
 }
 
 fn default_has_frontend() -> bool { true }
@@ -195,16 +198,25 @@ impl DynamicPluginLoader {
         let config = WebArcadeConfig::load(&self.config_path)?;
         let mut plugins = Vec::new();
 
-        // Sort plugins by priority
-        let mut plugin_entries: Vec<_> = config.plugins.into_iter().collect();
-        plugin_entries.sort_by(|a, b| a.1.priority.cmp(&b.1.priority));
+        // Filter enabled plugins
+        let enabled_plugins: HashMap<String, PluginConfig> = config.plugins
+            .into_iter()
+            .filter(|(id, cfg)| {
+                if !cfg.enabled {
+                    log::info!("⏭️  Skipping disabled plugin: {}", id);
+                    false
+                } else {
+                    true
+                }
+            })
+            .collect();
 
-        for (plugin_id, plugin_config) in plugin_entries {
-            // Skip disabled plugins
-            if !plugin_config.enabled {
-                log::info!("⏭️  Skipping disabled plugin: {}", plugin_id);
-                continue;
-            }
+        // Resolve load order using topological sort
+        let load_order = self.resolve_plugin_dependencies(&enabled_plugins)?;
+        log::info!("📋 Plugin load order: {:?}", load_order);
+
+        for plugin_id in load_order {
+            let plugin_config = enabled_plugins.get(&plugin_id).unwrap();
 
             log::info!("📦 Loading plugin from config: {}", plugin_id);
 
@@ -216,10 +228,10 @@ impl DynamicPluginLoader {
                     match self.load_plugin_from_dll(&dll_path, &plugin_id) {
                         Ok(mut plugin_info) => {
                             // Override with config values
-                            plugin_info.name = plugin_config.name;
-                            plugin_info.version = plugin_config.version;
-                            plugin_info.description = plugin_config.description;
-                            plugin_info.author = plugin_config.author;
+                            plugin_info.name = plugin_config.name.clone();
+                            plugin_info.version = plugin_config.version.clone();
+                            plugin_info.description = plugin_config.description.clone();
+                            plugin_info.author = plugin_config.author.clone();
                             plugin_info.priority = plugin_config.priority;
                             plugins.push(plugin_info);
                         }
@@ -235,10 +247,10 @@ impl DynamicPluginLoader {
                 if js_path.exists() {
                     plugins.push(PluginInfo {
                         id: plugin_id.clone(),
-                        name: plugin_config.name,
-                        version: plugin_config.version,
-                        description: plugin_config.description,
-                        author: plugin_config.author,
+                        name: plugin_config.name.clone(),
+                        version: plugin_config.version.clone(),
+                        description: plugin_config.description.clone(),
+                        author: plugin_config.author.clone(),
                         dll_path: PathBuf::new(),
                         has_backend: false,
                         has_frontend: true,
@@ -257,6 +269,86 @@ impl DynamicPluginLoader {
 
         log::info!("📦 Successfully loaded {} plugins from config", plugins.len());
         Ok(plugins)
+    }
+
+    /// Resolve plugin load order using topological sort based on dependencies.
+    /// Uses priority as a tiebreaker when plugins have no dependency relationship.
+    fn resolve_plugin_dependencies(&self, plugins: &HashMap<String, PluginConfig>) -> Result<Vec<String>> {
+        let mut order = Vec::new();
+        let mut visited = HashSet::new();
+        let mut visiting = HashSet::new();
+
+        // Validate all dependencies exist
+        for (plugin_id, config) in plugins {
+            for dep in &config.dependencies {
+                if !plugins.contains_key(dep) {
+                    return Err(anyhow!(
+                        "Plugin '{}' depends on '{}' which is not registered or enabled",
+                        plugin_id, dep
+                    ));
+                }
+            }
+        }
+
+        // Sort by priority first so tiebreaking is deterministic
+        let mut plugin_ids: Vec<_> = plugins.keys().cloned().collect();
+        plugin_ids.sort_by(|a, b| {
+            plugins.get(a).unwrap().priority.cmp(&plugins.get(b).unwrap().priority)
+        });
+
+        // Topological sort with DFS
+        for plugin_id in &plugin_ids {
+            if !visited.contains(plugin_id) {
+                self.visit_plugin_deps(
+                    plugin_id,
+                    plugins,
+                    &mut order,
+                    &mut visited,
+                    &mut visiting,
+                )?;
+            }
+        }
+
+        Ok(order)
+    }
+
+    fn visit_plugin_deps(
+        &self,
+        plugin_id: &str,
+        plugins: &HashMap<String, PluginConfig>,
+        order: &mut Vec<String>,
+        visited: &mut HashSet<String>,
+        visiting: &mut HashSet<String>,
+    ) -> Result<()> {
+        if visited.contains(plugin_id) {
+            return Ok(());
+        }
+
+        if visiting.contains(plugin_id) {
+            return Err(anyhow!("Circular dependency detected involving plugin '{}'", plugin_id));
+        }
+
+        visiting.insert(plugin_id.to_string());
+
+        if let Some(config) = plugins.get(plugin_id) {
+            // Sort dependencies by priority for consistent ordering
+            let mut deps: Vec<_> = config.dependencies.iter().cloned().collect();
+            deps.sort_by(|a, b| {
+                let priority_a = plugins.get(a).map(|c| c.priority).unwrap_or(100);
+                let priority_b = plugins.get(b).map(|c| c.priority).unwrap_or(100);
+                priority_a.cmp(&priority_b)
+            });
+
+            for dep in deps {
+                self.visit_plugin_deps(&dep, plugins, order, visited, visiting)?;
+            }
+        }
+
+        visiting.remove(plugin_id);
+        visited.insert(plugin_id.to_string());
+        order.push(plugin_id.to_string());
+
+        Ok(())
     }
 
     /// Resolve DLL path for a plugin
