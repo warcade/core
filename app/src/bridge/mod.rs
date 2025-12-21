@@ -737,6 +737,92 @@ fn handle_get_config() -> Response<BoxBody<Bytes, Infallible>> {
     }
 }
 
+/// Handle /api/assets/set-root - set the assets root directory
+async fn handle_set_assets_root(req: Request<Incoming>) -> Response<BoxBody<Bytes, Infallible>> {
+    // Read request body
+    let body_bytes = match req.collect().await {
+        Ok(collected) => collected.to_bytes(),
+        Err(e) => {
+            return error_response(StatusCode::BAD_REQUEST, &format!("Failed to read body: {}", e));
+        }
+    };
+
+    // Parse JSON body
+    let body: serde_json::Value = match serde_json::from_slice(&body_bytes) {
+        Ok(v) => v,
+        Err(e) => {
+            return error_response(StatusCode::BAD_REQUEST, &format!("Invalid JSON: {}", e));
+        }
+    };
+
+    // Get the path from the request
+    let root_path = match body.get("path").and_then(|v| v.as_str()) {
+        Some(p) => PathBuf::from(p),
+        None => {
+            return error_response(StatusCode::BAD_REQUEST, "Missing 'path' field");
+        }
+    };
+
+    // Verify the path exists
+    if !root_path.exists() {
+        return error_response(StatusCode::BAD_REQUEST, &format!("Path does not exist: {:?}", root_path));
+    }
+
+    // Set the assets root
+    set_assets_root(root_path.clone());
+
+    let json = serde_json::json!({
+        "success": true,
+        "path": root_path.to_string_lossy()
+    }).to_string();
+
+    Response::builder()
+        .status(StatusCode::OK)
+        .header("Content-Type", "application/json")
+        .header("Access-Control-Allow-Origin", "*")
+        .body(full_body(&json))
+        .unwrap()
+}
+
+/// Handle /api/assets/get-root - get the current assets root directory
+fn handle_get_assets_root() -> Response<BoxBody<Bytes, Infallible>> {
+    let path = get_assets_root();
+    let json = match path {
+        Some(p) => serde_json::json!({
+            "success": true,
+            "path": p.to_string_lossy()
+        }),
+        None => serde_json::json!({
+            "success": false,
+            "path": null
+        })
+    }.to_string();
+
+    Response::builder()
+        .status(StatusCode::OK)
+        .header("Content-Type", "application/json")
+        .header("Access-Control-Allow-Origin", "*")
+        .body(full_body(&json))
+        .unwrap()
+}
+
+/// Serve project assets via HTTP (for browser mode)
+fn serve_project_asset(asset_path: &str) -> Response<BoxBody<Bytes, Infallible>> {
+    match protocols::serve_asset_file(asset_path) {
+        Some((content, mime_type)) => {
+            Response::builder()
+                .status(StatusCode::OK)
+                .header("Content-Type", mime_type)
+                .header("Access-Control-Allow-Origin", "*")
+                .body(BoxBody::new(Full::new(Bytes::from(content)).map_err(|_: std::convert::Infallible| unreachable!())))
+                .unwrap()
+        }
+        None => {
+            error_response(StatusCode::NOT_FOUND, &format!("Asset not found: {}", asset_path))
+        }
+    }
+}
+
 /// Handle static file requests on port 3000
 /// This server only serves static files (embedded dist/) and SPA fallback
 async fn handle_static_request(req: Request<Incoming>) -> Response<BoxBody<Bytes, Infallible>> {
@@ -800,6 +886,22 @@ async fn handle_api_request(req: Request<Incoming>, router_registry: RouterRegis
     // Rescan plugins endpoint for hot reload
     if path == "/api/plugins/rescan" {
         return handle_rescan_plugins();
+    }
+
+    // Set assets root endpoint
+    if path == "/api/assets/set-root" && method == hyper::Method::POST {
+        return handle_set_assets_root(req).await;
+    }
+
+    // Get assets root endpoint
+    if path == "/api/assets/get-root" {
+        return handle_get_assets_root();
+    }
+
+    // Serve project assets (for browser mode) - same as app:// protocol but via HTTP
+    if path.starts_with("/assets/") {
+        let asset_path = &path[8..]; // Strip "/assets/"
+        return serve_project_asset(asset_path);
     }
 
     if path.starts_with("/api/plugins/") && path.len() > 13 {
