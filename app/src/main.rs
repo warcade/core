@@ -119,8 +119,56 @@ fn main() {
     // Create web context with custom data directory
     let mut web_context = WebContext::new(Some(data_dir));
 
-    // Create webview with IPC handler
+    // Create webview with IPC handler and custom protocols
     let webview = WebViewBuilder::with_web_context(&mut web_context)
+        // Custom protocol: app:// - serves static files AND project assets
+        // Priority:
+        // 1. Try dist/ first (for app JS/CSS/HTML including dist/assets/)
+        // 2. For /project-assets/* route to ASSETS_ROOT (for 3D models, textures)
+        .with_custom_protocol("app".into(), |_webview, request| {
+            let path = request.uri().path();
+
+            // Route /project-assets/* to project asset file serving (ASSETS_ROOT)
+            if path.starts_with("/project-assets/") {
+                let asset_path = &path[16..]; // Strip "/project-assets"
+                match bridge::protocols::serve_asset_file(asset_path) {
+                    Some((content, mime_type)) => {
+                        return wry::http::Response::builder()
+                            .status(200)
+                            .header("Content-Type", mime_type)
+                            .header("Access-Control-Allow-Origin", "*")
+                            .body(content.into())
+                            .unwrap();
+                    }
+                    None => {
+                        return wry::http::Response::builder()
+                            .status(404)
+                            .header("Content-Type", "text/plain")
+                            .body("Asset not found".as_bytes().to_vec().into())
+                            .unwrap();
+                    }
+                }
+            }
+
+            // Everything else: serve from dist/ static files (includes /assets/app.js, etc.)
+            match bridge::protocols::serve_app_file(path) {
+                Some((content, mime_type)) => {
+                    wry::http::Response::builder()
+                        .status(200)
+                        .header("Content-Type", mime_type)
+                        .header("Access-Control-Allow-Origin", "*")
+                        .body(content.into())
+                        .unwrap()
+                }
+                None => {
+                    wry::http::Response::builder()
+                        .status(404)
+                        .header("Content-Type", "text/plain")
+                        .body("Not found".as_bytes().to_vec().into())
+                        .unwrap()
+                }
+            }
+        })
         .with_ipc_handler(move |message| {
             let message_str = message.body();
             log::debug!("IPC message received: {}", message_str);
@@ -142,6 +190,10 @@ fn main() {
         })
         .with_url(get_webview_url())
         .with_devtools(true)
+        // Set desktop mode flag and include IPC bridge
+        .with_initialization_script(r#"
+            window.__WEBARCADE_DESKTOP__ = true;
+        "#)
         .with_initialization_script(include_str!("ipc_bridge.js"))
         .build(&window)
         .expect("Failed to create webview");
@@ -173,9 +225,9 @@ fn main() {
 }
 
 fn get_webview_url() -> &'static str {
-    // Load from static file server (port 3000)
-    // API calls go to port 3001 separately
-    "http://127.0.0.1:3000"
+    // Use custom app:// protocol for serving static files
+    // This bypasses HTTP entirely for better performance
+    "app://localhost/"
 }
 
 fn handle_ipc_command(request: &IpcRequest, window: &Window) -> IpcResponse {

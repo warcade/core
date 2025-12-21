@@ -3,6 +3,7 @@
 
 pub mod modules;
 pub mod core;
+pub mod protocols;
 
 use std::env;
 use std::net::SocketAddr;
@@ -21,7 +22,7 @@ use std::convert::Infallible;
 use crate::bridge::core::{EventBus, WebSocketBridge, RouterRegistry, DynamicPluginLoader};
 use crate::bridge::core::dynamic_plugin_loader::PluginInfo;
 use std::path::PathBuf;
-use std::sync::Mutex;
+use std::sync::{Mutex, RwLock};
 use once_cell::sync::Lazy;
 use include_dir::{include_dir, Dir};
 
@@ -30,6 +31,39 @@ static DIST_DIR: Dir<'_> = include_dir!("$CARGO_MANIFEST_DIR/dist");
 
 /// Global registry of loaded plugins
 pub static LOADED_PLUGINS: Lazy<Mutex<Vec<PluginInfo>>> = Lazy::new(|| Mutex::new(Vec::new()));
+
+/// Global assets root directory (set by plugins dynamically)
+pub static ASSETS_ROOT: Lazy<RwLock<PathBuf>> = Lazy::new(|| RwLock::new(PathBuf::new()));
+
+/// Get the current assets root directory
+pub fn get_assets_root() -> Option<PathBuf> {
+    let path = ASSETS_ROOT.read().ok()?;
+    if path.as_os_str().is_empty() {
+        None
+    } else {
+        Some(path.clone())
+    }
+}
+
+/// Set the assets root directory
+pub fn set_assets_root(path: PathBuf) {
+    if let Ok(mut root) = ASSETS_ROOT.write() {
+        log::info!("[Bridge] Setting assets root to: {:?}", path);
+        *root = path;
+    }
+}
+
+/// Get the config JSON as a string (for use by protocols)
+pub fn get_config_json() -> Option<String> {
+    let plugins_dir = get_plugins_dir();
+    let config_path = plugins_dir
+        .parent()
+        .and_then(|p| p.parent())
+        .map(|p| p.join("webarcade.config.json"))
+        .unwrap_or_else(|| plugins_dir.join("../webarcade.config.json"));
+
+    std::fs::read_to_string(&config_path).ok()
+}
 
 /// Get the plugins directory based on environment
 /// - Development: {app}/plugins (built plugins in app folder)
